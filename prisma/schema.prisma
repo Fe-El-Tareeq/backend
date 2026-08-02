@@ -6,3 +6,252 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+enum UserRole {
+  USER
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum OtpChannel {
+  SMS
+  WHATSAPP
+}
+
+enum WeightClass {
+  LIGHT
+  MEDIUM
+  HEAVY
+}
+
+enum ErrandStatus {
+  OPEN
+  MATCHED
+  CANCELLED
+  EXPIRED
+  COMPLETED
+}
+
+enum TripStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+  COMPLETED
+}
+
+enum MatchStatus {
+  SUGGESTED
+  DISMISSED
+  ACCEPTED
+  EXPIRED
+}
+
+enum AcceptanceSource {
+  DIRECT
+  TRIP_MATCH
+}
+
+enum AssignmentStatus {
+  ACCEPTED
+  PICKED_UP
+  IN_TRANSIT
+  COMPLETED
+  CANCELLED
+}
+
+enum MessageType {
+  TEXT
+  VOICE
+}
+
+enum PaymentModality {
+  CASH
+  BARTER
+}
+
+enum WalletTransactionType {
+  TOKEN_TOP_UP
+  ERRAND_POST_DEBIT
+  TRIP_POST_DEBIT
+  ERRAND_ACCEPT_DEBIT
+  ADMIN_CREDIT
+  ADMIN_DEBIT
+  REFUND
+}
+
+enum InvoiceStatus {
+  PENDING
+  PAID
+  FAILED
+  EXPIRED
+}
+
+enum PaymentProvider {
+  JAWWAL_PAY
+}
+
+enum PaymentTransactionStatus {
+  SUCCESS
+  FAILED
+}
+
+enum NotificationChannel {
+  IN_APP
+  SMS
+  WHATSAPP
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  READ
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  REJECTED
+}
+
+enum DisputeResolutionAction {
+  NO_ACTION
+  PENALIZE_REQUESTER
+  PENALIZE_TRAVELER
+  REFUND_REQUESTER
+  REFUND_TRAVELER
+  BAN_USER
+}
+
+enum OriginType {
+  DEFAULT_NEIGHBORHOOD
+  CUSTOM_KEYWORD
+}
+
+enum DistanceCategory {
+  SAME_NEIGHBORHOOD
+  ADJACENT_ZONE
+}
+
+model Neighborhood {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(100)
+  governorate String   @db.VarChar(100)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  users   User[]
+  errands Errand[]
+  trips   Trip[]
+
+  @@unique([name, governorate])
+  @@map("neighborhoods")
+}
+
+model User {
+  id               String     @id @default(uuid()) @db.Uuid
+  phone            String     @unique @db.VarChar(20)
+  fullName         String?    @map("full_name") @db.VarChar(100)
+  role             UserRole   @default(USER)
+  trustScore       Decimal    @default(50.00) @map("trust_score") @db.Decimal(5, 2)
+  neighborhoodId   String?    @map("neighborhood_id") @db.Uuid
+  profileCompleted Boolean    @default(false) @map("profile_completed")
+  phoneVerifiedAt  DateTime?  @map("phone_verified_at") @db.Timestamptz(6)
+  status           UserStatus @default(ACTIVE)
+  createdAt        DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  neighborhood Neighborhood? @relation(fields: [neighborhoodId], references: [id])
+
+  refreshTokens RefreshToken[]
+  wallet        Wallet?
+
+  requestedErrands Errand[] @relation("RequesterErrands")
+  travelerTrips    Trip[]   @relation("TravelerTrips")
+
+  assignments          ErrandAssignment[] @relation("AssignmentTraveler")
+  cancelledAssignments ErrandAssignment[] @relation("AssignmentCancelledBy")
+
+  sentMessages ChatMessage[]
+
+  givenRatings    Rating[] @relation("RatingReviewer")
+  receivedRatings Rating[] @relation("RatingReviewedUser")
+
+  userBadges UserBadge[]
+
+  openedDisputes   Dispute[] @relation("DisputeOpenedBy")
+  reportedDisputes Dispute[] @relation("DisputeReportedUser")
+  adminDisputes    Dispute[] @relation("DisputeAdmin")
+
+  notifications Notification[]
+  rateLimitLogs RateLimitLog[]
+
+  adminAuditLogs    AdminAuditLog[] @relation("AuditAdmin")
+  targetedAuditLogs AdminAuditLog[] @relation("AuditTargetUser")
+
+  paymentInvoices PaymentInvoice[]
+
+  @@index([neighborhoodId])
+  @@map("users")
+}
+
+model OtpVerification {
+  id           String     @id @default(uuid()) @db.Uuid
+  phone        String     @db.VarChar(20)
+  otpHash      String     @map("otp_hash") @db.VarChar(255)
+  channel      OtpChannel @default(SMS)
+  attemptCount Int        @default(0) @map("attempt_count")
+  maxAttempts  Int        @default(5) @map("max_attempts")
+  expiresAt    DateTime   @map("expires_at") @db.Timestamptz(6)
+  verifiedAt   DateTime?  @map("verified_at") @db.Timestamptz(6)
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([phone, createdAt])
+  @@map("otp_verifications")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash") @db.VarChar(255)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Category {
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String   @unique @db.VarChar(50)
+  priorityWeight Int      @default(1) @map("priority_weight")
+  icon           String?  @db.VarChar(100)
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  errands Errand[]
+
+  @@map("categories")
+}
+
+model Wallet {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @unique @map("user_id") @db.Uuid
+  tokenBalance Int      @default(3) @map("token_balance")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions WalletTransaction[]
+
+  @@map("wallets")
+}
