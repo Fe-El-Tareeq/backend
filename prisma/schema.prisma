@@ -255,3 +255,200 @@ model Wallet {
 
   @@map("wallets")
 }
+
+model Errand {
+  id                     String       @id @default(uuid()) @db.Uuid
+  requesterId            String       @map("requester_id") @db.Uuid
+  categoryId             String?      @map("category_id") @db.Uuid
+  neighborhoodId         String       @map("neighborhood_id") @db.Uuid
+
+  clientRequestKey       String       @map("client_request_key") @db.Uuid
+
+  title                  String       @db.VarChar(80)
+  itemsDescription       String       @map("items_description")
+  destinationKeyword     String       @map("destination_keyword") @db.VarChar(150)
+
+  weightClass            WeightClass  @map("weight_class")
+
+  isUrgent               Boolean      @default(false) @map("is_urgent")
+  isInterZone            Boolean      @default(false) @map("is_inter_zone")
+
+  priorityScore          Decimal      @default(0) @map("priority_score") @db.Decimal(8, 2)
+  calculatedFeeNis       Decimal      @map("calculated_fee_nis") @db.Decimal(5, 2)
+
+  postTokenCost          Int          @map("post_token_cost")
+  postTokenTransactionId String?      @unique @map("post_token_transaction_id") @db.Uuid
+
+  voiceNoteUrl           String?      @map("voice_note_url")
+  voiceNoteDurationSec   Int?         @map("voice_note_duration_sec")
+
+  status                 ErrandStatus @default(OPEN)
+
+  neededByTime           DateTime?    @map("needed_by_time") @db.Timestamptz(6)
+  expiresAt              DateTime     @map("expires_at") @db.Timestamptz(6)
+
+  createdAt              DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  requester              User         @relation("RequesterErrands", fields: [requesterId], references: [id])
+  category               Category?    @relation(fields: [categoryId], references: [id])
+  neighborhood           Neighborhood @relation(fields: [neighborhoodId], references: [id])
+
+  postTokenTransaction   WalletTransaction? @relation(
+    "ErrandPostTokenTransaction",
+    fields: [postTokenTransactionId],
+    references: [id]
+  )
+
+  matches                 Match[]
+  assignments             ErrandAssignment[]
+  notifications           Notification[]
+
+  @@unique([requesterId, clientRequestKey])
+  @@index([requesterId])
+  @@index([categoryId])
+  @@index([neighborhoodId])
+  @@index([expiresAt])
+  @@index([neighborhoodId, status, isUrgent, createdAt])
+  @@map("errands")
+}
+model Trip {
+  id                     String      @id @default(uuid()) @db.Uuid
+
+  travelerId             String      @map("traveler_id") @db.Uuid
+  neighborhoodId         String      @map("neighborhood_id") @db.Uuid
+
+  destinationKeyword     String      @map("destination_keyword") @db.VarChar(150)
+
+  originType             OriginType  @default(DEFAULT_NEIGHBORHOOD) @map("origin_type")
+  customOriginKeyword    String?     @map("custom_origin_keyword") @db.VarChar(150)
+
+  departureTime          DateTime    @map("departure_time") @db.Timestamptz(6)
+
+  maxCapacity            WeightClass @map("max_capacity")
+  remainingCapacity      WeightClass @map("remaining_capacity")
+
+  notes                  String?     @db.VarChar(120)
+
+  postTokenCost          Int         @map("post_token_cost")
+  postTokenTransactionId String?     @unique @map("post_token_transaction_id") @db.Uuid
+
+  status                 TripStatus  @default(ACTIVE)
+
+  expiresAt              DateTime    @map("expires_at") @db.Timestamptz(6)
+
+  createdAt              DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  traveler               User         @relation("TravelerTrips", fields: [travelerId], references: [id])
+  neighborhood           Neighborhood @relation(fields: [neighborhoodId], references: [id])
+
+  postTokenTransaction   WalletTransaction? @relation(
+    "TripPostTokenTransaction",
+    fields: [postTokenTransactionId],
+    references: [id]
+  )
+
+  matches                Match[]
+  assignments            ErrandAssignment[]
+
+  @@index([travelerId])
+  @@index([neighborhoodId])
+  @@index([departureTime])
+  @@index([status])
+  @@index([expiresAt])
+
+  @@map("trips")
+}
+
+model Match {
+  id                   String           @id @default(uuid()) @db.Uuid
+
+  errandId             String           @map("errand_id") @db.Uuid
+  tripId               String           @map("trip_id") @db.Uuid
+
+  matchScore           Decimal          @map("match_score") @db.Decimal(8, 2)
+
+  timeScore            Decimal          @default(0) @map("time_score") @db.Decimal(8, 2)
+  loadScore            Decimal          @default(0) @map("load_score") @db.Decimal(8, 2)
+  destinationScore     Decimal          @default(0) @map("destination_score") @db.Decimal(8, 2)
+  urgentBoost          Decimal          @default(0) @map("urgent_boost") @db.Decimal(8, 2)
+  trustPenalty         Decimal          @default(0) @map("trust_penalty") @db.Decimal(8, 2)
+
+  distanceCategory     DistanceCategory @map("distance_category")
+
+  estimatedFeeNis      Decimal          @map("estimated_fee_nis") @db.Decimal(5, 2)
+
+  status               MatchStatus      @default(SUGGESTED)
+
+  matchedAt            DateTime         @default(now()) @map("matched_at") @db.Timestamptz(6)
+  acceptedAt           DateTime?        @map("accepted_at") @db.Timestamptz(6)
+  expiresAt            DateTime?        @map("expires_at") @db.Timestamptz(6)
+
+  errand               Errand           @relation(
+    fields: [errandId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  trip                 Trip             @relation(
+    fields: [tripId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  @@unique([errandId, tripId])
+
+  @@index([errandId])
+  @@index([tripId])
+  @@index([status])
+  @@index([matchScore])
+  @@index([expiresAt])
+
+  @@map("matches")
+}
+model ErrandAssignment {
+  id                        String              @id @default(uuid()) @db.Uuid
+
+  errandId                  String              @map("errand_id") @db.Uuid
+  travelerId                String              @map("traveler_id") @db.Uuid
+  tripId                    String?             @map("trip_id") @db.Uuid
+
+  acceptanceSource          AcceptanceSource    @map("acceptance_source")
+
+  acceptTokenTransactionId  String              @unique @map("accept_token_transaction_id") @db.Uuid
+
+  status                    AssignmentStatus    @default(ACCEPTED)
+
+  acceptedAt                DateTime            @default(now()) @map("accepted_at") @db.Timestamptz(6)
+  pickedUpAt                DateTime?           @map("picked_up_at") @db.Timestamptz(6)
+  inTransitAt               DateTime?           @map("in_transit_at") @db.Timestamptz(6)
+  completedAt               DateTime?           @map("completed_at") @db.Timestamptz(6)
+  cancelledAt               DateTime?           @map("cancelled_at") @db.Timestamptz(6)
+
+  cancelledByUserId         String?             @map("cancelled_by_user_id") @db.Uuid
+
+  createdAt                 DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  errand                    Errand              @relation(fields: [errandId], references: [id], onDelete: Cascade)
+
+  traveler                  User                @relation("AssignmentTraveler", fields: [travelerId], references: [id])
+
+  trip                      Trip?               @relation(fields: [tripId], references: [id])
+
+  cancelledBy               User?               @relation("AssignmentCancelledBy", fields: [cancelledByUserId], references: [id])
+
+  acceptTokenTransaction    WalletTransaction   @relation(
+    "AcceptTokenTransaction",
+    fields: [acceptTokenTransactionId],
+    references: [id]
+  )
+
+  @@index([errandId])
+  @@index([travelerId])
+  @@index([tripId])
+  @@index([status])
+
+  @@map("errand_assignments")
+}
