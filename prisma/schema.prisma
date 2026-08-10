@@ -4,7 +4,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 enum UserRole {
@@ -159,7 +158,7 @@ model User {
   phone            String     @unique @db.VarChar(20)
   fullName         String?    @map("full_name") @db.VarChar(100)
   role             UserRole   @default(USER)
-  trustScore       Decimal    @default(50.00) @map("trust_score") @db.Decimal(5, 2)
+  trustScore       Decimal    @default(70.00) @map("trust_score") @db.Decimal(5, 2)
   neighborhoodId   String?    @map("neighborhood_id") @db.Uuid
   profileCompleted Boolean    @default(false) @map("profile_completed")
   phoneVerifiedAt  DateTime?  @map("phone_verified_at") @db.Timestamptz(6)
@@ -254,4 +253,462 @@ model Wallet {
   transactions WalletTransaction[]
 
   @@map("wallets")
+}
+
+model Errand {
+  id                     String       @id @default(uuid()) @db.Uuid
+  requesterId            String       @map("requester_id") @db.Uuid
+  categoryId             String?      @map("category_id") @db.Uuid
+  neighborhoodId         String       @map("neighborhood_id") @db.Uuid
+  clientRequestKey       String       @map("client_request_key") @db.Uuid
+  title                  String       @db.VarChar(80)
+  itemsDescription       String       @map("items_description")
+  destinationKeyword     String       @map("destination_keyword") @db.VarChar(150)
+  weightClass            WeightClass  @map("weight_class")
+  isUrgent               Boolean      @default(false) @map("is_urgent")
+  isInterZone            Boolean      @default(false) @map("is_inter_zone")
+  priorityScore          Decimal      @default(0) @map("priority_score") @db.Decimal(8, 2)
+  calculatedFeeNis       Decimal      @map("calculated_fee_nis") @db.Decimal(5, 2)
+  postTokenCost          Int          @map("post_token_cost")
+  postTokenTransactionId String?      @unique @map("post_token_transaction_id") @db.Uuid
+  voiceNoteUrl           String?      @map("voice_note_url")
+  voiceNoteDurationSec   Int?         @map("voice_note_duration_sec")
+  status                 ErrandStatus @default(OPEN)
+  neededByTime           DateTime?    @map("needed_by_time") @db.Timestamptz(6)
+  expiresAt              DateTime     @map("expires_at") @db.Timestamptz(6)
+  createdAt              DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  requester    User         @relation("RequesterErrands", fields: [requesterId], references: [id])
+  category     Category?    @relation(fields: [categoryId], references: [id])
+  neighborhood Neighborhood @relation(fields: [neighborhoodId], references: [id])
+
+  postTokenTransaction WalletTransaction? @relation("ErrandPostTokenTransaction", fields: [postTokenTransactionId], references: [id])
+
+  matches       Match[]
+  assignments   ErrandAssignment[]
+  notifications Notification[]
+
+  @@unique([requesterId, clientRequestKey])
+  @@index([requesterId])
+  @@index([categoryId])
+  @@index([neighborhoodId])
+  @@index([expiresAt])
+  @@index([neighborhoodId, status, isUrgent, createdAt])
+  @@map("errands")
+}
+
+model Trip {
+  id                     String      @id @default(uuid()) @db.Uuid
+  travelerId             String      @map("traveler_id") @db.Uuid
+  neighborhoodId         String      @map("neighborhood_id") @db.Uuid
+  destinationKeyword     String      @map("destination_keyword") @db.VarChar(150)
+  originType             OriginType  @default(DEFAULT_NEIGHBORHOOD) @map("origin_type")
+  customOriginKeyword    String?     @map("custom_origin_keyword") @db.VarChar(150)
+  departureTime          DateTime    @map("departure_time") @db.Timestamptz(6)
+  maxCapacityClass       WeightClass @map("max_capacity_class")
+  maxCapacityUnits       Int         @map("max_capacity_units")
+  remainingCapacityUnits Int         @map("remaining_capacity_units")
+  notes                  String?     @db.VarChar(120)
+  postTokenCost          Int         @map("post_token_cost")
+  postTokenTransactionId String?     @unique @map("post_token_transaction_id") @db.Uuid
+  status                 TripStatus  @default(ACTIVE)
+  expiresAt              DateTime    @map("expires_at") @db.Timestamptz(6)
+  createdAt              DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  traveler     User         @relation("TravelerTrips", fields: [travelerId], references: [id])
+  neighborhood Neighborhood @relation(fields: [neighborhoodId], references: [id])
+
+  postTokenTransaction WalletTransaction? @relation("TripPostTokenTransaction", fields: [postTokenTransactionId], references: [id])
+
+  matches     Match[]
+  assignments ErrandAssignment[]
+
+  @@index([travelerId])
+  @@index([neighborhoodId])
+  @@index([departureTime])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("trips")
+}
+
+model Match {
+  id               String           @id @default(uuid()) @db.Uuid
+  errandId         String           @map("errand_id") @db.Uuid
+  tripId           String           @map("trip_id") @db.Uuid
+  matchScore       Decimal          @map("match_score") @db.Decimal(8, 2)
+  timeScore        Decimal          @default(0) @map("time_score") @db.Decimal(8, 2)
+  loadScore        Decimal          @default(0) @map("load_score") @db.Decimal(8, 2)
+  destinationScore Decimal          @default(0) @map("destination_score") @db.Decimal(8, 2)
+  urgentBoost      Decimal          @default(0) @map("urgent_boost") @db.Decimal(8, 2)
+  trustPenalty     Decimal          @default(0) @map("trust_penalty") @db.Decimal(8, 2)
+  distanceCategory DistanceCategory @map("distance_category")
+  estimatedFeeNis  Decimal          @map("estimated_fee_nis") @db.Decimal(5, 2)
+  status           MatchStatus      @default(SUGGESTED)
+  matchedAt        DateTime         @default(now()) @map("matched_at") @db.Timestamptz(6)
+  acceptedAt       DateTime?        @map("accepted_at") @db.Timestamptz(6)
+  expiresAt        DateTime?        @map("expires_at") @db.Timestamptz(6)
+
+  errand Errand @relation(fields: [errandId], references: [id], onDelete: Cascade)
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@unique([errandId, tripId])
+  @@index([errandId])
+  @@index([tripId])
+  @@index([status])
+  @@index([matchScore])
+  @@index([expiresAt])
+  @@map("matches")
+}
+
+model ErrandAssignment {
+  id                       String           @id @default(uuid()) @db.Uuid
+  errandId                 String           @map("errand_id") @db.Uuid
+  travelerId               String           @map("traveler_id") @db.Uuid
+  tripId                   String?          @map("trip_id") @db.Uuid
+  acceptanceSource         AcceptanceSource @map("acceptance_source")
+  acceptTokenTransactionId String           @unique @map("accept_token_transaction_id") @db.Uuid
+  status                   AssignmentStatus @default(ACCEPTED)
+  acceptedAt               DateTime         @default(now()) @map("accepted_at") @db.Timestamptz(6)
+  pickedUpAt               DateTime?        @map("picked_up_at") @db.Timestamptz(6)
+  inTransitAt              DateTime?        @map("in_transit_at") @db.Timestamptz(6)
+  completedAt              DateTime?        @map("completed_at") @db.Timestamptz(6)
+  cancelledAt              DateTime?        @map("cancelled_at") @db.Timestamptz(6)
+  createdAt                DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  cancelledByUserId  String? @map("cancelled_by_user_id") @db.Uuid
+  cancellationReason String? @map("cancellation_reason") @db.VarChar(255)
+
+  errand      Errand @relation(fields: [errandId], references: [id], onDelete: Cascade)
+  traveler    User   @relation("AssignmentTraveler", fields: [travelerId], references: [id])
+  trip        Trip?  @relation(fields: [tripId], references: [id])
+  cancelledBy User?  @relation("AssignmentCancelledBy", fields: [cancelledByUserId], references: [id])
+
+  acceptTokenTransaction WalletTransaction @relation("AcceptTokenTransaction", fields: [acceptTokenTransactionId], references: [id])
+
+  chatRoom      ChatRoom?
+  ratings       Rating[]
+  disputes      Dispute[]
+  notifications Notification[]
+
+  @@index([errandId])
+  @@index([travelerId])
+  @@index([tripId])
+  @@index([status])
+  @@map("errand_assignments")
+}
+
+model ChatRoom {
+  id            String    @id @default(uuid()) @db.Uuid
+  assignmentId  String    @unique @map("assignment_id") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  lastMessageAt DateTime? @map("last_message_at") @db.Timestamptz(6)
+
+  assignment ErrandAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  messages   ChatMessage[]
+
+  @@index([lastMessageAt])
+  @@map("chat_rooms")
+}
+
+model ChatMessage {
+  id               String      @id @default(uuid()) @db.Uuid
+  chatRoomId       String      @map("chat_room_id") @db.Uuid
+  senderId         String      @map("sender_id") @db.Uuid
+  clientMessageKey String      @map("client_message_key") @db.Uuid
+  messageType      MessageType @map("message_type")
+  contentText      String?     @map("content_text") @db.VarChar(500)
+  audioUrl         String?     @map("audio_url")
+  audioDurationSec Int?        @map("audio_duration_sec")
+  isRead           Boolean     @default(false) @map("is_read")
+  sentAt           DateTime    @default(now()) @map("sent_at") @db.Timestamptz(6)
+  readAt           DateTime?   @map("read_at") @db.Timestamptz(6)
+  expiresAt        DateTime    @map("expires_at") @db.Timestamptz(6)
+
+  chatRoom ChatRoom @relation(fields: [chatRoomId], references: [id], onDelete: Cascade)
+  sender   User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@unique([senderId, clientMessageKey])
+  @@index([chatRoomId, sentAt])
+  @@index([senderId])
+  @@index([expiresAt])
+  @@index([chatRoomId, isRead])
+  @@map("chat_messages")
+}
+
+model Rating {
+  id                       String           @id @default(uuid()) @db.Uuid
+  assignmentId             String           @map("assignment_id") @db.Uuid
+  reviewerId               String           @map("reviewer_id") @db.Uuid
+  reviewedUserId           String           @map("reviewed_user_id") @db.Uuid
+  ratingStars              Int              @map("rating_stars")
+  paymentModalityConfirmed PaymentModality? @map("payment_modality_confirmed")
+  comments                 String?          @db.VarChar(500)
+  createdAt                DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  assignment   ErrandAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  reviewer     User             @relation("RatingReviewer", fields: [reviewerId], references: [id], onDelete: Cascade)
+  reviewedUser User             @relation("RatingReviewedUser", fields: [reviewedUserId], references: [id], onDelete: Cascade)
+
+  feedbackTags RatingFeedbackTag[]
+
+  @@unique([assignmentId, reviewerId])
+  @@index([assignmentId])
+  @@index([reviewerId])
+  @@index([reviewedUserId])
+  @@index([reviewedUserId, createdAt])
+  @@map("ratings")
+}
+
+model RatingFeedbackTag {
+  id        String   @id @default(uuid()) @db.Uuid
+  ratingId  String   @map("rating_id") @db.Uuid
+  tag       String   @db.VarChar(50)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  rating Rating @relation(fields: [ratingId], references: [id], onDelete: Cascade)
+
+  @@unique([ratingId, tag])
+  @@index([ratingId])
+  @@map("rating_feedback_tags")
+}
+
+model Badge {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.VarChar(80)
+  description String?  @db.VarChar(255)
+  icon        String?  @db.VarChar(100)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  userBadges UserBadge[]
+
+  @@map("badges")
+}
+
+model UserBadge {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  badgeId   String   @map("badge_id") @db.Uuid
+  awardedAt DateTime @default(now()) @map("awarded_at") @db.Timestamptz(6)
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge Badge @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badgeId])
+  @@index([userId])
+  @@index([badgeId])
+  @@map("user_badges")
+}
+
+model TokenPackage {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.VarChar(100)
+  tokenAmount Int      @map("token_amount")
+  bonusTokens Int      @default(0) @map("bonus_tokens")
+  priceNis    Decimal  @map("price_nis") @db.Decimal(10, 2)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  paymentInvoices PaymentInvoice[]
+
+  @@index([isActive])
+  @@map("token_packages")
+}
+
+model PaymentInvoice {
+  id                String             @id @default(uuid()) @db.Uuid
+  userId            String             @map("user_id") @db.Uuid
+  tokenPackageId    String             @map("token_package_id") @db.Uuid
+  tokenAmount       Int                @map("token_amount")
+  bonusTokens       Int                @default(0) @map("bonus_tokens")
+  totalTokens       Int                @map("total_tokens")
+  amountNis         Decimal            @map("amount_nis") @db.Decimal(10, 2)
+  paymentProvider   PaymentProvider    @map("payment_provider")
+  providerInvoiceId String?            @unique @map("provider_invoice_id") @db.VarChar(150)
+  qrCodePayload     String             @map("qr_code_payload")
+  paymentUrl        String?            @map("payment_url")
+  status            InvoiceStatus      @default(PENDING)
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt         DateTime           @map("expires_at") @db.Timestamptz(6)
+  paidAt            DateTime?          @map("paid_at") @db.Timestamptz(6)
+  failedAt          DateTime?          @map("failed_at") @db.Timestamptz(6)
+  walletTransaction WalletTransaction?
+  user              User               @relation(fields: [userId], references: [id])
+
+  tokenPackage TokenPackage @relation(fields: [tokenPackageId], references: [id])
+
+  paymentTransactions PaymentTransaction[]
+
+  @@index([userId])
+  @@index([tokenPackageId])
+  @@index([status])
+  @@index([expiresAt])
+  @@index([userId, status, createdAt])
+  @@map("payment_invoices")
+}
+
+model PaymentTransaction {
+  id                    String                   @id @default(uuid()) @db.Uuid
+  invoiceId             String                   @map("invoice_id") @db.Uuid
+  providerTransactionId String?                  @unique @map("provider_transaction_id") @db.VarChar(150)
+  provider              PaymentProvider
+  amountPaidNis         Decimal                  @map("amount_paid_nis") @db.Decimal(10, 2)
+  status                PaymentTransactionStatus
+  signatureVerified     Boolean                  @default(false) @map("signature_verified")
+  webhookPayload        Json?                    @map("webhook_payload")
+  failureReason         String?                  @map("failure_reason") @db.VarChar(255)
+  providerTimestamp     DateTime?                @map("provider_timestamp") @db.Timestamptz(6)
+  receivedAt            DateTime                 @default(now()) @map("received_at") @db.Timestamptz(6)
+
+  invoice PaymentInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([status])
+  @@index([receivedAt])
+  @@map("payment_transactions")
+}
+
+model WalletTransaction {
+  id               String                @id @default(uuid()) @db.Uuid
+  walletId         String                @map("wallet_id") @db.Uuid
+  transactionType  WalletTransactionType @map("transaction_type")
+  tokenAmount      Int                   @map("token_amount")
+  balanceBefore    Int                   @map("balance_before")
+  balanceAfter     Int                   @map("balance_after")
+  referenceType    String?               @map("reference_type") @db.VarChar(30)
+  referenceId      String?               @map("reference_id") @db.Uuid
+  idempotencyKey   String?               @unique @map("idempotency_key") @db.VarChar(100)
+  description      String?               @db.VarChar(255)
+  createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  paymentInvoiceId String?               @unique @map("payment_invoice_id") @db.Uuid
+  paymentInvoice   PaymentInvoice?       @relation(fields: [paymentInvoiceId], references: [id])
+  wallet           Wallet                @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  errandPost Errand? @relation("ErrandPostTokenTransaction")
+
+  tripPost Trip? @relation("TripPostTokenTransaction")
+
+  acceptedAssignment ErrandAssignment? @relation("AcceptTokenTransaction")
+
+  refundedDispute Dispute? @relation("DisputeRefundTransaction")
+
+  @@index([walletId])
+  @@index([transactionType])
+  @@index([referenceType, referenceId])
+  @@index([walletId, createdAt])
+  @@map("wallet_transactions")
+}
+
+model Dispute {
+  id                        String                   @id @default(uuid()) @db.Uuid
+  assignmentId              String                   @map("assignment_id") @db.Uuid
+  openedByUserId            String                   @map("opened_by_user_id") @db.Uuid
+  reportedUserId            String                   @map("reported_user_id") @db.Uuid
+  adminId                   String?                  @map("admin_id") @db.Uuid
+  reason                    String                   @db.VarChar(80)
+  description               String
+  status                    DisputeStatus            @default(OPEN)
+  resolutionAction          DisputeResolutionAction? @map("resolution_action")
+  trustScoreDeduction       Decimal?                 @map("trust_score_deduction") @db.Decimal(5, 2)
+  refundWalletTransactionId String?                  @unique @map("refund_wallet_transaction_id") @db.Uuid
+  adminNotes                String?                  @map("admin_notes")
+  createdAt                 DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  resolvedAt                DateTime?                @map("resolved_at") @db.Timestamptz(6)
+
+  assignment ErrandAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  openedBy User @relation("DisputeOpenedBy", fields: [openedByUserId], references: [id])
+
+  reportedUser User @relation("DisputeReportedUser", fields: [reportedUserId], references: [id])
+
+  admin User? @relation("DisputeAdmin", fields: [adminId], references: [id], onDelete: SetNull)
+
+  refundWalletTransaction WalletTransaction? @relation("DisputeRefundTransaction", fields: [refundWalletTransactionId], references: [id])
+
+  @@index([assignmentId])
+  @@index([openedByUserId])
+  @@index([reportedUserId])
+  @@index([adminId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("disputes")
+}
+
+model Notification {
+  id                String              @id @default(uuid()) @db.Uuid
+  userId            String              @map("user_id") @db.Uuid
+  errandId          String?             @map("errand_id") @db.Uuid
+  assignmentId      String?             @map("assignment_id") @db.Uuid
+  notificationType  String              @map("notification_type") @db.VarChar(50)
+  channel           NotificationChannel @default(IN_APP)
+  title             String              @db.VarChar(100)
+  message           String              @db.VarChar(500)
+  status            NotificationStatus  @default(PENDING)
+  providerMessageId String?             @map("provider_message_id") @db.VarChar(150)
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  sentAt            DateTime?           @map("sent_at") @db.Timestamptz(6)
+  readAt            DateTime?           @map("read_at") @db.Timestamptz(6)
+  failedAt          DateTime?           @map("failed_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  errand Errand? @relation(fields: [errandId], references: [id], onDelete: SetNull)
+
+  assignment ErrandAssignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([errandId])
+  @@index([assignmentId])
+  @@index([status])
+  @@index([userId, status, createdAt])
+  @@map("notifications")
+}
+
+model RateLimitLog {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String?   @map("user_id") @db.Uuid
+  endpoint     String    @db.VarChar(150)
+  ipAddress    String    @map("ip_address") @db.VarChar(50)
+  requestCount Int       @map("request_count")
+  blockedAt    DateTime? @map("blocked_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([ipAddress])
+  @@index([endpoint])
+  @@index([blockedAt])
+  @@index([ipAddress, endpoint, createdAt])
+  @@map("rate_limit_logs")
+}
+
+model AdminAuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  adminId      String   @map("admin_id") @db.Uuid
+  targetUserId String?  @map("target_user_id") @db.Uuid
+  action       String   @db.VarChar(80)
+  entityType   String   @map("entity_type") @db.VarChar(50)
+  entityId     String?  @map("entity_id") @db.Uuid
+  oldValues    Json?    @map("old_values")
+  newValues    Json?    @map("new_values")
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  admin User @relation("AuditAdmin", fields: [adminId], references: [id])
+
+  targetUser User? @relation("AuditTargetUser", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  @@index([adminId])
+  @@index([targetUserId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("admin_audit_logs")
 }
