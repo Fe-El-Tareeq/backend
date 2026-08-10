@@ -283,11 +283,7 @@ model Errand {
   category     Category?    @relation(fields: [categoryId], references: [id])
   neighborhood Neighborhood @relation(fields: [neighborhoodId], references: [id])
 
-  postTokenTransaction WalletTransaction? @relation(
-    "ErrandPostTokenTransaction",
-    fields: [postTokenTransactionId],
-    references: [id]
-  )
+  postTokenTransaction WalletTransaction? @relation("ErrandPostTokenTransaction", fields: [postTokenTransactionId], references: [id])
 
   matches       Match[]
   assignments   ErrandAssignment[]
@@ -324,11 +320,7 @@ model Trip {
   traveler     User         @relation("TravelerTrips", fields: [travelerId], references: [id])
   neighborhood Neighborhood @relation(fields: [neighborhoodId], references: [id])
 
-  postTokenTransaction WalletTransaction? @relation(
-    "TripPostTokenTransaction",
-    fields: [postTokenTransactionId],
-    references: [id]
-  )
+  postTokenTransaction WalletTransaction? @relation("TripPostTokenTransaction", fields: [postTokenTransactionId], references: [id])
 
   matches     Match[]
   assignments ErrandAssignment[]
@@ -389,16 +381,12 @@ model ErrandAssignment {
   cancelledByUserId  String? @map("cancelled_by_user_id") @db.Uuid
   cancellationReason String? @map("cancellation_reason") @db.VarChar(255)
 
-  errand      Errand  @relation(fields: [errandId], references: [id], onDelete: Cascade)
-  traveler    User    @relation("AssignmentTraveler", fields: [travelerId], references: [id])
-  trip        Trip?   @relation(fields: [tripId], references: [id])
-  cancelledBy User?   @relation("AssignmentCancelledBy", fields: [cancelledByUserId], references: [id])
+  errand      Errand @relation(fields: [errandId], references: [id], onDelete: Cascade)
+  traveler    User   @relation("AssignmentTraveler", fields: [travelerId], references: [id])
+  trip        Trip?  @relation(fields: [tripId], references: [id])
+  cancelledBy User?  @relation("AssignmentCancelledBy", fields: [cancelledByUserId], references: [id])
 
-  acceptTokenTransaction WalletTransaction @relation(
-    "AcceptTokenTransaction",
-    fields: [acceptTokenTransactionId],
-    references: [id]
-  )
+  acceptTokenTransaction WalletTransaction @relation("AcceptTokenTransaction", fields: [acceptTokenTransactionId], references: [id])
 
   chatRoom      ChatRoom?
   ratings       Rating[]
@@ -535,29 +523,26 @@ model TokenPackage {
 }
 
 model PaymentInvoice {
-  id                String            @id @default(uuid()) @db.Uuid
-  userId            String            @map("user_id") @db.Uuid
-  tokenPackageId    String            @map("token_package_id") @db.Uuid
-  tokenAmount       Int               @map("token_amount")
-  bonusTokens       Int               @default(0) @map("bonus_tokens")
-  totalTokens       Int               @map("total_tokens")
-  amountNis         Decimal           @map("amount_nis") @db.Decimal(10, 2)
-  paymentProvider   PaymentProvider   @map("payment_provider")
-  providerInvoiceId String?           @unique @map("provider_invoice_id") @db.VarChar(150)
-  qrCodePayload     String            @map("qr_code_payload")
-  paymentUrl        String?           @map("payment_url")
-  status            InvoiceStatus     @default(PENDING)
-  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  expiresAt         DateTime          @map("expires_at") @db.Timestamptz(6)
-  paidAt            DateTime?         @map("paid_at") @db.Timestamptz(6)
-  failedAt          DateTime?         @map("failed_at") @db.Timestamptz(6)
+  id                String             @id @default(uuid()) @db.Uuid
+  userId            String             @map("user_id") @db.Uuid
+  tokenPackageId    String             @map("token_package_id") @db.Uuid
+  tokenAmount       Int                @map("token_amount")
+  bonusTokens       Int                @default(0) @map("bonus_tokens")
+  totalTokens       Int                @map("total_tokens")
+  amountNis         Decimal            @map("amount_nis") @db.Decimal(10, 2)
+  paymentProvider   PaymentProvider    @map("payment_provider")
+  providerInvoiceId String?            @unique @map("provider_invoice_id") @db.VarChar(150)
+  qrCodePayload     String             @map("qr_code_payload")
+  paymentUrl        String?            @map("payment_url")
+  status            InvoiceStatus      @default(PENDING)
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt         DateTime           @map("expires_at") @db.Timestamptz(6)
+  paidAt            DateTime?          @map("paid_at") @db.Timestamptz(6)
+  failedAt          DateTime?          @map("failed_at") @db.Timestamptz(6)
   walletTransaction WalletTransaction?
-  user              User              @relation(fields: [userId], references: [id])
+  user              User               @relation(fields: [userId], references: [id])
 
-  tokenPackage TokenPackage @relation(
-    fields: [tokenPackageId],
-    references: [id]
-  )
+  tokenPackage TokenPackage @relation(fields: [tokenPackageId], references: [id])
 
   paymentTransactions PaymentTransaction[]
 
@@ -582,11 +567,7 @@ model PaymentTransaction {
   providerTimestamp     DateTime?                @map("provider_timestamp") @db.Timestamptz(6)
   receivedAt            DateTime                 @default(now()) @map("received_at") @db.Timestamptz(6)
 
-  invoice PaymentInvoice @relation(
-    fields: [invoiceId],
-    references: [id],
-    onDelete: Cascade
-  )
+  invoice PaymentInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   @@index([invoiceId])
   @@index([status])
@@ -608,11 +589,7 @@ model WalletTransaction {
   createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
   paymentInvoiceId String?               @unique @map("payment_invoice_id") @db.Uuid
   paymentInvoice   PaymentInvoice?       @relation(fields: [paymentInvoiceId], references: [id])
-  wallet           Wallet                @relation(
-    fields: [walletId],
-    references: [id],
-    onDelete: Cascade
-  )
+  wallet           Wallet                @relation(fields: [walletId], references: [id], onDelete: Cascade)
 
   errandPost Errand? @relation("ErrandPostTokenTransaction")
 
@@ -645,36 +622,15 @@ model Dispute {
   createdAt                 DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
   resolvedAt                DateTime?                @map("resolved_at") @db.Timestamptz(6)
 
-  assignment ErrandAssignment @relation(
-    fields: [assignmentId],
-    references: [id],
-    onDelete: Cascade
-  )
+  assignment ErrandAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
 
-  openedBy User @relation(
-    "DisputeOpenedBy",
-    fields: [openedByUserId],
-    references: [id]
-  )
+  openedBy User @relation("DisputeOpenedBy", fields: [openedByUserId], references: [id])
 
-  reportedUser User @relation(
-    "DisputeReportedUser",
-    fields: [reportedUserId],
-    references: [id]
-  )
+  reportedUser User @relation("DisputeReportedUser", fields: [reportedUserId], references: [id])
 
-  admin User? @relation(
-    "DisputeAdmin",
-    fields: [adminId],
-    references: [id],
-    onDelete: SetNull
-  )
+  admin User? @relation("DisputeAdmin", fields: [adminId], references: [id], onDelete: SetNull)
 
-  refundWalletTransaction WalletTransaction? @relation(
-    "DisputeRefundTransaction",
-    fields: [refundWalletTransactionId],
-    references: [id]
-  )
+  refundWalletTransaction WalletTransaction? @relation("DisputeRefundTransaction", fields: [refundWalletTransactionId], references: [id])
 
   @@index([assignmentId])
   @@index([openedByUserId])
@@ -701,23 +657,11 @@ model Notification {
   readAt            DateTime?           @map("read_at") @db.Timestamptz(6)
   failedAt          DateTime?           @map("failed_at") @db.Timestamptz(6)
 
-  user User @relation(
-    fields: [userId],
-    references: [id],
-    onDelete: Cascade
-  )
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  errand Errand? @relation(
-    fields: [errandId],
-    references: [id],
-    onDelete: SetNull
-  )
+  errand Errand? @relation(fields: [errandId], references: [id], onDelete: SetNull)
 
-  assignment ErrandAssignment? @relation(
-    fields: [assignmentId],
-    references: [id],
-    onDelete: SetNull
-  )
+  assignment ErrandAssignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([errandId])
@@ -736,11 +680,7 @@ model RateLimitLog {
   blockedAt    DateTime? @map("blocked_at") @db.Timestamptz(6)
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  user User? @relation(
-    fields: [userId],
-    references: [id],
-    onDelete: SetNull
-  )
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([ipAddress])
@@ -762,18 +702,9 @@ model AdminAuditLog {
   notes        String?
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  admin User @relation(
-    "AuditAdmin",
-    fields: [adminId],
-    references: [id]
-  )
+  admin User @relation("AuditAdmin", fields: [adminId], references: [id])
 
-  targetUser User? @relation(
-    "AuditTargetUser",
-    fields: [targetUserId],
-    references: [id],
-    onDelete: SetNull
-  )
+  targetUser User? @relation("AuditTargetUser", fields: [targetUserId], references: [id], onDelete: SetNull)
 
   @@index([adminId])
   @@index([targetUserId])
