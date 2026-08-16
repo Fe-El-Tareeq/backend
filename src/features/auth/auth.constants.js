@@ -1,3 +1,12 @@
-const FEATURE_NAME = 'auth';
+const OTP_EXPIRY_MINUTES = 2;
+const OTP_MAX_ATTEMPTS = 3;
 
-module.exports = { FEATURE_NAME };
+const ACCESS_TOKEN_EXPIRES_IN = "15m";
+const REFRESH_TOKEN_EXPIRES_IN = "7d";
+
+module.exports = {
+  OTP_EXPIRY_MINUTES,
+  OTP_MAX_ATTEMPTS,
+  ACCESS_TOKEN_EXPIRES_IN,
+  REFRESH_TOKEN_EXPIRES_IN,
+};
