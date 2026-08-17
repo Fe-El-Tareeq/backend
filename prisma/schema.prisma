@@ -81,6 +81,7 @@ enum WalletTransactionType {
   ADMIN_CREDIT
   ADMIN_DEBIT
   REFUND
+  SIGNUP_BONUS
 }
 
 enum InvoiceStatus {
@@ -584,7 +585,7 @@ model WalletTransaction {
   balanceAfter     Int                   @map("balance_after")
   referenceType    String?               @map("reference_type") @db.VarChar(30)
   referenceId      String?               @map("reference_id") @db.Uuid
-  idempotencyKey   String?               @unique @map("idempotency_key") @db.VarChar(100)
+  idempotencyKey   String?               @map("idempotency_key") @db.VarChar(100)
   description      String?               @db.VarChar(255)
   createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
   paymentInvoiceId String?               @unique @map("payment_invoice_id") @db.Uuid
