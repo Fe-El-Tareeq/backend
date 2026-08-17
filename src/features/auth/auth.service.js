@@ -12,16 +12,17 @@ const {
 const ApiError = require("../../utils/ApiError");
 const env = require("../../config/env");
 const authRepository = require("./auth.repository");
+const walletRepository = require("../wallet/wallet.repository");
+
+// Signup bonus granted when a wallet is created.
+const SIGNUP_BONUS_TOKENS = 3;
 
 const generateOtp = () => {
   return crypto.randomInt(100000, 1000000).toString();
 };
 
 const hashRefreshToken = (refreshToken) => {
-  return crypto
-    .createHash("sha256")
-    .update(refreshToken)
-    .digest("hex");
+  return crypto.createHash("sha256").update(refreshToken).digest("hex");
 };
 
 const parseExpiresIn = (expiresIn) => {
@@ -53,7 +54,7 @@ const createAccessToken = (user) => {
     env.jwtAccessSecret,
     {
       expiresIn: ACCESS_TOKEN_EXPIRES_IN,
-    }
+    },
   );
 };
 
@@ -67,7 +68,7 @@ const createRefreshToken = (user) => {
     env.jwtRefreshSecret,
     {
       expiresIn: REFRESH_TOKEN_EXPIRES_IN,
-    }
+    },
   );
 };
 
@@ -75,7 +76,7 @@ const persistRefreshToken = async (user, client) => {
   const refreshToken = createRefreshToken(user);
   const tokenHash = hashRefreshToken(refreshToken);
   const expiresAt = new Date(
-    Date.now() + parseExpiresIn(REFRESH_TOKEN_EXPIRES_IN)
+    Date.now() + parseExpiresIn(REFRESH_TOKEN_EXPIRES_IN),
   );
 
   await authRepository.createRefreshToken(
@@ -84,7 +85,7 @@ const persistRefreshToken = async (user, client) => {
       tokenHash,
       expiresAt,
     },
-    client
+    client,
   );
 
   return refreshToken;
@@ -120,9 +121,7 @@ const deliverOtp = async ({ phone, channel, otp }) => {
 const requestOtp = async (phone, channel = "SMS") => {
   const otp = generateOtp();
   const otpHash = await bcrypt.hash(otp, 10);
-  const expiresAt = new Date(
-    Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000
-  );
+  const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
 
   await authRepository.createOtpVerification({
     phone,
@@ -139,14 +138,34 @@ const requestOtp = async (phone, channel = "SMS") => {
     expiresInMinutes: OTP_EXPIRY_MINUTES,
   };
 };
+// Creates a wallet and records the initial signup bonus in the token ledger.
+const createWalletWithSignupBonus = async (userId, client) => {
+  const wallet = await authRepository.createWallet(userId, client);
+
+  await walletRepository.createLedgerEntry(
+    {
+      walletId: wallet.id,
+      transactionType: "SIGNUP_BONUS",
+      tokenAmount: SIGNUP_BONUS_TOKENS,
+      balanceBefore: 0,
+      balanceAfter: SIGNUP_BONUS_TOKENS,
+      referenceType: "USER",
+      referenceId: userId,
+      idempotencyKey: `signup-bonus:${userId}`,
+      description: "Initial signup bonus",
+    },
+    client,
+  );
+
+  return wallet;
+};
 
 const getOrCreateVerifiedUser = async (phone, client) => {
   const existingUser = await authRepository.findUserByPhone(phone, client);
 
   if (!existingUser) {
     const user = await authRepository.createUser(phone, client);
-    const wallet = await authRepository.createWallet(user.id, client);
-
+    const wallet = await createWalletWithSignupBonus(user.id, client);
     return {
       ...user,
       wallet,
@@ -160,8 +179,7 @@ const getOrCreateVerifiedUser = async (phone, client) => {
   }
 
   if (!user.wallet) {
-    const wallet = await authRepository.createWallet(user.id, client);
-
+    const wallet = await createWalletWithSignupBonus(user.id, client);
     return {
       ...user,
       wallet,
@@ -228,7 +246,7 @@ const refresh = async (refreshToken) => {
   return authRepository.runTransaction(async (tx) => {
     const storedToken = await authRepository.findRefreshTokenByHash(
       tokenHash,
-      tx
+      tx,
     );
 
     if (!storedToken) {

@@ -10,6 +10,7 @@ const jwt = require("jsonwebtoken");
 const request = require("supertest");
 
 jest.mock("../src/features/auth/auth.repository");
+jest.mock("../src/features/wallet/wallet.repository");
 jest.mock("../src/config/prisma", () => ({
   user: {
     findUnique: jest.fn(),
@@ -18,6 +19,7 @@ jest.mock("../src/config/prisma", () => ({
 
 const app = require("../src/app");
 const authRepository = require("../src/features/auth/auth.repository");
+const walletRepository = require("../src/features/wallet/wallet.repository");
 const authService = require("../src/features/auth/auth.service");
 const prisma = require("../src/config/prisma");
 const { requireAuth } = require("../src/middleware/auth.middleware");
@@ -47,20 +49,27 @@ beforeEach(() => {
   authRepository.runTransaction.mockImplementation((callback) => {
     return callback(mockTx);
   });
+
+  walletRepository.createLedgerEntry.mockResolvedValue({
+    id: "signup-bonus-transaction",
+    walletId: "wallet-1",
+    transactionType: "SIGNUP_BONUS",
+    tokenAmount: 3,
+    balanceBefore: 0,
+    balanceAfter: 3,
+  });
 });
 
 describe("Auth request OTP", () => {
   test("valid phone succeeds, stores a hash, and does not return OTP", async () => {
-    const response = await request(app)
-      .post("/api/v1/auth/request-otp")
-      .send({
-        phone: "+970599000000",
-        channel: "SMS",
-      });
+    const response = await request(app).post("/api/v1/auth/request-otp").send({
+      phone: "+970599000000",
+      channel: "SMS",
+    });
 
     expect(response.statusCode).toBe(200);
     expect(response.body.success).toBe(true);
-    expect(response.body.data.expiresInMinutes).toBe(5);
+    expect(response.body.data.expiresInMinutes).toBe(2);
     expect(JSON.stringify(response.body)).not.toMatch(/\d{6}/);
 
     const storedOtp = authRepository.createOtpVerification.mock.calls[0][0];
@@ -72,11 +81,9 @@ describe("Auth request OTP", () => {
   });
 
   test("invalid phone is rejected", async () => {
-    const response = await request(app)
-      .post("/api/v1/auth/request-otp")
-      .send({
-        phone: "123",
-      });
+    const response = await request(app).post("/api/v1/auth/request-otp").send({
+      phone: "123",
+    });
 
     expect(response.statusCode).toBe(400);
     expect(response.body.success).toBe(false);
@@ -106,12 +113,10 @@ describe("Auth verify OTP", () => {
     authRepository.createWallet.mockResolvedValue(activeUser.wallet);
     authRepository.createRefreshToken.mockResolvedValue({});
 
-    const response = await request(app)
-      .post("/api/v1/auth/verify-otp")
-      .send({
-        phone: "+970599000000",
-        otp: "123456",
-      });
+    const response = await request(app).post("/api/v1/auth/verify-otp").send({
+      phone: "+970599000000",
+      otp: "123456",
+    });
 
     expect(response.statusCode).toBe(200);
     expect(response.body.data.accessToken).toBeTruthy();
@@ -330,9 +335,7 @@ describe("Auth refresh and logout", () => {
 
     await authService.logout("refresh-token");
 
-    expect(authRepository.revokeRefreshToken).toHaveBeenCalledWith(
-      "refresh-4",
-    );
+    expect(authRepository.revokeRefreshToken).toHaveBeenCalledWith("refresh-4");
   });
 });
 
