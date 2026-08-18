@@ -138,9 +138,18 @@ const requestOtp = async (phone, channel = "SMS") => {
     expiresInMinutes: OTP_EXPIRY_MINUTES,
   };
 };
-// Creates a wallet and records the initial signup bonus in the token ledger.
-const createWalletWithSignupBonus = async (userId, client) => {
-  const wallet = await authRepository.createWallet(userId, client);
+
+const ensureSignupBonus = async (wallet, userId, client) => {
+  const idempotencyKey = `signup-bonus:${userId}`;
+  const existingBonus = await walletRepository.findByIdempotencyKey(
+    wallet.id,
+    idempotencyKey,
+    client,
+  );
+
+  if (existingBonus) {
+    return;
+  }
 
   await walletRepository.createLedgerEntry(
     {
@@ -148,28 +157,122 @@ const createWalletWithSignupBonus = async (userId, client) => {
       transactionType: "SIGNUP_BONUS",
       tokenAmount: SIGNUP_BONUS_TOKENS,
       balanceBefore: 0,
-      balanceAfter: SIGNUP_BONUS_TOKENS,
+      balanceAfter: Number(wallet.tokenBalance || SIGNUP_BONUS_TOKENS),
       referenceType: "USER",
       referenceId: userId,
-      idempotencyKey: `signup-bonus:${userId}`,
+      idempotencyKey,
       description: "Initial signup bonus",
     },
     client,
   );
+};
 
+// Creates a wallet and records the initial signup bonus in the token ledger.
+const createWalletWithSignupBonus = async (userId, client) => {
+  const wallet = await authRepository.createWallet(userId, client);
+  await ensureSignupBonus(wallet, userId, client);
   return wallet;
+};
+
+const ensureWallet = async (user, client) => {
+  if (user.wallet) {
+    await ensureSignupBonus(user.wallet, user.id, client);
+    return user;
+  }
+
+  const wallet = await createWalletWithSignupBonus(user.id, client);
+
+  return {
+    ...user,
+    wallet,
+  };
+};
+
+const createOtpVerification = async (phone, channel = "SMS", client) => {
+  const otp = generateOtp();
+  const otpHash = await bcrypt.hash(otp, 10);
+  const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+
+  await authRepository.createOtpVerification(
+    {
+      phone,
+      otpHash,
+      channel,
+      expiresAt,
+      maxAttempts: OTP_MAX_ATTEMPTS,
+    },
+    client,
+  );
+
+  await deliverOtp({ phone, channel, otp });
+};
+
+const register = async (phone, password) => {
+  const passwordHash = await bcrypt.hash(password, 10);
+
+  return authRepository.runTransaction(async (tx) => {
+    const existingUser = await authRepository.findUserWithPasswordByPhone(
+      phone,
+      tx,
+    );
+
+    if (existingUser?.passwordHash && existingUser.phoneVerifiedAt) {
+      throw new ApiError(409, "A user with this phone already exists.");
+    }
+
+    if (existingUser) {
+      await authRepository.updateUserPasswordHash(
+        existingUser.id,
+        passwordHash,
+        tx,
+      );
+    } else {
+      await authRepository.createUserWithPassword(phone, passwordHash, tx);
+    }
+
+    await createOtpVerification(phone, "SMS", tx);
+
+    return {
+      message: "Registration OTP sent successfully",
+      expiresInMinutes: OTP_EXPIRY_MINUTES,
+    };
+  });
+};
+
+const login = async (phone, password) => {
+  const user = await authRepository.findUserWithPasswordByPhone(phone);
+
+  if (!user?.passwordHash) {
+    throw new ApiError(401, "Invalid phone or password.");
+  }
+
+  const isValidPassword = await bcrypt.compare(password, user.passwordHash);
+
+  if (!isValidPassword) {
+    throw new ApiError(401, "Invalid phone or password.");
+  }
+
+  if (!user.phoneVerifiedAt) {
+    throw new ApiError(403, "Phone number is not verified.");
+  }
+
+  if (user.status !== "ACTIVE") {
+    throw new ApiError(403, "User is not active.");
+  }
+
+  const auth = await buildAuthResponse(user);
+
+  return {
+    message: "Logged in successfully",
+    ...auth,
+  };
 };
 
 const getOrCreateVerifiedUser = async (phone, client) => {
   const existingUser = await authRepository.findUserByPhone(phone, client);
 
   if (!existingUser) {
-    const user = await authRepository.createUser(phone, client);
-    const wallet = await createWalletWithSignupBonus(user.id, client);
-    return {
-      ...user,
-      wallet,
-    };
+    throw new ApiError(404, "User not found.");
   }
 
   let user = existingUser;
@@ -295,6 +398,8 @@ const logout = async (refreshToken) => {
 };
 
 module.exports = {
+  register,
+  login,
   requestOtp,
   verifyOtp,
   refresh,

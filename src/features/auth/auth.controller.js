@@ -1,6 +1,43 @@
 const authService = require("./auth.service");
 const ApiResponse = require("../../utils/ApiResponse");
 
+const register = async (req, res, next) => {
+  try {
+    const { phone, password } = req.validatedData.body;
+
+    const result = await authService.register(phone, password);
+
+    return res.status(201).json(
+      new ApiResponse(201, result.message, {
+        expiresInMinutes: result.expiresInMinutes,
+      })
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+const login = async (req, res, next) => {
+  try {
+    const { phone, password } = req.validatedData.body;
+
+    const result = await authService.login(phone, password);
+
+    return res.status(200).json(
+      new ApiResponse(200, result.message, {
+        user: result.user,
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        tokenType: result.tokenType,
+        accessTokenExpiresIn: result.accessTokenExpiresIn,
+        refreshTokenExpiresIn: result.refreshTokenExpiresIn,
+      })
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
 const requestOtp = async (req, res, next) => {
   try {
     const { phone, channel } = req.validatedData.body;
@@ -71,6 +108,8 @@ const logout = async (req, res, next) => {
 };
 
 module.exports = {
+  register,
+  login,
   requestOtp,
   verifyOtp,
   refresh,

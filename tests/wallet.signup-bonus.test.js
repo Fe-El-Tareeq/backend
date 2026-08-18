@@ -53,8 +53,12 @@ describe("Signup Bonus Wallet Tests", () => {
       verifiedAt: new Date(),
     });
 
-    authRepository.findUserByPhone.mockResolvedValue(null);
-    authRepository.createUser.mockResolvedValue(user);
+    authRepository.findUserByPhone.mockResolvedValue({
+      ...user,
+      phoneVerifiedAt: null,
+      wallet: null,
+    });
+    authRepository.updateUserPhoneVerifiedAt.mockResolvedValue(user);
     authRepository.createWallet.mockResolvedValue(wallet);
 
     walletRepository.createLedgerEntry.mockResolvedValue({
@@ -71,6 +75,12 @@ describe("Signup Bonus Wallet Tests", () => {
     });
 
     await authService.verifyOtp("+970599000000", "123456");
+
+    expect(authRepository.createUser).not.toHaveBeenCalled();
+    expect(authRepository.updateUserPhoneVerifiedAt).toHaveBeenCalledWith(
+      "user-1",
+      expect.anything(),
+    );
 
     expect(authRepository.createWallet).toHaveBeenCalledWith(
       "user-1",

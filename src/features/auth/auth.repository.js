@@ -61,6 +61,15 @@ const findUserByPhone = async (phone, client = prisma) => {
   });
 };
 
+const findUserWithPasswordByPhone = async (phone, client = prisma) => {
+  return client.user.findUnique({
+    where: { phone },
+    include: {
+      wallet: true,
+    },
+  });
+};
+
 const findUserById = async (userId, client = prisma) => {
   return client.user.findUnique({
     where: { id: userId },
@@ -78,6 +87,30 @@ const createUser = async (phone, client = prisma) => {
     data: {
       phone,
       phoneVerifiedAt: new Date(),
+    },
+    include: {
+      wallet: true,
+    },
+  });
+};
+
+const createUserWithPassword = async (phone, passwordHash, client = prisma) => {
+  return client.user.create({
+    data: {
+      phone,
+      passwordHash,
+    },
+    include: {
+      wallet: true,
+    },
+  });
+};
+
+const updateUserPasswordHash = async (userId, passwordHash, client = prisma) => {
+  return client.user.update({
+    where: { id: userId },
+    data: {
+      passwordHash,
     },
     include: {
       wallet: true,
@@ -147,8 +180,11 @@ module.exports = {
   incrementOtpAttempts,
   markOtpAsVerified,
   findUserByPhone,
+  findUserWithPasswordByPhone,
   findUserById,
   createUser,
+  createUserWithPassword,
+  updateUserPasswordHash,
   createWallet,
   updateUserPhoneVerifiedAt,
   createRefreshToken,

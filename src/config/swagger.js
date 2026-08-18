@@ -56,7 +56,8 @@ const swaggerDefinition = {
     },
     {
       name: "Authentication",
-      description: "OTP login, access-token refresh, and logout.",
+      description:
+        "Password registration/login, phone verification OTP, access-token refresh, and logout.",
     },
     {
       name: "Users",
@@ -109,6 +110,45 @@ const swaggerDefinition = {
             items: {
               $ref: "#/components/schemas/ErrorDetail",
             },
+          },
+        },
+      },
+      RegisterRequest: {
+        type: "object",
+        required: ["phone", "password"],
+        properties: {
+          phone: {
+            type: "string",
+            minLength: 8,
+            maxLength: 20,
+            example: "+970599123456",
+          },
+          password: {
+            type: "string",
+            format: "password",
+            minLength: 8,
+            pattern: "^(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{8,}$",
+            description:
+              "Must be at least 8 characters and include one uppercase letter, one number, and one special character.",
+            example: "Strong1!",
+          },
+        },
+      },
+      LoginRequest: {
+        type: "object",
+        required: ["phone", "password"],
+        properties: {
+          phone: {
+            type: "string",
+            minLength: 8,
+            maxLength: 20,
+            example: "+970599123456",
+          },
+          password: {
+            type: "string",
+            format: "password",
+            minLength: 1,
+            example: "Strong1!",
           },
         },
       },
@@ -500,6 +540,41 @@ const swaggerDefinition = {
         message: "API is running",
         data: null,
       }),
+      RegisterResponse: apiResponse(
+        {
+          type: "object",
+          required: ["expiresInMinutes"],
+          properties: {
+            expiresInMinutes: {
+              type: "integer",
+              example: 2,
+            },
+          },
+        },
+        {
+          success: true,
+          message: "Registration OTP sent successfully",
+          data: {
+            expiresInMinutes: 2,
+          },
+        },
+      ),
+      LoginResponse: apiResponse({
+        allOf: [
+          {
+            type: "object",
+            required: ["user"],
+            properties: {
+              user: {
+                $ref: "#/components/schemas/UserSummary",
+              },
+            },
+          },
+          {
+            $ref: "#/components/schemas/AuthTokens",
+          },
+        ],
+      }),
       OtpRequestResponse: apiResponse(
         {
           type: "object",
@@ -585,12 +660,120 @@ const swaggerDefinition = {
         },
       },
     },
+    "/api/v1/auth/register": {
+      post: {
+        tags: ["Authentication"],
+        summary: "Register and request phone verification",
+        description:
+          "Creates or prepares an unverified password user and sends a phone verification OTP. This endpoint does not issue access or refresh tokens. Passwords must be at least 8 characters and include one uppercase letter, one number, and one special character.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/RegisterRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description:
+              "Registration prepared and verification OTP created. No tokens are issued until OTP verification succeeds.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/RegisterResponse",
+                },
+              },
+            },
+          },
+          400: {
+            $ref: "#/components/responses/ValidationFailed",
+          },
+          409: errorResponse("A user with this phone already exists."),
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/api/v1/auth/login": {
+      post: {
+        tags: ["Authentication"],
+        summary: "Log in with phone and password",
+        description:
+          "Authenticates a verified ACTIVE user with phone and password. Wrong phone, missing password support on a legacy user, and wrong password all return a generic invalid-credentials response. Users whose phoneVerifiedAt is null are rejected until OTP verification succeeds.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/LoginRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Login succeeded and tokens were issued.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/LoginResponse",
+                },
+              },
+            },
+          },
+          400: {
+            $ref: "#/components/responses/ValidationFailed",
+          },
+          401: errorResponse("Invalid phone or password."),
+          403: {
+            description:
+              "Phone number is not verified, or the user is suspended or banned.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ErrorResponse",
+                },
+                examples: {
+                  unverified: {
+                    value: {
+                      success: false,
+                      message: "Phone number is not verified.",
+                      errors: [],
+                    },
+                  },
+                  inactive: {
+                    value: {
+                      success: false,
+                      message: "User is not active.",
+                      errors: [],
+                    },
+                  },
+                },
+              },
+            },
+          },
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
     "/api/v1/auth/request-otp": {
       post: {
         tags: ["Authentication"],
-        summary: "Request an OTP",
+        summary: "Request a phone verification OTP",
         description:
-          "Creates a six-digit OTP for the provided phone number. In development the OTP is logged by the backend; production delivery is left to the OTP provider integration.",
+          "Creates a six-digit phone verification OTP for the provided phone number. This endpoint does not authenticate the user by itself and verification tokens are issued only for a prepared or existing user. In development the OTP is logged by the backend; production delivery is left to the OTP provider integration.",
         requestBody: {
           required: true,
           content: {
@@ -627,9 +810,9 @@ const swaggerDefinition = {
     "/api/v1/auth/verify-otp": {
       post: {
         tags: ["Authentication"],
-        summary: "Verify an OTP and receive tokens",
+        summary: "Verify phone OTP and receive tokens",
         description:
-          "Verifies the latest OTP for a phone number. On success, the backend creates or updates the user, ensures a wallet exists with the signup bonus ledger entry for new wallets, and returns access and refresh tokens.",
+          "Verifies the latest phone verification OTP for a phone number. On success, the backend marks the OTP used, sets phoneVerifiedAt, ensures a wallet exists with exactly one signup bonus ledger entry for new wallets, and returns access and refresh tokens.",
         requestBody: {
           required: true,
           content: {

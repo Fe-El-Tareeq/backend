@@ -58,6 +58,8 @@ beforeEach(() => {
     balanceBefore: 0,
     balanceAfter: 3,
   });
+
+  walletRepository.findByIdempotencyKey.mockResolvedValue(null);
 });
 
 describe("Auth request OTP", () => {
@@ -91,8 +93,156 @@ describe("Auth request OTP", () => {
   });
 });
 
+describe("Auth register and login", () => {
+  test("register validates password strength", async () => {
+    const response = await request(app).post("/api/v1/auth/register").send({
+      phone: "+970599000000",
+      password: "weakpass",
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.success).toBe(false);
+    expect(authRepository.createUserWithPassword).not.toHaveBeenCalled();
+  });
+
+  test("register creates unverified user, stores hashed password, creates OTP, and returns no tokens", async () => {
+    authRepository.findUserWithPasswordByPhone.mockResolvedValue(null);
+    authRepository.createUserWithPassword.mockResolvedValue({
+      ...activeUser,
+      passwordHash: "$2a$10$hashed",
+      wallet: null,
+    });
+    authRepository.createOtpVerification.mockResolvedValue({});
+
+    const response = await request(app).post("/api/v1/auth/register").send({
+      phone: "+970599000001",
+      password: "Strong1!",
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.body.data.expiresInMinutes).toBe(2);
+    expect(response.body.data.accessToken).toBeUndefined();
+    expect(response.body.data.refreshToken).toBeUndefined();
+    expect(JSON.stringify(response.body)).not.toContain("passwordHash");
+
+    const [phone, passwordHash] =
+      authRepository.createUserWithPassword.mock.calls[0];
+
+    expect(phone).toBe("+970599000001");
+    expect(passwordHash).toMatch(/^\$2/);
+    expect(passwordHash).not.toBe("Strong1!");
+    expect(authRepository.createOtpVerification).toHaveBeenCalled();
+    expect(authRepository.createWallet).not.toHaveBeenCalled();
+    expect(walletRepository.createLedgerEntry).not.toHaveBeenCalled();
+    expect(authRepository.createRefreshToken).not.toHaveBeenCalled();
+  });
+
+  test("duplicate registration for unverified user does not duplicate user wallet or bonus", async () => {
+    authRepository.findUserWithPasswordByPhone.mockResolvedValue({
+      ...activeUser,
+      phoneVerifiedAt: null,
+      passwordHash: "$2a$10$oldhash",
+    });
+    authRepository.updateUserPasswordHash.mockResolvedValue({
+      ...activeUser,
+      phoneVerifiedAt: null,
+      passwordHash: "$2a$10$newhash",
+    });
+    authRepository.createOtpVerification.mockResolvedValue({});
+
+    const result = await authService.register("+970599000000", "Strong1!");
+
+    expect(result.message).toBe("Registration OTP sent successfully");
+    expect(authRepository.createUserWithPassword).not.toHaveBeenCalled();
+    expect(authRepository.updateUserPasswordHash).toHaveBeenCalled();
+    expect(authRepository.createWallet).not.toHaveBeenCalled();
+    expect(walletRepository.createLedgerEntry).not.toHaveBeenCalled();
+  });
+
+  test("register rejects an existing verified password user", async () => {
+    authRepository.findUserWithPasswordByPhone.mockResolvedValue({
+      ...activeUser,
+      passwordHash: "$2a$10$hashed",
+    });
+
+    await expect(
+      authService.register("+970599000000", "Strong1!"),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: "A user with this phone already exists.",
+    });
+  });
+
+  test("login succeeds with a valid password", async () => {
+    const passwordHash = await bcrypt.hash("Strong1!", 10);
+
+    authRepository.findUserWithPasswordByPhone.mockResolvedValue({
+      ...activeUser,
+      passwordHash,
+    });
+    authRepository.createRefreshToken.mockResolvedValue({});
+
+    const response = await request(app).post("/api/v1/auth/login").send({
+      phone: "+970599000000",
+      password: "Strong1!",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.accessToken).toBeTruthy();
+    expect(response.body.data.refreshToken).toBeTruthy();
+    expect(response.body.data.user.passwordHash).toBeUndefined();
+  });
+
+  test("login before phone verification is rejected", async () => {
+    const passwordHash = await bcrypt.hash("Strong1!", 10);
+
+    authRepository.findUserWithPasswordByPhone.mockResolvedValue({
+      ...activeUser,
+      phoneVerifiedAt: null,
+      passwordHash,
+    });
+
+    await expect(
+      authService.login("+970599000000", "Strong1!"),
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      message: "Phone number is not verified.",
+    });
+  });
+
+  test("login rejects an invalid password", async () => {
+    const passwordHash = await bcrypt.hash("Strong1!", 10);
+
+    authRepository.findUserWithPasswordByPhone.mockResolvedValue({
+      ...activeUser,
+      passwordHash,
+    });
+
+    await expect(
+      authService.login("+970599000000", "Wrong1!"),
+    ).rejects.toMatchObject({
+      statusCode: 401,
+      message: "Invalid phone or password.",
+    });
+  });
+
+  test("legacy user without password is handled with generic credentials error", async () => {
+    authRepository.findUserWithPasswordByPhone.mockResolvedValue({
+      ...activeUser,
+      passwordHash: null,
+    });
+
+    await expect(
+      authService.login("+970599000000", "Strong1!"),
+    ).rejects.toMatchObject({
+      statusCode: 401,
+      message: "Invalid phone or password.",
+    });
+  });
+});
+
 describe("Auth verify OTP", () => {
-  test("valid OTP creates user wallet, verifies OTP, and issues tokens", async () => {
+  test("valid OTP activates prepared user, creates wallet, and issues tokens", async () => {
     const otpHash = await bcrypt.hash("123456", 10);
 
     authRepository.findLatestOtpByPhone.mockResolvedValue({
@@ -105,9 +255,15 @@ describe("Auth verify OTP", () => {
       verifiedAt: null,
     });
 
-    authRepository.findUserByPhone.mockResolvedValue(null);
-    authRepository.createUser.mockResolvedValue({
+    authRepository.findUserByPhone.mockResolvedValue({
       ...activeUser,
+      phoneVerifiedAt: null,
+      passwordHash: "$2a$10$hashed",
+      wallet: null,
+    });
+    authRepository.updateUserPhoneVerifiedAt.mockResolvedValue({
+      ...activeUser,
+      passwordHash: "$2a$10$hashed",
       wallet: null,
     });
     authRepository.createWallet.mockResolvedValue(activeUser.wallet);
@@ -125,12 +281,20 @@ describe("Auth verify OTP", () => {
       "otp-1",
       mockTx,
     );
-    expect(authRepository.createUser).toHaveBeenCalledWith(
-      "+970599000000",
+    expect(authRepository.updateUserPhoneVerifiedAt).toHaveBeenCalledWith(
+      activeUser.id,
       mockTx,
     );
+    expect(authRepository.createUser).not.toHaveBeenCalled();
     expect(authRepository.createWallet).toHaveBeenCalledWith(
       activeUser.id,
+      mockTx,
+    );
+    expect(walletRepository.createLedgerEntry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transactionType: "SIGNUP_BONUS",
+        idempotencyKey: `signup-bonus:${activeUser.id}`,
+      }),
       mockTx,
     );
 
@@ -141,6 +305,33 @@ describe("Auth verify OTP", () => {
     expect(storedRefreshToken.tokenHash).not.toBe(
       response.body.data.refreshToken,
     );
+  });
+
+  test("valid OTP without a prepared user is rejected", async () => {
+    const otpHash = await bcrypt.hash("123456", 10);
+
+    authRepository.findLatestOtpByPhone.mockResolvedValue({
+      id: "otp-no-user",
+      phone: "+970599000003",
+      otpHash,
+      attemptCount: 0,
+      maxAttempts: 5,
+      expiresAt: new Date(Date.now() + 60 * 1000),
+      verifiedAt: null,
+    });
+
+    authRepository.findUserByPhone.mockResolvedValue(null);
+
+    await expect(
+      authService.verifyOtp("+970599000003", "123456"),
+    ).rejects.toMatchObject({
+      statusCode: 404,
+      message: "User not found.",
+    });
+
+    expect(authRepository.createUser).not.toHaveBeenCalled();
+    expect(authRepository.createWallet).not.toHaveBeenCalled();
+    expect(authRepository.createRefreshToken).not.toHaveBeenCalled();
   });
 
   test("second verification for existing user does not duplicate wallet", async () => {
@@ -157,12 +348,71 @@ describe("Auth verify OTP", () => {
     });
 
     authRepository.findUserByPhone.mockResolvedValue(activeUser);
+    walletRepository.findByIdempotencyKey.mockResolvedValue({
+      id: "existing-signup-bonus",
+    });
     authRepository.createRefreshToken.mockResolvedValue({});
 
     await authService.verifyOtp("+970599000000", "123456");
 
     expect(authRepository.createUser).not.toHaveBeenCalled();
     expect(authRepository.createWallet).not.toHaveBeenCalled();
+    expect(walletRepository.createLedgerEntry).not.toHaveBeenCalled();
+  });
+
+  test("verify OTP activates registered unverified user and then issues tokens", async () => {
+    const otpHash = await bcrypt.hash("123456", 10);
+
+    authRepository.findLatestOtpByPhone.mockResolvedValue({
+      id: "otp-registration",
+      phone: "+970599000002",
+      otpHash,
+      attemptCount: 0,
+      maxAttempts: 5,
+      expiresAt: new Date(Date.now() + 60 * 1000),
+      verifiedAt: null,
+    });
+
+    authRepository.findUserByPhone.mockResolvedValue({
+      ...activeUser,
+      phone: "+970599000002",
+      phoneVerifiedAt: null,
+      passwordHash: "$2a$10$hashed",
+      wallet: null,
+    });
+
+    authRepository.updateUserPhoneVerifiedAt.mockResolvedValue({
+      ...activeUser,
+      phone: "+970599000002",
+      passwordHash: "$2a$10$hashed",
+      wallet: null,
+    });
+    authRepository.createWallet.mockResolvedValue(activeUser.wallet);
+    authRepository.createRefreshToken.mockResolvedValue({});
+
+    const response = await request(app).post("/api/v1/auth/verify-otp").send({
+      phone: "+970599000002",
+      otp: "123456",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.accessToken).toBeTruthy();
+    expect(response.body.data.refreshToken).toBeTruthy();
+    expect(response.body.data.user.passwordHash).toBeUndefined();
+    expect(authRepository.updateUserPhoneVerifiedAt).toHaveBeenCalledWith(
+      activeUser.id,
+      mockTx,
+    );
+    expect(authRepository.createWallet).toHaveBeenCalledWith(
+      activeUser.id,
+      mockTx,
+    );
+    expect(walletRepository.createLedgerEntry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey: `signup-bonus:${activeUser.id}`,
+      }),
+      mockTx,
+    );
   });
 
   test("invalid OTP increments attempts and is rejected", async () => {
