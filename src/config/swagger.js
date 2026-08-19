@@ -68,6 +68,10 @@ const swaggerDefinition = {
       description: "Public location lookup APIs used during registration.",
     },
     {
+      name: "Errands",
+      description: "Neighborhood notice-board errand posting and management.",
+    },
+    {
       name: "Wallet",
       description: "Authenticated token wallet and transaction history APIs.",
     },
@@ -379,6 +383,302 @@ const swaggerDefinition = {
         description:
           "Provide at least one of fullName or neighborhoodId. neighborhoodId must reference an active neighborhood.",
       },
+      ErrandCreateRequest: {
+        type: "object",
+        required: [
+          "clientRequestKey",
+          "categoryId",
+          "title",
+          "itemsDescription",
+          "destinationKeyword",
+          "weightClass",
+        ],
+        properties: {
+          clientRequestKey: {
+            type: "string",
+            format: "uuid",
+            description:
+              "Offline idempotency key. Reusing the same key with identical data returns the existing errand without another wallet debit.",
+            example: "60a32850-bd3f-444a-84b4-c750abf6ecb8",
+          },
+          categoryId: {
+            type: "string",
+            format: "uuid",
+            description: "Must reference an active seeded category.",
+            example: "60a32850-bd3f-444a-84b4-c750abf6ecb6",
+          },
+          title: {
+            type: "string",
+            minLength: 3,
+            maxLength: 80,
+            example: "Buy medicine",
+          },
+          itemsDescription: {
+            type: "string",
+            minLength: 3,
+            maxLength: 1000,
+            example: "One box of Panadol",
+          },
+          destinationKeyword: {
+            type: "string",
+            minLength: 2,
+            maxLength: 150,
+            example: "Central Pharmacy",
+          },
+          weightClass: {
+            type: "string",
+            enum: ["LIGHT", "MEDIUM", "HEAVY"],
+            example: "LIGHT",
+          },
+          isUrgent: {
+            type: "boolean",
+            default: false,
+            example: false,
+          },
+          isInterZone: {
+            type: "boolean",
+            default: false,
+            example: false,
+          },
+          neededByTime: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+            description:
+              "Must be a future ISO datetime when provided. Also controls expiration for Phase 5.",
+            example: "2026-08-20T10:00:00.000Z",
+          },
+          voiceNoteUrl: {
+            type: "string",
+            format: "uri",
+            nullable: true,
+            example: null,
+          },
+          voiceNoteDurationSec: {
+            type: "integer",
+            minimum: 0,
+            maximum: 30,
+            nullable: true,
+            example: null,
+          },
+        },
+      },
+      ErrandUpdateRequest: {
+        type: "object",
+        minProperties: 1,
+        properties: {
+          categoryId: {
+            type: "string",
+            format: "uuid",
+          },
+          title: {
+            type: "string",
+            minLength: 3,
+            maxLength: 80,
+          },
+          itemsDescription: {
+            type: "string",
+            minLength: 3,
+            maxLength: 1000,
+          },
+          destinationKeyword: {
+            type: "string",
+            minLength: 2,
+            maxLength: 150,
+          },
+          weightClass: {
+            type: "string",
+            enum: ["LIGHT", "MEDIUM", "HEAVY"],
+          },
+          isUrgent: {
+            type: "boolean",
+          },
+          isInterZone: {
+            type: "boolean",
+          },
+          neededByTime: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+          },
+          voiceNoteUrl: {
+            type: "string",
+            format: "uri",
+            nullable: true,
+          },
+          voiceNoteDurationSec: {
+            type: "integer",
+            minimum: 0,
+            maximum: 30,
+            nullable: true,
+          },
+        },
+        description:
+          "Only the requester can update OPEN errands. requesterId, neighborhoodId, status, token cost, transaction IDs, and createdAt are immutable.",
+      },
+      Errand: {
+        type: "object",
+        required: [
+          "id",
+          "requesterId",
+          "neighborhoodId",
+          "clientRequestKey",
+          "title",
+          "itemsDescription",
+          "destinationKeyword",
+          "weightClass",
+          "isUrgent",
+          "isInterZone",
+          "priorityScore",
+          "calculatedFeeNis",
+          "postTokenCost",
+          "status",
+          "expiresAt",
+          "createdAt",
+          "updatedAt",
+        ],
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid",
+          },
+          requesterId: {
+            type: "string",
+            format: "uuid",
+          },
+          categoryId: {
+            type: "string",
+            format: "uuid",
+            nullable: true,
+          },
+          neighborhoodId: {
+            type: "string",
+            format: "uuid",
+          },
+          clientRequestKey: {
+            type: "string",
+            format: "uuid",
+          },
+          title: {
+            type: "string",
+          },
+          itemsDescription: {
+            type: "string",
+          },
+          destinationKeyword: {
+            type: "string",
+          },
+          weightClass: {
+            type: "string",
+            enum: ["LIGHT", "MEDIUM", "HEAVY"],
+          },
+          isUrgent: {
+            type: "boolean",
+          },
+          isInterZone: {
+            type: "boolean",
+          },
+          priorityScore: {
+            type: "number",
+            example: 8,
+          },
+          calculatedFeeNis: {
+            type: "number",
+            example: 5,
+          },
+          postTokenCost: {
+            type: "integer",
+            example: 1,
+          },
+          postTokenTransactionId: {
+            type: "string",
+            format: "uuid",
+            nullable: true,
+          },
+          voiceNoteUrl: {
+            type: "string",
+            nullable: true,
+          },
+          voiceNoteDurationSec: {
+            type: "integer",
+            nullable: true,
+          },
+          status: {
+            type: "string",
+            enum: ["OPEN", "MATCHED", "CANCELLED", "EXPIRED", "COMPLETED"],
+          },
+          neededByTime: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+          },
+          expiresAt: {
+            type: "string",
+            format: "date-time",
+          },
+          category: {
+            type: "object",
+            nullable: true,
+          },
+          neighborhood: {
+            $ref: "#/components/schemas/Neighborhood",
+          },
+          requester: {
+            type: "object",
+            properties: {
+              id: {
+                type: "string",
+                format: "uuid",
+              },
+              fullName: {
+                type: "string",
+                nullable: true,
+              },
+              trustScore: {
+                type: "number",
+              },
+            },
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time",
+          },
+          updatedAt: {
+            type: "string",
+            format: "date-time",
+          },
+        },
+      },
+      ErrandListData: {
+        type: "object",
+        required: ["errands", "pagination"],
+        properties: {
+          errands: {
+            type: "array",
+            items: {
+              $ref: "#/components/schemas/Errand",
+            },
+          },
+          pagination: {
+            type: "object",
+            required: ["skip", "take", "total"],
+            properties: {
+              skip: {
+                type: "integer",
+                example: 0,
+              },
+              take: {
+                type: "integer",
+                example: 20,
+              },
+              total: {
+                type: "integer",
+                example: 1,
+              },
+            },
+          },
+        },
+      },
       Wallet: {
         type: "object",
         required: ["id", "userId", "tokenBalance", "createdAt", "updatedAt"],
@@ -640,6 +940,18 @@ const swaggerDefinition = {
       }),
       NeighborhoodListResponse: apiResponse({
         $ref: "#/components/schemas/NeighborhoodListData",
+      }),
+      ErrandResponse: apiResponse({
+        type: "object",
+        required: ["errand"],
+        properties: {
+          errand: {
+            $ref: "#/components/schemas/Errand",
+          },
+        },
+      }),
+      ErrandListResponse: apiResponse({
+        $ref: "#/components/schemas/ErrandListData",
       }),
       WalletResponse: apiResponse({
         $ref: "#/components/schemas/Wallet",
@@ -1061,6 +1373,298 @@ const swaggerDefinition = {
               },
             },
           },
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/api/v1/errands": {
+      get: {
+        tags: ["Errands"],
+        summary: "List neighborhood errands",
+        description:
+          "Returns a paginated notice-board list. When authenticated and neighborhoodId is omitted, the user's neighborhood is used. By default only non-expired OPEN errands are returned.",
+        security: [
+          {
+            bearerAuth: [],
+          },
+        ],
+        parameters: [
+          {
+            name: "neighborhoodId",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+          },
+          {
+            name: "status",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              enum: ["OPEN", "MATCHED", "CANCELLED", "EXPIRED", "COMPLETED"],
+            },
+          },
+          {
+            name: "categoryId",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+          },
+          {
+            name: "urgent",
+            in: "query",
+            required: false,
+            schema: {
+              type: "boolean",
+            },
+          },
+          {
+            name: "skip",
+            in: "query",
+            required: false,
+            schema: {
+              type: "integer",
+              minimum: 0,
+              default: 0,
+            },
+          },
+          {
+            name: "take",
+            in: "query",
+            required: false,
+            schema: {
+              type: "integer",
+              minimum: 1,
+              maximum: 50,
+              default: 20,
+            },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Errands retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ErrandListResponse",
+                },
+              },
+            },
+          },
+          400: {
+            $ref: "#/components/responses/ValidationFailed",
+          },
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+      post: {
+        tags: ["Errands"],
+        summary: "Create an errand",
+        description:
+          "Creates an OPEN errand in the authenticated user's selected neighborhood and atomically debits 1 posting token with wallet transaction type ERRAND_POST_DEBIT. clientRequestKey makes unstable-network retries safe; conflicting reuse returns 409.",
+        security: [
+          {
+            bearerAuth: [],
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/ErrandCreateRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description: "Errand created successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ErrandResponse",
+                },
+              },
+            },
+          },
+          400: errorResponse(
+            "Validation failed, profile is incomplete, category is inactive, or token balance is insufficient.",
+          ),
+          401: {
+            $ref: "#/components/responses/Unauthorized",
+          },
+          403: {
+            $ref: "#/components/responses/Forbidden",
+          },
+          409: errorResponse(
+            "Client request key has already been used with different errand data.",
+          ),
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/api/v1/errands/{id}": {
+      get: {
+        tags: ["Errands"],
+        summary: "Get errand details",
+        description:
+          "Returns a safe errand view with category, neighborhood, and requester summary. Password hashes, refresh tokens, and wallet internals are never returned.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Errand retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ErrandResponse",
+                },
+              },
+            },
+          },
+          400: {
+            $ref: "#/components/responses/ValidationFailed",
+          },
+          404: errorResponse("Errand not found."),
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+      patch: {
+        tags: ["Errands"],
+        summary: "Update own open errand",
+        description:
+          "Only the requester can update an OPEN errand. Derived fee, priority, and expiration are recalculated. Posting tokens are not debited again for edits.",
+        security: [
+          {
+            bearerAuth: [],
+          },
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/ErrandUpdateRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Errand updated successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ErrandResponse",
+                },
+              },
+            },
+          },
+          400: errorResponse(
+            "Validation failed or errand cannot be updated in its current status.",
+          ),
+          401: {
+            $ref: "#/components/responses/Unauthorized",
+          },
+          403: errorResponse("You are not allowed to modify this errand."),
+          404: errorResponse("Errand not found."),
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/api/v1/errands/{id}/cancel": {
+      post: {
+        tags: ["Errands"],
+        summary: "Cancel own open errand",
+        description:
+          "Only the requester can cancel an OPEN errand. The record is kept and status is set to CANCELLED. Phase 5 does not refund the posting token.",
+        security: [
+          {
+            bearerAuth: [],
+          },
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Errand cancelled successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ErrandResponse",
+                },
+              },
+            },
+          },
+          400: errorResponse(
+            "Validation failed or errand cannot be cancelled in its current status.",
+          ),
+          401: {
+            $ref: "#/components/responses/Unauthorized",
+          },
+          403: errorResponse("You are not allowed to modify this errand."),
+          404: errorResponse("Errand not found."),
           429: {
             $ref: "#/components/responses/TooManyRequests",
           },

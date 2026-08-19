@@ -64,6 +64,74 @@ const validateIdempotentOperation = (
 
   return existingTransaction;
 };
+
+const executeDebit = async (
+  {
+    userId,
+    amount,
+    transactionType,
+    referenceType = null,
+    referenceId = null,
+    idempotencyKey = null,
+    description = null,
+  },
+  client,
+) => {
+  // Locks the wallet row until this database transaction finishes.
+  const wallet = await repository.lockWallet(userId, client);
+
+  if (!wallet) {
+    throw new ApiError(404, "Wallet not found");
+  }
+
+  // Check after locking so concurrent retries return the first operation.
+  if (idempotencyKey) {
+    const existingTransaction = await repository.findByIdempotencyKey(
+      wallet.id,
+      idempotencyKey,
+      client,
+    );
+
+    if (existingTransaction) {
+      return validateIdempotentOperation(existingTransaction, {
+        amount,
+        transactionType,
+        referenceType,
+        referenceId,
+      });
+    }
+  }
+
+  const balanceBefore = wallet.token_balance;
+
+  // Prevents the wallet balance from becoming negative.
+  if (balanceBefore < amount) {
+    throw new ApiError(400, "Insufficient token balance");
+  }
+
+  const balanceAfter = balanceBefore - amount;
+
+  // Updates the wallet balance inside the same database transaction.
+  await repository.updateBalance(wallet.id, balanceAfter, client);
+  // Records the debit operation in the wallet ledger.
+  const ledgerEntry = await repository.createLedgerEntry(
+    {
+      walletId: wallet.id,
+      transactionType,
+      tokenAmount: amount,
+      balanceBefore,
+      balanceAfter,
+      referenceType,
+      referenceId,
+      idempotencyKey,
+      description,
+    },
+    client,
+  );
+
+  return ledgerEntry;
+};
+
 // Deducts tokens from a user's wallet safely inside a database transaction.
 const debit = async ({
   userId,
@@ -73,64 +141,25 @@ const debit = async ({
   referenceId = null,
   idempotencyKey = null,
   description = null,
+  client = null,
 }) => {
   validateTokenAmount(amount);
 
-  return prisma.$transaction(async (tx) => {
-    // Locks the wallet row until this database transaction finishes.
-    const wallet = await repository.lockWallet(userId, tx);
+  const payload = {
+    userId,
+    amount,
+    transactionType,
+    referenceType,
+    referenceId,
+    idempotencyKey,
+    description,
+  };
 
-    if (!wallet) {
-      throw new ApiError(404, "Wallet not found");
-    }
+  if (client) {
+    return executeDebit(payload, client);
+  }
 
-    // Check after locking so concurrent retries return the first operation.
-    if (idempotencyKey) {
-      const existingTransaction = await repository.findByIdempotencyKey(
-        wallet.id,
-        idempotencyKey,
-        tx,
-      );
-
-      if (existingTransaction) {
-        return validateIdempotentOperation(existingTransaction, {
-          amount,
-          transactionType,
-          referenceType,
-          referenceId,
-        });
-      }
-    }
-
-    const balanceBefore = wallet.token_balance;
-
-    // Prevents the wallet balance from becoming negative.
-    if (balanceBefore < amount) {
-      throw new ApiError(400, "Insufficient token balance");
-    }
-
-    const balanceAfter = balanceBefore - amount;
-
-    // Updates the wallet balance inside the same database transaction.
-    await repository.updateBalance(wallet.id, balanceAfter, tx);
-    // Records the debit operation in the wallet ledger.
-    const ledgerEntry = await repository.createLedgerEntry(
-      {
-        walletId: wallet.id,
-        transactionType,
-        tokenAmount: amount,
-        balanceBefore,
-        balanceAfter,
-        referenceType,
-        referenceId,
-        idempotencyKey,
-        description,
-      },
-      tx,
-    );
-
-    return ledgerEntry;
-  });
+  return prisma.$transaction((tx) => executeDebit(payload, tx));
 };
 // Adds tokens to a user's wallet safely inside a database transaction.
 const credit = async ({
