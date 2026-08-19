@@ -3,9 +3,19 @@ const ApiResponse = require("../../utils/ApiResponse");
 
 const register = async (req, res, next) => {
   try {
-    const { phone, password } = req.validatedData.body;
+    const {
+      fullName,
+      phone,
+      password,
+      neighborhoodId,
+    } = req.validatedData.body;
 
-    const result = await authService.register(phone, password);
+    const result = await authService.register({
+      fullName,
+      phone,
+      password,
+      neighborhoodId,
+    });
 
     return res.status(201).json(
       new ApiResponse(201, result.message, {

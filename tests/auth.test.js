@@ -15,6 +15,9 @@ jest.mock("../src/config/prisma", () => ({
   user: {
     findUnique: jest.fn(),
   },
+  neighborhood: {
+    findMany: jest.fn(),
+  },
 }));
 
 const app = require("../src/app");
@@ -35,6 +38,12 @@ const activeUser = {
   wallet: {
     id: "wallet-1",
   },
+};
+
+const activeNeighborhood = {
+  id: "60a32850-bd3f-444a-84b4-c750abf6ecb6",
+  name: "Al-Bireh",
+  governorate: "Ramallah and Al-Bireh",
 };
 
 const runMiddleware = (middleware, req) => {
@@ -60,6 +69,10 @@ beforeEach(() => {
   });
 
   walletRepository.findByIdempotencyKey.mockResolvedValue(null);
+  authRepository.findActiveNeighborhoodById.mockResolvedValue(
+    activeNeighborhood,
+  );
+  prisma.neighborhood.findMany.mockResolvedValue([activeNeighborhood]);
 });
 
 describe("Auth request OTP", () => {
@@ -96,13 +109,85 @@ describe("Auth request OTP", () => {
 describe("Auth register and login", () => {
   test("register validates password strength", async () => {
     const response = await request(app).post("/api/v1/auth/register").send({
+      fullName: "Hala Jendeya",
       phone: "+970599000000",
       password: "weakpass",
+      neighborhoodId: activeNeighborhood.id,
     });
 
     expect(response.statusCode).toBe(400);
     expect(response.body.success).toBe(false);
     expect(authRepository.createUserWithPassword).not.toHaveBeenCalled();
+  });
+
+  test("register rejects missing fullName", async () => {
+    const response = await request(app).post("/api/v1/auth/register").send({
+      phone: "+970599000001",
+      password: "Strong1!",
+      neighborhoodId: activeNeighborhood.id,
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.success).toBe(false);
+    expect(authRepository.createUserWithPassword).not.toHaveBeenCalled();
+  });
+
+  test("register rejects whitespace-only fullName", async () => {
+    const response = await request(app).post("/api/v1/auth/register").send({
+      fullName: "   ",
+      phone: "+970599000001",
+      password: "Strong1!",
+      neighborhoodId: activeNeighborhood.id,
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.success).toBe(false);
+    expect(authRepository.createUserWithPassword).not.toHaveBeenCalled();
+  });
+
+  test("register rejects missing neighborhoodId", async () => {
+    const response = await request(app).post("/api/v1/auth/register").send({
+      fullName: "Hala Jendeya",
+      phone: "+970599000001",
+      password: "Strong1!",
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.success).toBe(false);
+    expect(authRepository.createUserWithPassword).not.toHaveBeenCalled();
+  });
+
+  test("register rejects an invalid neighborhood UUID", async () => {
+    const response = await request(app).post("/api/v1/auth/register").send({
+      fullName: "Hala Jendeya",
+      phone: "+970599000001",
+      password: "Strong1!",
+      neighborhoodId: "not-a-uuid",
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.success).toBe(false);
+    expect(authRepository.findActiveNeighborhoodById).not.toHaveBeenCalled();
+    expect(authRepository.createUserWithPassword).not.toHaveBeenCalled();
+  });
+
+  test("register rejects nonexistent or inactive neighborhood", async () => {
+    authRepository.findActiveNeighborhoodById.mockResolvedValue(null);
+
+    await expect(
+      authService.register({
+        fullName: "Hala Jendeya",
+        phone: "+970599000001",
+        password: "Strong1!",
+        neighborhoodId: activeNeighborhood.id,
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      message: "Selected neighborhood does not exist or is inactive.",
+    });
+
+    expect(authRepository.createUserWithPassword).not.toHaveBeenCalled();
+    expect(authRepository.createOtpVerification).not.toHaveBeenCalled();
   });
 
   test("register creates unverified user, stores hashed password, creates OTP, and returns no tokens", async () => {
@@ -115,8 +200,10 @@ describe("Auth register and login", () => {
     authRepository.createOtpVerification.mockResolvedValue({});
 
     const response = await request(app).post("/api/v1/auth/register").send({
+      fullName: "  Hala Jendeya  ",
       phone: "+970599000001",
       password: "Strong1!",
+      neighborhoodId: activeNeighborhood.id,
     });
 
     expect(response.statusCode).toBe(201);
@@ -125,12 +212,18 @@ describe("Auth register and login", () => {
     expect(response.body.data.refreshToken).toBeUndefined();
     expect(JSON.stringify(response.body)).not.toContain("passwordHash");
 
-    const [phone, passwordHash] =
+    const [payload] =
       authRepository.createUserWithPassword.mock.calls[0];
 
-    expect(phone).toBe("+970599000001");
-    expect(passwordHash).toMatch(/^\$2/);
-    expect(passwordHash).not.toBe("Strong1!");
+    expect(payload).toEqual(
+      expect.objectContaining({
+        fullName: "Hala Jendeya",
+        phone: "+970599000001",
+        neighborhoodId: activeNeighborhood.id,
+      }),
+    );
+    expect(payload.passwordHash).toMatch(/^\$2/);
+    expect(payload.passwordHash).not.toBe("Strong1!");
     expect(authRepository.createOtpVerification).toHaveBeenCalled();
     expect(authRepository.createWallet).not.toHaveBeenCalled();
     expect(walletRepository.createLedgerEntry).not.toHaveBeenCalled();
@@ -143,18 +236,31 @@ describe("Auth register and login", () => {
       phoneVerifiedAt: null,
       passwordHash: "$2a$10$oldhash",
     });
-    authRepository.updateUserPasswordHash.mockResolvedValue({
+    authRepository.updatePreparedUserRegistration.mockResolvedValue({
       ...activeUser,
       phoneVerifiedAt: null,
       passwordHash: "$2a$10$newhash",
     });
     authRepository.createOtpVerification.mockResolvedValue({});
 
-    const result = await authService.register("+970599000000", "Strong1!");
+    const result = await authService.register({
+      fullName: "Hala Jendeya",
+      phone: "+970599000000",
+      password: "Strong1!",
+      neighborhoodId: activeNeighborhood.id,
+    });
 
     expect(result.message).toBe("Registration OTP sent successfully");
     expect(authRepository.createUserWithPassword).not.toHaveBeenCalled();
-    expect(authRepository.updateUserPasswordHash).toHaveBeenCalled();
+    expect(authRepository.updatePreparedUserRegistration).toHaveBeenCalledWith(
+      activeUser.id,
+      expect.objectContaining({
+        fullName: "Hala Jendeya",
+        neighborhoodId: activeNeighborhood.id,
+        passwordHash: expect.stringMatching(/^\$2/),
+      }),
+      mockTx,
+    );
     expect(authRepository.createWallet).not.toHaveBeenCalled();
     expect(walletRepository.createLedgerEntry).not.toHaveBeenCalled();
   });
@@ -166,7 +272,12 @@ describe("Auth register and login", () => {
     });
 
     await expect(
-      authService.register("+970599000000", "Strong1!"),
+      authService.register({
+        fullName: "Hala Jendeya",
+        phone: "+970599000000",
+        password: "Strong1!",
+        neighborhoodId: activeNeighborhood.id,
+      }),
     ).rejects.toMatchObject({
       statusCode: 409,
       message: "A user with this phone already exists.",
@@ -238,6 +349,54 @@ describe("Auth register and login", () => {
       statusCode: 401,
       message: "Invalid phone or password.",
     });
+  });
+});
+
+describe("Locations neighborhoods", () => {
+  test("returns active neighborhoods without authentication", async () => {
+    const response = await request(app).get("/api/v1/locations/neighborhoods");
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.neighborhoods).toEqual([activeNeighborhood]);
+    expect(prisma.neighborhood.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          isActive: true,
+        },
+        select: {
+          id: true,
+          name: true,
+          governorate: true,
+        },
+      }),
+    );
+  });
+
+  test("does not expose inactive neighborhoods", async () => {
+    prisma.neighborhood.findMany.mockResolvedValue([
+      {
+        id: activeNeighborhood.id,
+        name: activeNeighborhood.name,
+        governorate: activeNeighborhood.governorate,
+      },
+    ]);
+
+    const response = await request(app).get("/api/v1/locations/neighborhoods");
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.neighborhoods).toEqual([
+      {
+        id: activeNeighborhood.id,
+        name: activeNeighborhood.name,
+        governorate: activeNeighborhood.governorate,
+      },
+    ]);
+    expect(
+      response.body.data.neighborhoods.some(
+        (neighborhood) => neighborhood.isActive === false,
+      ),
+    ).toBe(false);
   });
 });
 

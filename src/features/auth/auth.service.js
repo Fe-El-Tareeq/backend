@@ -207,8 +207,25 @@ const createOtpVerification = async (phone, channel = "SMS", client) => {
   await deliverOtp({ phone, channel, otp });
 };
 
-const register = async (phone, password) => {
+const register = async ({
+  fullName,
+  phone,
+  password,
+  neighborhoodId,
+}) => {
+  const neighborhood = await authRepository.findActiveNeighborhoodById(
+    neighborhoodId,
+  );
+
+  if (!neighborhood) {
+    throw new ApiError(
+      400,
+      "Selected neighborhood does not exist or is inactive.",
+    );
+  }
+
   const passwordHash = await bcrypt.hash(password, 10);
+  const trimmedFullName = fullName.trim();
 
   return authRepository.runTransaction(async (tx) => {
     const existingUser = await authRepository.findUserWithPasswordByPhone(
@@ -221,13 +238,25 @@ const register = async (phone, password) => {
     }
 
     if (existingUser) {
-      await authRepository.updateUserPasswordHash(
+      await authRepository.updatePreparedUserRegistration(
         existingUser.id,
-        passwordHash,
+        {
+          fullName: trimmedFullName,
+          passwordHash,
+          neighborhoodId: neighborhood.id,
+        },
         tx,
       );
     } else {
-      await authRepository.createUserWithPassword(phone, passwordHash, tx);
+      await authRepository.createUserWithPassword(
+        {
+          fullName: trimmedFullName,
+          phone,
+          passwordHash,
+          neighborhoodId: neighborhood.id,
+        },
+        tx,
+      );
     }
 
     await createOtpVerification(phone, "SMS", tx);

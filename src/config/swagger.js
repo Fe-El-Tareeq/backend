@@ -64,6 +64,10 @@ const swaggerDefinition = {
       description: "Authenticated current-user profile APIs.",
     },
     {
+      name: "Locations",
+      description: "Public location lookup APIs used during registration.",
+    },
+    {
       name: "Wallet",
       description: "Authenticated token wallet and transaction history APIs.",
     },
@@ -115,8 +119,15 @@ const swaggerDefinition = {
       },
       RegisterRequest: {
         type: "object",
-        required: ["phone", "password"],
+        required: ["fullName", "phone", "password", "neighborhoodId"],
         properties: {
+          fullName: {
+            type: "string",
+            minLength: 2,
+            maxLength: 100,
+            description: "Trimmed before validation and persistence.",
+            example: "Hala Jendeya",
+          },
           phone: {
             type: "string",
             minLength: 8,
@@ -131,6 +142,13 @@ const swaggerDefinition = {
             description:
               "Must be at least 8 characters and include one uppercase letter, one number, and one special character.",
             example: "Strong1!",
+          },
+          neighborhoodId: {
+            type: "string",
+            format: "uuid",
+            description:
+              "Must be selected from an existing active neighborhood returned by GET /api/v1/locations/neighborhoods.",
+            example: "60a32850-bd3f-444a-84b4-c750abf6ecb6",
           },
         },
       },
@@ -234,7 +252,7 @@ const swaggerDefinition = {
       },
       Neighborhood: {
         type: "object",
-        required: ["id", "name", "governorate", "isActive"],
+        required: ["id", "name", "governorate"],
         nullable: true,
         properties: {
           id: {
@@ -253,6 +271,18 @@ const swaggerDefinition = {
           isActive: {
             type: "boolean",
             example: true,
+          },
+        },
+      },
+      NeighborhoodListData: {
+        type: "object",
+        required: ["neighborhoods"],
+        properties: {
+          neighborhoods: {
+            type: "array",
+            items: {
+              $ref: "#/components/schemas/Neighborhood",
+            },
           },
         },
       },
@@ -608,6 +638,9 @@ const swaggerDefinition = {
       UserProfileResponse: apiResponse({
         $ref: "#/components/schemas/UserProfile",
       }),
+      NeighborhoodListResponse: apiResponse({
+        $ref: "#/components/schemas/NeighborhoodListData",
+      }),
       WalletResponse: apiResponse({
         $ref: "#/components/schemas/Wallet",
       }),
@@ -665,7 +698,7 @@ const swaggerDefinition = {
         tags: ["Authentication"],
         summary: "Register and request phone verification",
         description:
-          "Creates or prepares an unverified password user and sends a phone verification OTP. This endpoint does not issue access or refresh tokens. Passwords must be at least 8 characters and include one uppercase letter, one number, and one special character.",
+          "Creates or prepares an unverified password user with basic profile data and sends a phone verification OTP. This endpoint does not issue access or refresh tokens. neighborhoodId must be selected from an existing active neighborhood returned by GET /api/v1/locations/neighborhoods. Passwords must be at least 8 characters and include one uppercase letter, one number, and one special character.",
         requestBody: {
           required: true,
           content: {
@@ -689,7 +722,36 @@ const swaggerDefinition = {
             },
           },
           400: {
-            $ref: "#/components/responses/ValidationFailed",
+            description:
+              "Validation failed or the selected neighborhood does not exist or is inactive.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ErrorResponse",
+                },
+                examples: {
+                  validation: {
+                    value: {
+                      success: false,
+                      message: "Validation failed",
+                      errors: [
+                        {
+                          field: "body.neighborhoodId",
+                          message: "Neighborhood ID must be a valid UUID.",
+                        },
+                      ],
+                    },
+                  },
+                  inactiveNeighborhood: {
+                    value: {
+                      success: false,
+                      message: "Selected neighborhood does not exist or is inactive.",
+                      errors: [],
+                    },
+                  },
+                },
+              },
+            },
           },
           409: errorResponse("A user with this phone already exists."),
           429: {
@@ -972,6 +1034,32 @@ const swaggerDefinition = {
           },
           400: {
             $ref: "#/components/responses/ValidationFailed",
+          },
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/api/v1/locations/neighborhoods": {
+      get: {
+        tags: ["Locations"],
+        summary: "List active neighborhoods",
+        description:
+          "Returns active seeded neighborhoods for registration. This endpoint is public and excludes inactive neighborhoods.",
+        responses: {
+          200: {
+            description: "Active neighborhoods retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/NeighborhoodListResponse",
+                },
+              },
+            },
           },
           429: {
             $ref: "#/components/responses/TooManyRequests",
