@@ -109,7 +109,7 @@ describe("Auth request OTP", () => {
 describe("Auth register and login", () => {
   test("register validates password strength", async () => {
     const response = await request(app).post("/api/v1/auth/register").send({
-      fullName: "Hala Jendeya",
+      fullName: "Leenah Alborsh",
       phone: "+970599000000",
       password: "weakpass",
       neighborhoodId: activeNeighborhood.id,
@@ -147,7 +147,7 @@ describe("Auth register and login", () => {
 
   test("register rejects missing neighborhoodId", async () => {
     const response = await request(app).post("/api/v1/auth/register").send({
-      fullName: "Hala Jendeya",
+      fullName: "Leenah Alborsh",
       phone: "+970599000001",
       password: "Strong1!",
     });
@@ -159,7 +159,7 @@ describe("Auth register and login", () => {
 
   test("register rejects an invalid neighborhood UUID", async () => {
     const response = await request(app).post("/api/v1/auth/register").send({
-      fullName: "Hala Jendeya",
+      fullName: "Leenah Alborsh",
       phone: "+970599000001",
       password: "Strong1!",
       neighborhoodId: "not-a-uuid",
@@ -176,7 +176,7 @@ describe("Auth register and login", () => {
 
     await expect(
       authService.register({
-        fullName: "Hala Jendeya",
+        fullName: "Leenah Alborsh",
         phone: "+970599000001",
         password: "Strong1!",
         neighborhoodId: activeNeighborhood.id,
@@ -200,7 +200,7 @@ describe("Auth register and login", () => {
     authRepository.createOtpVerification.mockResolvedValue({});
 
     const response = await request(app).post("/api/v1/auth/register").send({
-      fullName: "  Hala Jendeya  ",
+      fullName: "  Leenah Alborsh  ",
       phone: "+970599000001",
       password: "Strong1!",
       neighborhoodId: activeNeighborhood.id,
@@ -217,7 +217,7 @@ describe("Auth register and login", () => {
 
     expect(payload).toEqual(
       expect.objectContaining({
-        fullName: "Hala Jendeya",
+        fullName: "Leenah Alborsh",
         phone: "+970599000001",
         neighborhoodId: activeNeighborhood.id,
       }),
@@ -244,7 +244,7 @@ describe("Auth register and login", () => {
     authRepository.createOtpVerification.mockResolvedValue({});
 
     const result = await authService.register({
-      fullName: "Hala Jendeya",
+      fullName: "Leenah Alborsh",
       phone: "+970599000000",
       password: "Strong1!",
       neighborhoodId: activeNeighborhood.id,
@@ -255,7 +255,7 @@ describe("Auth register and login", () => {
     expect(authRepository.updatePreparedUserRegistration).toHaveBeenCalledWith(
       activeUser.id,
       expect.objectContaining({
-        fullName: "Hala Jendeya",
+        fullName: "Leenah Alborsh",
         neighborhoodId: activeNeighborhood.id,
         passwordHash: expect.stringMatching(/^\$2/),
       }),
@@ -273,7 +273,7 @@ describe("Auth register and login", () => {
 
     await expect(
       authService.register({
-        fullName: "Hala Jendeya",
+        fullName: "Leenah Alborsh",
         phone: "+970599000000",
         password: "Strong1!",
         neighborhoodId: activeNeighborhood.id,

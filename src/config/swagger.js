@@ -126,7 +126,7 @@ const swaggerDefinition = {
             minLength: 2,
             maxLength: 100,
             description: "Trimmed before validation and persistence.",
-            example: "Hala Jendeya",
+            example: "Leenah Alborsh",
           },
           phone: {
             type: "string",
