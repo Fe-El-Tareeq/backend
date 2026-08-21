@@ -2,9 +2,11 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
+const swaggerUi = require("swagger-ui-express");
 
 const routes = require("./routes");
 const testRoutes = require("./routes/test.routes");
+const swaggerSpec = require("./config/swagger");
 const { apiRateLimiter } = require("./middleware/rateLimit.middleware");
 const {
   notFoundHandler,
@@ -23,6 +25,11 @@ app.use(apiRateLimiter);
 app.get("/health", (req, res) => {
   res.json({ success: true, message: "API is running" });
 });
+
+app.get("/api-docs.json", (req, res) => {
+  res.json(swaggerSpec);
+});
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 app.use("/api/test", testRoutes);
 app.use("/api/v1", routes);

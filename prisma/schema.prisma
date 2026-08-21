@@ -157,6 +157,7 @@ model Neighborhood {
 model User {
   id               String     @id @default(uuid()) @db.Uuid
   phone            String     @unique @db.VarChar(20)
+  passwordHash     String?    @map("password_hash") @db.VarChar(255)
   fullName         String?    @map("full_name") @db.VarChar(100)
   role             UserRole   @default(USER)
   trustScore       Decimal    @default(70.00) @map("trust_score") @db.Decimal(5, 2)

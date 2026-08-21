@@ -4,6 +4,9 @@
   "description": "Backend API for Fe El-Tareeq peer-to-peer micro-errand platform",
   "main": "src/server.js",
   "type": "commonjs",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
@@ -21,6 +24,8 @@
     "jsonwebtoken": "^9.0.3",
     "morgan": "^1.11.0",
     "pg": "^8.23.0",
+    "swagger-jsdoc": "^6.3.0",
+    "swagger-ui-express": "^5.0.1",
     "zod": "^4.4.3"
   },
   "repository": {

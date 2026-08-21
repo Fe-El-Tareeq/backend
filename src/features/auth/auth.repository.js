@@ -61,6 +61,15 @@ const findUserByPhone = async (phone, client = prisma) => {
   });
 };
 
+const findUserWithPasswordByPhone = async (phone, client = prisma) => {
+  return client.user.findUnique({
+    where: { phone },
+    include: {
+      wallet: true,
+    },
+  });
+};
+
 const findUserById = async (userId, client = prisma) => {
   return client.user.findUnique({
     where: { id: userId },
@@ -73,11 +82,71 @@ const findUserById = async (userId, client = prisma) => {
   });
 };
 
+const findActiveNeighborhoodById = async (neighborhoodId, client = prisma) => {
+  return client.neighborhood.findFirst({
+    where: {
+      id: neighborhoodId,
+      isActive: true,
+    },
+    select: {
+      id: true,
+      name: true,
+      governorate: true,
+    },
+  });
+};
+
 const createUser = async (phone, client = prisma) => {
   return client.user.create({
     data: {
       phone,
       phoneVerifiedAt: new Date(),
+    },
+    include: {
+      wallet: true,
+    },
+  });
+};
+
+const createUserWithPassword = async (
+  {
+    fullName,
+    phone,
+    passwordHash,
+    neighborhoodId,
+  },
+  client = prisma,
+) => {
+  return client.user.create({
+    data: {
+      fullName,
+      phone,
+      passwordHash,
+      neighborhoodId,
+      profileCompleted: true,
+    },
+    include: {
+      wallet: true,
+    },
+  });
+};
+
+const updatePreparedUserRegistration = async (
+  userId,
+  {
+    fullName,
+    passwordHash,
+    neighborhoodId,
+  },
+  client = prisma,
+) => {
+  return client.user.update({
+    where: { id: userId },
+    data: {
+      fullName,
+      passwordHash,
+      neighborhoodId,
+      profileCompleted: true,
     },
     include: {
       wallet: true,
@@ -147,8 +216,12 @@ module.exports = {
   incrementOtpAttempts,
   markOtpAsVerified,
   findUserByPhone,
+  findUserWithPasswordByPhone,
   findUserById,
+  findActiveNeighborhoodById,
   createUser,
+  createUserWithPassword,
+  updatePreparedUserRegistration,
   createWallet,
   updateUserPhoneVerifiedAt,
   createRefreshToken,

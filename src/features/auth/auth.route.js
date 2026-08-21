@@ -4,12 +4,26 @@ const authController = require("./auth.controller");
 const validate = require("../../middleware/validate.middleware");
 
 const {
+  registerSchema,
+  loginSchema,
   phoneSchema,
   verifyOtpSchema,
   refreshTokenSchema,
 } = require("./auth.validation");
 
 const router = express.Router();
+
+router.post(
+  "/register",
+  validate(registerSchema),
+  authController.register
+);
+
+router.post(
+  "/login",
+  validate(loginSchema),
+  authController.login
+);
 
 router.post(
   "/request-otp",
