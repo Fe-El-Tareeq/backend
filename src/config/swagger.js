@@ -1,4 +1,10 @@
 const swaggerJSDoc = require("swagger-jsdoc");
+const env = require("./env");
+
+const fixedOtpSwaggerNote =
+  env.nodeEnv === "production" || !env.devFixedOtp
+    ? ""
+    : " Staging test OTP: 000000";
 
 const apiResponse = (dataSchema, example) => ({
   type: "object",
@@ -207,7 +213,10 @@ const swaggerDefinition = {
             minLength: 6,
             maxLength: 6,
             pattern: "^\\d{6}$",
-            example: "123456",
+            example:
+              env.nodeEnv === "production" || !env.devFixedOtp
+                ? "123456"
+                : "000000",
           },
         },
       },
@@ -1010,7 +1019,7 @@ const swaggerDefinition = {
         tags: ["Authentication"],
         summary: "Register and request phone verification",
         description:
-          "Creates or prepares an unverified password user with basic profile data and sends a phone verification OTP. This endpoint does not issue access or refresh tokens. neighborhoodId must be selected from an existing active neighborhood returned by GET /api/v1/locations/neighborhoods. Passwords must be at least 8 characters and include one uppercase letter, one number, and one special character.",
+          `Creates or prepares an unverified password user with basic profile data and sends a phone verification OTP. This endpoint does not issue access or refresh tokens. neighborhoodId must be selected from an existing active neighborhood returned by GET /api/v1/locations/neighborhoods. Passwords must be at least 8 characters and include one uppercase letter, one number, and one special character.${fixedOtpSwaggerNote}`,
         requestBody: {
           required: true,
           content: {
@@ -1147,7 +1156,7 @@ const swaggerDefinition = {
         tags: ["Authentication"],
         summary: "Request a phone verification OTP",
         description:
-          "Creates a six-digit phone verification OTP for the provided phone number. This endpoint does not authenticate the user by itself and verification tokens are issued only for a prepared or existing user. In development the OTP is logged by the backend; production delivery is left to the OTP provider integration.",
+          `Creates a six-digit phone verification OTP for the provided phone number. This endpoint does not authenticate the user by itself and verification tokens are issued only for a prepared or existing user. In non-production, DEV_FIXED_OTP may be used for development and staging testing. Production delivery must use the OTP provider integration.${fixedOtpSwaggerNote}`,
         requestBody: {
           required: true,
           content: {
@@ -1186,7 +1195,7 @@ const swaggerDefinition = {
         tags: ["Authentication"],
         summary: "Verify phone OTP and receive tokens",
         description:
-          "Verifies the latest phone verification OTP for a phone number. On success, the backend marks the OTP used, sets phoneVerifiedAt, ensures a wallet exists with exactly one signup bonus ledger entry for new wallets, and returns access and refresh tokens.",
+          `Verifies the latest phone verification OTP for a phone number. On success, the backend marks the OTP used, sets phoneVerifiedAt, ensures a wallet exists with exactly one signup bonus ledger entry for new wallets, and returns access and refresh tokens.${fixedOtpSwaggerNote}`,
         requestBody: {
           required: true,
           content: {

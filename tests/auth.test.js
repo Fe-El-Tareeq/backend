@@ -6,6 +6,7 @@ process.env.JWT_REFRESH_SECRET =
 process.env.NODE_ENV = "test";
 
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const request = require("supertest");
 
@@ -24,6 +25,7 @@ const app = require("../src/app");
 const authRepository = require("../src/features/auth/auth.repository");
 const walletRepository = require("../src/features/wallet/wallet.repository");
 const authService = require("../src/features/auth/auth.service");
+const env = require("../src/config/env");
 const prisma = require("../src/config/prisma");
 const { requireAuth } = require("../src/middleware/auth.middleware");
 
@@ -54,6 +56,9 @@ const runMiddleware = (middleware, req) => {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.restoreAllMocks();
+  env.nodeEnv = "test";
+  env.devFixedOtp = undefined;
 
   authRepository.runTransaction.mockImplementation((callback) => {
     return callback(mockTx);
@@ -93,6 +98,56 @@ describe("Auth request OTP", () => {
     expect(storedOtp.channel).toBe("SMS");
     expect(storedOtp.otpHash).toMatch(/^\$2/);
     expect(storedOtp.otpHash).not.toMatch(/^\d{6}$/);
+  });
+
+  test("DEV_FIXED_OTP is hashed and works through verification in non-production", async () => {
+    env.nodeEnv = "staging";
+    env.devFixedOtp = "000000";
+
+    await authService.requestOtp("+970599000000", "SMS");
+
+    const storedOtp = authRepository.createOtpVerification.mock.calls[0][0];
+    expect(storedOtp.otpHash).toMatch(/^\$2/);
+    expect(storedOtp.otpHash).not.toBe("000000");
+    await expect(bcrypt.compare("000000", storedOtp.otpHash)).resolves.toBe(
+      true,
+    );
+
+    authRepository.findLatestOtpByPhone.mockResolvedValue({
+      id: "otp-fixed",
+      phone: "+970599000000",
+      otpHash: storedOtp.otpHash,
+      attemptCount: 0,
+      maxAttempts: 5,
+      expiresAt: new Date(Date.now() + 60 * 1000),
+      verifiedAt: null,
+    });
+    authRepository.findUserByPhone.mockResolvedValue(activeUser);
+    authRepository.createRefreshToken.mockResolvedValue({});
+
+    const result = await authService.verifyOtp("+970599000000", "000000");
+
+    expect(result.accessToken).toBeTruthy();
+    expect(authRepository.markOtpAsVerified).toHaveBeenCalledWith(
+      "otp-fixed",
+      mockTx,
+    );
+  });
+
+  test("DEV_FIXED_OTP is ignored in production", async () => {
+    env.nodeEnv = "production";
+    env.devFixedOtp = "000000";
+    jest.spyOn(crypto, "randomInt").mockReturnValue(123456);
+
+    await authService.requestOtp("+970599000000", "SMS");
+
+    const storedOtp = authRepository.createOtpVerification.mock.calls[0][0];
+    await expect(bcrypt.compare("000000", storedOtp.otpHash)).resolves.toBe(
+      false,
+    );
+    await expect(bcrypt.compare("123456", storedOtp.otpHash)).resolves.toBe(
+      true,
+    );
   });
 
   test("invalid phone is rejected", async () => {

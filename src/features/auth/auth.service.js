@@ -21,6 +21,26 @@ const generateOtp = () => {
   return crypto.randomInt(100000, 1000000).toString();
 };
 
+const getConfiguredFixedOtp = () => {
+  if (env.nodeEnv === "production") {
+    return null;
+  }
+
+  if (!env.devFixedOtp) {
+    return null;
+  }
+
+  if (!/^\d{6}$/.test(env.devFixedOtp)) {
+    throw new Error("DEV_FIXED_OTP must be exactly 6 digits");
+  }
+
+  return env.devFixedOtp;
+};
+
+const createOtpCode = () => {
+  return getConfiguredFixedOtp() || generateOtp();
+};
+
 const hashRefreshToken = (refreshToken) => {
   return crypto.createHash("sha256").update(refreshToken).digest("hex");
 };
@@ -119,7 +139,7 @@ const deliverOtp = async ({ phone, channel, otp }) => {
 };
 
 const requestOtp = async (phone, channel = "SMS") => {
-  const otp = generateOtp();
+  const otp = createOtpCode();
   const otpHash = await bcrypt.hash(otp, 10);
   const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
 
@@ -189,7 +209,7 @@ const ensureWallet = async (user, client) => {
 };
 
 const createOtpVerification = async (phone, channel = "SMS", client) => {
-  const otp = generateOtp();
+  const otp = createOtpCode();
   const otpHash = await bcrypt.hash(otp, 10);
   const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
 

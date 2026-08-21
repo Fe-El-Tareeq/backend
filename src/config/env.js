@@ -26,4 +26,5 @@ module.exports = {
   directUrl: process.env.DIRECT_URL,
   jwtAccessSecret: process.env.JWT_ACCESS_SECRET,
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET,
+  devFixedOtp: process.env.DEV_FIXED_OTP,
 };
