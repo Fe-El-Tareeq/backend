@@ -304,6 +304,7 @@ model Trip {
   id                     String      @id @default(uuid()) @db.Uuid
   travelerId             String      @map("traveler_id") @db.Uuid
   neighborhoodId         String      @map("neighborhood_id") @db.Uuid
+  clientRequestKey       String      @map("client_request_key") @db.Uuid
   destinationKeyword     String      @map("destination_keyword") @db.VarChar(150)
   originType             OriginType  @default(DEFAULT_NEIGHBORHOOD) @map("origin_type")
   customOriginKeyword    String?     @map("custom_origin_keyword") @db.VarChar(150)
@@ -312,8 +313,6 @@ model Trip {
   maxCapacityUnits       Int         @map("max_capacity_units")
   remainingCapacityUnits Int         @map("remaining_capacity_units")
   notes                  String?     @db.VarChar(120)
-  postTokenCost          Int         @map("post_token_cost")
-  postTokenTransactionId String?     @unique @map("post_token_transaction_id") @db.Uuid
   status                 TripStatus  @default(ACTIVE)
   expiresAt              DateTime    @map("expires_at") @db.Timestamptz(6)
   createdAt              DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -322,11 +321,10 @@ model Trip {
   traveler     User         @relation("TravelerTrips", fields: [travelerId], references: [id])
   neighborhood Neighborhood @relation(fields: [neighborhoodId], references: [id])
 
-  postTokenTransaction WalletTransaction? @relation("TripPostTokenTransaction", fields: [postTokenTransactionId], references: [id])
-
   matches     Match[]
   assignments ErrandAssignment[]
 
+  @@unique([travelerId, clientRequestKey])
   @@index([travelerId])
   @@index([neighborhoodId])
   @@index([departureTime])
@@ -594,8 +592,6 @@ model WalletTransaction {
   wallet           Wallet                @relation(fields: [walletId], references: [id], onDelete: Cascade)
 
   errandPost Errand? @relation("ErrandPostTokenTransaction")
-
-  tripPost Trip? @relation("TripPostTokenTransaction")
 
   acceptedAssignment ErrandAssignment? @relation("AcceptTokenTransaction")
 
