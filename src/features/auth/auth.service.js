@@ -21,6 +21,17 @@ const generateOtp = () => {
   return crypto.randomInt(100000, 1000000).toString();
 };
 
+const generateOtpForPhone = (phone) => {
+  if (
+    env.otpFixedCode &&
+    env.otpTestPhones.includes(phone)
+  ) {
+    return env.otpFixedCode;
+  }
+
+  return generateOtp();
+};
+
 const hashRefreshToken = (refreshToken) => {
   return crypto.createHash("sha256").update(refreshToken).digest("hex");
 };
@@ -119,7 +130,7 @@ const deliverOtp = async ({ phone, channel, otp }) => {
 };
 
 const requestOtp = async (phone, channel = "SMS") => {
-  const otp = generateOtp();
+  const otp = generateOtpForPhone(phone);
   const otpHash = await bcrypt.hash(otp, 10);
   const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
 
@@ -127,6 +138,7 @@ const requestOtp = async (phone, channel = "SMS") => {
     phone,
     otpHash,
     channel,
+    purpose: "PHONE_VERIFICATION",
     expiresAt,
     maxAttempts: OTP_MAX_ATTEMPTS,
   });
@@ -188,8 +200,13 @@ const ensureWallet = async (user, client) => {
   };
 };
 
-const createOtpVerification = async (phone, channel = "SMS", client) => {
-  const otp = generateOtp();
+const createOtpVerification = async (
+  phone,
+  channel = "SMS",
+  client,
+  purpose = "PHONE_VERIFICATION",
+) => {
+  const otp = generateOtpForPhone(phone);
   const otpHash = await bcrypt.hash(otp, 10);
   const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
 
@@ -198,6 +215,7 @@ const createOtpVerification = async (phone, channel = "SMS", client) => {
       phone,
       otpHash,
       channel,
+      purpose,
       expiresAt,
       maxAttempts: OTP_MAX_ATTEMPTS,
     },
@@ -259,7 +277,7 @@ const register = async ({
       );
     }
 
-    await createOtpVerification(phone, "SMS", tx);
+    await createOtpVerification(phone, "SMS", tx, "PHONE_VERIFICATION");
 
     return {
       message: "Registration OTP sent successfully",
@@ -321,34 +339,53 @@ const getOrCreateVerifiedUser = async (phone, client) => {
   return user;
 };
 
+const validateOtpRecord = (otpRecord, now, invalidMessage = "Invalid OTP.") => {
+  if (!otpRecord) {
+    throw new ApiError(404, invalidMessage);
+  }
+
+  if (otpRecord.verifiedAt) {
+    throw new ApiError(400, "OTP has already been used.");
+  }
+
+  if (otpRecord.expiresAt <= now) {
+    throw new ApiError(400, "OTP has expired.");
+  }
+
+  if (otpRecord.attemptCount >= otpRecord.maxAttempts) {
+    throw new ApiError(429, "Too many OTP attempts.");
+  }
+};
+
 const verifyOtp = async (phone, otp) => {
+  const now = new Date();
+  const otpRecord = await authRepository.findLatestOtpByPhone(
+    phone,
+    "PHONE_VERIFICATION",
+  );
+
+  validateOtpRecord(otpRecord, now, "OTP not found.");
+  const isValidOtp = await bcrypt.compare(otp, otpRecord.otpHash);
+
+  if (!isValidOtp) {
+    await authRepository.incrementOtpAttempts(
+      otpRecord.id,
+      otpRecord.maxAttempts,
+    );
+    throw new ApiError(401, "Invalid OTP.");
+  }
+
   return authRepository.runTransaction(async (tx) => {
-    const otpRecord = await authRepository.findLatestOtpByPhone(phone, tx);
+    const claim = await authRepository.claimOtpVerification(
+      otpRecord.id,
+      now,
+      otpRecord.maxAttempts,
+      tx,
+    );
 
-    if (!otpRecord) {
-      throw new ApiError(404, "OTP not found.");
+    if (claim.count !== 1) {
+      throw new ApiError(409, "OTP is no longer available.");
     }
-
-    if (otpRecord.verifiedAt) {
-      throw new ApiError(400, "OTP has already been used.");
-    }
-
-    if (otpRecord.expiresAt <= new Date()) {
-      throw new ApiError(400, "OTP has expired.");
-    }
-
-    if (otpRecord.attemptCount >= otpRecord.maxAttempts) {
-      throw new ApiError(429, "Too many OTP attempts.");
-    }
-
-    const isValidOtp = await bcrypt.compare(otp, otpRecord.otpHash);
-
-    if (!isValidOtp) {
-      await authRepository.incrementOtpAttempts(otpRecord.id, tx);
-      throw new ApiError(401, "Invalid OTP.");
-    }
-
-    await authRepository.markOtpAsVerified(otpRecord.id, tx);
 
     const user = await getOrCreateVerifiedUser(phone, tx);
     const auth = await buildAuthResponse(user, tx);
@@ -356,6 +393,69 @@ const verifyOtp = async (phone, otp) => {
     return {
       message: "OTP verified successfully",
       ...auth,
+    };
+  });
+};
+
+const forgotPassword = async (phone, channel = "SMS") => {
+  const user = await authRepository.findUserByPhone(phone);
+
+  if (user) {
+    await createOtpVerification(
+      phone,
+      channel,
+      undefined,
+      "PASSWORD_RESET",
+    );
+  }
+
+  return {
+    message: "If an account exists, a reset code has been sent.",
+    expiresInMinutes: OTP_EXPIRY_MINUTES,
+  };
+};
+
+const resetPassword = async (phone, otp, newPassword) => {
+  const now = new Date();
+  const [user, otpRecord] = await Promise.all([
+    authRepository.findUserByPhone(phone),
+    authRepository.findLatestOtpByPhone(phone, "PASSWORD_RESET"),
+  ]);
+
+  if (!user || !otpRecord) {
+    throw new ApiError(400, "Invalid or expired password reset code.");
+  }
+
+  validateOtpRecord(otpRecord, now, "Invalid or expired password reset code.");
+  const isValidOtp = await bcrypt.compare(otp, otpRecord.otpHash);
+
+  if (!isValidOtp) {
+    await authRepository.incrementOtpAttempts(
+      otpRecord.id,
+      otpRecord.maxAttempts,
+    );
+    throw new ApiError(401, "Invalid password reset code.");
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+
+  return authRepository.runTransaction(async (tx) => {
+    const claim = await authRepository.claimOtpVerification(
+      otpRecord.id,
+      now,
+      otpRecord.maxAttempts,
+      tx,
+    );
+
+    if (claim.count !== 1) {
+      throw new ApiError(409, "Password reset code is no longer available.");
+    }
+
+    await authRepository.updateUserPassword(user.id, passwordHash, tx);
+    await authRepository.revokeAllRefreshTokensForUser(user.id, tx);
+
+    return {
+      message: "Password reset successfully. Please log in again.",
     };
   });
 };
@@ -433,5 +533,7 @@ module.exports = {
   verifyOtp,
   refresh,
   logout,
+  forgotPassword,
+  resetPassword,
   hashRefreshToken,
 };

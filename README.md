@@ -6,6 +6,14 @@ Built and prepared the database foundation based on the SRS and ERD.
 
 ### Implemented
 
+- Added versioned JSON-based delivery pricing with same-area, nearby-area, same-zone, cross-zone, and manual override rules.
+- Added `GET /api/v1/delivery-pricing/quote`; trip creation recalculates and stores an immutable fee snapshot.
+- Travelers cannot submit or edit `deliveryFeeNis`; new trips require `destinationNeighborhoodId`.
+
+- Added versioned JSON-based delivery pricing with same-area, nearby-area, same-zone, cross-zone, and area-override rules
+- Added `GET /api/v1/delivery-pricing/quote`; trip creation recalculates and stores an immutable delivery-fee snapshot
+- Travelers cannot submit or edit `deliveryFeeNis`; new trips require a structured destination neighborhood
+
 - Created the Prisma models based on the ERD
 - Formatted the Prisma schema using `prisma format`
 - Validated the Prisma schema using `prisma validate`
@@ -107,6 +115,15 @@ Implemented the authentication and user management foundation using phone number
 - Added user status validation
 - Prevented `SUSPENDED` and `BANNED` users from accessing protected routes
 - Added user profile retrieval
+- Added authenticated profile-image upload, replacement, and deletion using Supabase Storage
+- Profile images accept JPEG, PNG, or WebP files up to 5 MB at `PUT /api/v1/users/me/profile-image` (multipart field: `image`)
+- Added `DELETE /api/v1/users/me/profile-image`; the public image URL is returned by `GET /api/v1/users/me`
+
+Profile-image storage setup:
+
+1. Create a public Supabase Storage bucket named `profile-images`.
+2. Set `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and optionally `PROFILE_IMAGES_BUCKET` on the backend/Render environment.
+3. Never expose `SUPABASE_SERVICE_ROLE_KEY` to the frontend. The frontend only sends the image with the authenticated API request.
 - Added authentication and user management tests
 
 ### Authentication Flow
@@ -283,3 +300,32 @@ Wallet tests cover:
 ### Result
 
 Wallet and Token Ledger are ready to be used internally by upcoming modules such as Errands and Trips, with transaction safety, concurrency protection, idempotency, and complete token movement tracking.
+
+---
+
+## Authentication Testing OTP & Password Recovery
+
+Authentication supports a fixed six-digit OTP for explicitly allowlisted test
+phone numbers. Configure it only in controlled development or staging testing:
+
+```env
+OTP_FIXED_CODE=000000
+OTP_TEST_PHONES=0590000000
+```
+
+Phone-verification and password-reset OTP records are separated by purpose, so
+a registration OTP cannot be reused to reset a password.
+
+Password recovery endpoints:
+
+```text
+POST /api/v1/auth/forgot-password
+POST /api/v1/auth/reset-password
+```
+
+Successful password reset replaces the previous bcrypt password hash, consumes
+the reset OTP, and revokes all active refresh tokens for the account. The user
+must log in again with the new password.
+
+Do not enable a fixed OTP for real user phone numbers in production. A real
+SMS/WhatsApp provider is still required before production authentication.

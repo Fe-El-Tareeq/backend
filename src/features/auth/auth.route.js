@@ -9,6 +9,8 @@ const {
   phoneSchema,
   verifyOtpSchema,
   refreshTokenSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
 } = require("./auth.validation");
 
 const router = express.Router();
@@ -47,6 +49,18 @@ router.post(
   "/logout",
   validate(refreshTokenSchema),
   authController.logout
+);
+
+router.post(
+  "/forgot-password",
+  validate(forgotPasswordSchema),
+  authController.forgotPassword,
+);
+
+router.post(
+  "/reset-password",
+  validate(resetPasswordSchema),
+  authController.resetPassword,
 );
 
 module.exports = router;

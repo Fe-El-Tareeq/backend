@@ -117,6 +117,32 @@ const logout = async (req, res, next) => {
   }
 };
 
+const forgotPassword = async (req, res, next) => {
+  try {
+    const { phone, channel } = req.validatedData.body;
+    const result = await authService.forgotPassword(phone, channel);
+
+    return res.status(200).json(
+      new ApiResponse(200, result.message, {
+        expiresInMinutes: result.expiresInMinutes,
+      }),
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+const resetPassword = async (req, res, next) => {
+  try {
+    const { phone, otp, newPassword } = req.validatedData.body;
+    const result = await authService.resetPassword(phone, otp, newPassword);
+
+    return res.status(200).json(new ApiResponse(200, result.message));
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -124,4 +150,6 @@ module.exports = {
   verifyOtp,
   refresh,
   logout,
+  forgotPassword,
+  resetPassword,
 };

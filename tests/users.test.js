@@ -1,4 +1,5 @@
 const repository = require("../src/features/users/users.repository");
+const profileImageStorage = require("../src/features/users/profileImage.storage");
 const service = require("../src/features/users/users.service");
 const validate = require("../src/middleware/validate.middleware");
 const {
@@ -7,10 +8,12 @@ const {
 
 // Mock the repository so the service can be tested without accessing the real database.
 jest.mock("../src/features/users/users.repository");
+jest.mock("../src/features/users/profileImage.storage");
 
 describe("User Profile Service Tests", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    profileImageStorage.remove.mockResolvedValue(undefined);
   });
 
   // Verifies that the authenticated user's profile can be retrieved.
@@ -144,6 +147,38 @@ describe("User Profile Service Tests", () => {
     );
 
     expect(result.profileCompleted).toBe(false);
+  });
+
+  test("Should upload a new profile image and persist its URL and path", async () => {
+    repository.findUserById.mockResolvedValue({ id: "user-1", profileImagePath: null });
+    profileImageStorage.upload.mockResolvedValue({ path: "user-1/new.jpg", url: "https://example.com/new.jpg" });
+    repository.updateProfileImage.mockResolvedValue({ id: "user-1", profileImageUrl: "https://example.com/new.jpg" });
+
+    const image = { mimetype: "image/jpeg", buffer: Buffer.from([0xff, 0xd8, 0xff]) };
+    const result = await service.updateCurrentUserProfileImage("user-1", image);
+
+    expect(profileImageStorage.upload).toHaveBeenCalledWith("user-1", image);
+    expect(repository.updateProfileImage).toHaveBeenCalledWith("user-1", "https://example.com/new.jpg", "user-1/new.jpg");
+    expect(result.profileImageUrl).toBe("https://example.com/new.jpg");
+  });
+
+  test("Should remove the old stored image after replacing it", async () => {
+    repository.findUserById.mockResolvedValue({ id: "user-1", profileImagePath: "user-1/old.jpg" });
+    profileImageStorage.upload.mockResolvedValue({ path: "user-1/new.jpg", url: "https://example.com/new.jpg" });
+    repository.updateProfileImage.mockResolvedValue({ id: "user-1" });
+
+    await service.updateCurrentUserProfileImage("user-1", { mimetype: "image/jpeg", buffer: Buffer.alloc(3) });
+    expect(profileImageStorage.remove).toHaveBeenCalledWith("user-1/old.jpg");
+  });
+
+  test("Should clear the database image and remove the stored object", async () => {
+    repository.findUserById.mockResolvedValue({ id: "user-1", profileImagePath: "user-1/old.jpg" });
+    repository.updateProfileImage.mockResolvedValue({ id: "user-1", profileImageUrl: null });
+
+    const result = await service.deleteCurrentUserProfileImage("user-1");
+    expect(repository.updateProfileImage).toHaveBeenCalledWith("user-1", null, null);
+    expect(profileImageStorage.remove).toHaveBeenCalledWith("user-1/old.jpg");
+    expect(result.profileImageUrl).toBeNull();
   });
   describe("User Profile Validation Tests", () => {
     // Verifies that a valid full name passes validation.

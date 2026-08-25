@@ -24,6 +24,7 @@ const app = require("../src/app");
 const authRepository = require("../src/features/auth/auth.repository");
 const walletRepository = require("../src/features/wallet/wallet.repository");
 const authService = require("../src/features/auth/auth.service");
+const env = require("../src/config/env");
 const prisma = require("../src/config/prisma");
 const { requireAuth } = require("../src/middleware/auth.middleware");
 
@@ -58,6 +59,9 @@ beforeEach(() => {
   authRepository.runTransaction.mockImplementation((callback) => {
     return callback(mockTx);
   });
+  authRepository.claimOtpVerification.mockResolvedValue({ count: 1 });
+  env.otpFixedCode = null;
+  env.otpTestPhones = [];
 
   walletRepository.createLedgerEntry.mockResolvedValue({
     id: "signup-bonus-transaction",
@@ -93,6 +97,24 @@ describe("Auth request OTP", () => {
     expect(storedOtp.channel).toBe("SMS");
     expect(storedOtp.otpHash).toMatch(/^\$2/);
     expect(storedOtp.otpHash).not.toMatch(/^\d{6}$/);
+  });
+
+  test("allowlisted test phone uses configured fixed OTP without exposing it", async () => {
+    env.otpFixedCode = "000000";
+    env.otpTestPhones = ["+970599000000"];
+
+    const response = await request(app).post("/api/v1/auth/request-otp").send({
+      phone: "+970599000000",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(JSON.stringify(response.body)).not.toContain("000000");
+
+    const storedOtp = authRepository.createOtpVerification.mock.calls[0][0];
+    await expect(bcrypt.compare("000000", storedOtp.otpHash)).resolves.toBe(
+      true,
+    );
+    expect(storedOtp.purpose).toBe("PHONE_VERIFICATION");
   });
 
   test("invalid phone is rejected", async () => {
@@ -363,9 +385,13 @@ describe("Locations neighborhoods", () => {
       expect.objectContaining({
         where: {
           isActive: true,
+          key: {
+            not: null,
+          },
         },
         select: {
           id: true,
+          key: true,
           name: true,
           governorate: true,
         },
@@ -436,8 +462,10 @@ describe("Auth verify OTP", () => {
     expect(response.statusCode).toBe(200);
     expect(response.body.data.accessToken).toBeTruthy();
     expect(response.body.data.refreshToken).toBeTruthy();
-    expect(authRepository.markOtpAsVerified).toHaveBeenCalledWith(
+    expect(authRepository.claimOtpVerification).toHaveBeenCalledWith(
       "otp-1",
+      expect.any(Date),
+      5,
       mockTx,
     );
     expect(authRepository.updateUserPhoneVerifiedAt).toHaveBeenCalledWith(
@@ -595,7 +623,7 @@ describe("Auth verify OTP", () => {
 
     expect(authRepository.incrementOtpAttempts).toHaveBeenCalledWith(
       "otp-3",
-      mockTx,
+      5,
     );
   });
 
@@ -648,6 +676,105 @@ describe("Auth verify OTP", () => {
       statusCode: 400,
       message: "OTP has already been used.",
     });
+  });
+});
+
+describe("Auth forgot and reset password", () => {
+  test("forgot password creates a purpose-scoped OTP for an existing user", async () => {
+    env.otpFixedCode = "000000";
+    env.otpTestPhones = [activeUser.phone];
+    authRepository.findUserByPhone.mockResolvedValue(activeUser);
+
+    const response = await request(app)
+      .post("/api/v1/auth/forgot-password")
+      .send({ phone: activeUser.phone });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.expiresInMinutes).toBe(2);
+    expect(response.body.message).toBe(
+      "If an account exists, a reset code has been sent.",
+    );
+
+    const storedOtp = authRepository.createOtpVerification.mock.calls[0][0];
+    expect(storedOtp.purpose).toBe("PASSWORD_RESET");
+    await expect(bcrypt.compare("000000", storedOtp.otpHash)).resolves.toBe(
+      true,
+    );
+  });
+
+  test("forgot password does not reveal that a user is missing", async () => {
+    authRepository.findUserByPhone.mockResolvedValue(null);
+
+    const response = await request(app)
+      .post("/api/v1/auth/forgot-password")
+      .send({ phone: "+970599999999" });
+
+    expect(response.statusCode).toBe(200);
+    expect(authRepository.createOtpVerification).not.toHaveBeenCalled();
+  });
+
+  test("reset password replaces the hash and revokes existing sessions", async () => {
+    const otpHash = await bcrypt.hash("000000", 10);
+    authRepository.findUserByPhone.mockResolvedValue(activeUser);
+    authRepository.findLatestOtpByPhone.mockResolvedValue({
+      id: "reset-otp-1",
+      phone: activeUser.phone,
+      purpose: "PASSWORD_RESET",
+      otpHash,
+      attemptCount: 0,
+      maxAttempts: 3,
+      expiresAt: new Date(Date.now() + 60 * 1000),
+      verifiedAt: null,
+    });
+    authRepository.updateUserPassword.mockResolvedValue({});
+    authRepository.revokeAllRefreshTokensForUser.mockResolvedValue({ count: 2 });
+
+    const response = await request(app)
+      .post("/api/v1/auth/reset-password")
+      .send({
+        phone: activeUser.phone,
+        otp: "000000",
+        newPassword: "NewStrong1!",
+      });
+
+    expect(response.statusCode).toBe(200);
+    const storedHash = authRepository.updateUserPassword.mock.calls[0][1];
+    await expect(bcrypt.compare("NewStrong1!", storedHash)).resolves.toBe(true);
+    expect(authRepository.updateUserPassword).toHaveBeenCalledWith(
+      activeUser.id,
+      expect.any(String),
+      mockTx,
+    );
+    expect(authRepository.revokeAllRefreshTokensForUser).toHaveBeenCalledWith(
+      activeUser.id,
+      mockTx,
+    );
+  });
+
+  test("invalid reset OTP increments attempts outside the transaction", async () => {
+    const otpHash = await bcrypt.hash("000000", 10);
+    authRepository.findUserByPhone.mockResolvedValue(activeUser);
+    authRepository.findLatestOtpByPhone.mockResolvedValue({
+      id: "reset-otp-2",
+      otpHash,
+      attemptCount: 0,
+      maxAttempts: 3,
+      expiresAt: new Date(Date.now() + 60 * 1000),
+      verifiedAt: null,
+    });
+
+    await expect(
+      authService.resetPassword(activeUser.phone, "999999", "NewStrong1!"),
+    ).rejects.toMatchObject({
+      statusCode: 401,
+      message: "Invalid password reset code.",
+    });
+
+    expect(authRepository.incrementOtpAttempts).toHaveBeenCalledWith(
+      "reset-otp-2",
+      3,
+    );
+    expect(authRepository.runTransaction).not.toHaveBeenCalled();
   });
 });
 

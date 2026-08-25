@@ -4,9 +4,13 @@ const runTransaction = async (callback) => {
   return prisma.$transaction(callback);
 };
 
-const findLatestOtpByPhone = async (phone, client = prisma) => {
+const findLatestOtpByPhone = async (
+  phone,
+  purpose = "PHONE_VERIFICATION",
+  client = prisma,
+) => {
   return client.otpVerification.findFirst({
-    where: { phone },
+    where: { phone, purpose },
     orderBy: { createdAt: "desc" },
   });
 };
@@ -16,6 +20,7 @@ const createOtpVerification = async (
     phone,
     otpHash,
     channel,
+    purpose = "PHONE_VERIFICATION",
     expiresAt,
     maxAttempts,
   },
@@ -26,15 +31,21 @@ const createOtpVerification = async (
       phone,
       otpHash,
       channel,
+      purpose,
       expiresAt,
       maxAttempts,
     },
   });
 };
 
-const incrementOtpAttempts = async (id, client = prisma) => {
-  return client.otpVerification.update({
-    where: { id },
+const incrementOtpAttempts = async (id, maxAttempts, client = prisma) => {
+  return client.otpVerification.updateMany({
+    where: {
+      id,
+      attemptCount: {
+        lt: maxAttempts,
+      },
+    },
     data: {
       attemptCount: {
         increment: 1,
@@ -43,11 +54,21 @@ const incrementOtpAttempts = async (id, client = prisma) => {
   });
 };
 
-const markOtpAsVerified = async (id, client = prisma) => {
-  return client.otpVerification.update({
-    where: { id },
+const claimOtpVerification = async (
+  id,
+  now,
+  maxAttempts,
+  client = prisma,
+) => {
+  return client.otpVerification.updateMany({
+    where: {
+      id,
+      verifiedAt: null,
+      expiresAt: { gt: now },
+      attemptCount: { lt: maxAttempts },
+    },
     data: {
-      verifiedAt: new Date(),
+      verifiedAt: now,
     },
   });
 };
@@ -209,12 +230,31 @@ const revokeRefreshToken = async (id, client = prisma) => {
   });
 };
 
+const updateUserPassword = async (userId, passwordHash, client = prisma) => {
+  return client.user.update({
+    where: { id: userId },
+    data: { passwordHash },
+  });
+};
+
+const revokeAllRefreshTokensForUser = async (userId, client = prisma) => {
+  return client.refreshToken.updateMany({
+    where: {
+      userId,
+      revokedAt: null,
+    },
+    data: {
+      revokedAt: new Date(),
+    },
+  });
+};
+
 module.exports = {
   runTransaction,
   findLatestOtpByPhone,
   createOtpVerification,
   incrementOtpAttempts,
-  markOtpAsVerified,
+  claimOtpVerification,
   findUserByPhone,
   findUserWithPasswordByPhone,
   findUserById,
@@ -227,4 +267,6 @@ module.exports = {
   createRefreshToken,
   findRefreshTokenByHash,
   revokeRefreshToken,
+  updateUserPassword,
+  revokeAllRefreshTokensForUser,
 };
