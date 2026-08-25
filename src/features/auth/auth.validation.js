@@ -20,6 +20,7 @@ const registerSchema = z.object({
 
     phone: z
       .string()
+      .trim()
       .min(8, "Phone number is too short")
       .max(20, "Phone number is too long"),
 
@@ -35,6 +36,7 @@ const loginSchema = z.object({
   body: z.object({
     phone: z
       .string()
+      .trim()
       .min(8, "Phone number is too short")
       .max(20, "Phone number is too long"),
 
@@ -46,6 +48,7 @@ const phoneSchema = z.object({
   body: z.object({
     phone: z
       .string()
+      .trim()
       .min(8, "Phone number is too short")
       .max(20, "Phone number is too long"),
 
@@ -57,6 +60,7 @@ const verifyOtpSchema = z.object({
   body: z.object({
     phone: z
       .string()
+      .trim()
       .min(8, "Phone number is too short")
       .max(20, "Phone number is too long"),
 
@@ -75,10 +79,46 @@ const refreshTokenSchema = z.object({
   }),
 });
 
+const forgotPasswordSchema = z.object({
+  body: z
+    .object({
+      phone: z
+        .string()
+        .trim()
+        .min(8, "Phone number is too short")
+        .max(20, "Phone number is too long"),
+      channel: z.enum(["SMS", "WHATSAPP"]).optional(),
+    })
+    .strict(),
+  params: z.object({}),
+  query: z.object({}),
+});
+
+const resetPasswordSchema = z.object({
+  body: z
+    .object({
+      phone: z
+        .string()
+        .trim()
+        .min(8, "Phone number is too short")
+        .max(20, "Phone number is too long"),
+      otp: z
+        .string()
+        .length(6, "OTP must be exactly 6 digits")
+        .regex(/^\d{6}$/, "OTP must contain digits only"),
+      newPassword: passwordSchema,
+    })
+    .strict(),
+  params: z.object({}),
+  query: z.object({}),
+});
+
 module.exports = {
   registerSchema,
   loginSchema,
   phoneSchema,
   verifyOtpSchema,
   refreshTokenSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
 };

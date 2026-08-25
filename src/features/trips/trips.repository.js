@@ -21,6 +21,7 @@ const findTravelerForPosting = async (travelerId, client = prisma) => {
       neighborhood: {
         select: {
           id: true,
+          key: true,
           name: true,
           governorate: true,
           isActive: true,
@@ -52,6 +53,9 @@ const findByTravelerAndClientKey = async (
           governorate: true,
         },
       },
+      destinationNeighborhood: {
+        select: { id: true, key: true, name: true, governorate: true },
+      },
     },
   });
 };
@@ -67,6 +71,9 @@ const createTrip = async (data, client = prisma) => {
           name: true,
           governorate: true,
         },
+      },
+      destinationNeighborhood: {
+        select: { id: true, key: true, name: true, governorate: true },
       },
       traveler: {
         select: {
@@ -92,6 +99,9 @@ const findById = async (tripId, client = prisma) => {
           name: true,
           governorate: true,
         },
+      },
+      destinationNeighborhood: {
+        select: { id: true, key: true, name: true, governorate: true },
       },
       traveler: {
         select: {
@@ -201,6 +211,9 @@ const listTrips = async (
           name: true,
           governorate: true,
         },
+      },
+      destinationNeighborhood: {
+        select: { id: true, key: true, name: true, governorate: true },
       },
       traveler: {
         select: {

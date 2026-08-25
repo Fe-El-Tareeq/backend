@@ -1,5 +1,11 @@
 const ApiError = require("../../utils/ApiError");
 const repository = require("./users.repository");
+const profileImageStorage = require("./profileImage.storage");
+
+const toPublicProfile = (user) => {
+  const { profileImagePath, ...publicProfile } = user;
+  return publicProfile;
+};
 
 // Returns the authenticated user's profile.
 const getCurrentUserProfile = async (userId) => {
@@ -9,7 +15,7 @@ const getCurrentUserProfile = async (userId) => {
     throw new ApiError(404, "User not found.");
   }
 
-  return user;
+  return toPublicProfile(user);
 };
 
 // Updates the authenticated user's profile.
@@ -62,7 +68,42 @@ const updateCurrentUserProfile = async (userId, payload) => {
   return repository.updateUserProfile(userId, updateData);
 };
 
+const updateCurrentUserProfileImage = async (userId, image) => {
+  const user = await repository.findUserById(userId);
+  if (!user) throw new ApiError(404, "User not found.");
+
+  const uploaded = await profileImageStorage.upload(userId, image);
+  let updatedUser;
+  try {
+    updatedUser = await repository.updateProfileImage(userId, uploaded.url, uploaded.path);
+  } catch (error) {
+    await profileImageStorage.remove(uploaded.path).catch(() => {});
+    throw error;
+  }
+
+  if (user.profileImagePath) {
+    await profileImageStorage.remove(user.profileImagePath).catch((error) => {
+      console.error("Failed to remove replaced profile image:", error.message);
+    });
+  }
+  return updatedUser;
+};
+
+const deleteCurrentUserProfileImage = async (userId) => {
+  const user = await repository.findUserById(userId);
+  if (!user) throw new ApiError(404, "User not found.");
+  const updatedUser = await repository.updateProfileImage(userId, null, null);
+  if (user.profileImagePath) {
+    await profileImageStorage.remove(user.profileImagePath).catch((error) => {
+      console.error("Failed to remove deleted profile image:", error.message);
+    });
+  }
+  return updatedUser;
+};
+
 module.exports = {
   getCurrentUserProfile,
   updateCurrentUserProfile,
+  updateCurrentUserProfileImage,
+  deleteCurrentUserProfileImage,
 };

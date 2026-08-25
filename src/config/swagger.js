@@ -234,6 +234,42 @@ const swaggerDefinition = {
           },
         ],
       },
+      ForgotPasswordRequest: {
+        allOf: [
+          {
+            $ref: "#/components/schemas/OtpRequest",
+          },
+        ],
+      },
+      ResetPasswordRequest: {
+        type: "object",
+        required: ["phone", "otp", "newPassword"],
+        additionalProperties: false,
+        properties: {
+          phone: {
+            type: "string",
+            minLength: 8,
+            maxLength: 20,
+            example: "0595101902",
+          },
+          otp: {
+            type: "string",
+            minLength: 6,
+            maxLength: 6,
+            pattern: "^\\d{6}$",
+            example: "000000",
+          },
+          newPassword: {
+            type: "string",
+            format: "password",
+            minLength: 8,
+            pattern: "^(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{8,}$",
+            description:
+              "Must include an uppercase letter, a number, and a special character.",
+            example: "NewStrong1!",
+          },
+        },
+      },
       UserSummary: {
         type: "object",
         required: ["id", "phone", "role", "status"],
@@ -264,6 +300,11 @@ const swaggerDefinition = {
         required: ["id", "name", "governorate"],
         nullable: true,
         properties: {
+          key: {
+            type: "string",
+            example: "AN_NASER",
+            description: "Stable delivery-area key used by the pricing configuration.",
+          },
           id: {
             type: "string",
             format: "uuid",
@@ -321,6 +362,12 @@ const swaggerDefinition = {
             type: "string",
             nullable: true,
             example: "Maya Nasser",
+          },
+          profileImageUrl: {
+            type: "string",
+            format: "uri",
+            nullable: true,
+            example: "https://project.supabase.co/storage/v1/object/public/profile-images/user-id/image.jpg",
           },
           role: {
             type: "string",
@@ -690,6 +737,7 @@ const swaggerDefinition = {
           "clientRequestKey",
           "originType",
           "destinationKeyword",
+          "destinationNeighborhoodId",
           "departureTime",
           "maxCapacityClass",
           "maxCapacityUnits",
@@ -717,11 +765,21 @@ const swaggerDefinition = {
             description: "Required when originType is CUSTOM_KEYWORD.",
             example: "Al Manara Square",
           },
+          originNeighborhoodId: {
+            type: "string",
+            format: "uuid",
+            description: "Required when originType is CUSTOM_KEYWORD.",
+          },
           destinationKeyword: {
             type: "string",
             minLength: 2,
             maxLength: 150,
             example: "Birzeit University",
+          },
+          destinationNeighborhoodId: {
+            type: "string",
+            format: "uuid",
+            description: "Structured destination used for pricing and matching.",
           },
           departureTime: {
             type: "string",
@@ -830,6 +888,14 @@ const swaggerDefinition = {
             type: "string",
             format: "uuid",
           },
+          destinationNeighborhoodId: { type: "string", format: "uuid", nullable: true },
+          deliveryFeeNis: { type: "integer", minimum: 2, maximum: 15, nullable: true, example: 5 },
+          pricingRule: {
+            type: "string",
+            enum: ["AREA_OVERRIDE", "SAME_AREA", "NEARBY_AREA", "SAME_ZONE", "ZONE_RATE"],
+            nullable: true,
+          },
+          pricingVersion: { type: "integer", minimum: 1, nullable: true, example: 1 },
           clientRequestKey: {
             type: "string",
             format: "uuid",
@@ -1181,6 +1247,30 @@ const swaggerDefinition = {
       LogoutResponse: apiResponse(null, {
         success: true,
         message: "Logged out successfully",
+        data: null,
+      }),
+      ForgotPasswordResponse: apiResponse(
+        {
+          type: "object",
+          required: ["expiresInMinutes"],
+          properties: {
+            expiresInMinutes: {
+              type: "integer",
+              example: 2,
+            },
+          },
+        },
+        {
+          success: true,
+          message: "If an account exists, a reset code has been sent.",
+          data: {
+            expiresInMinutes: 2,
+          },
+        },
+      ),
+      ResetPasswordResponse: apiResponse(null, {
+        success: true,
+        message: "Password reset successfully. Please log in again.",
         data: null,
       }),
       UserProfileResponse: apiResponse({
@@ -1609,6 +1699,91 @@ const swaggerDefinition = {
           429: {
             $ref: "#/components/responses/TooManyRequests",
           },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/api/v1/auth/forgot-password": {
+      post: {
+        tags: ["Authentication"],
+        summary: "Request a password-reset OTP",
+        description:
+          "Creates a purpose-scoped password-reset OTP when the account exists. The response is intentionally identical for existing and missing accounts. A fixed OTP can be enabled only for explicitly allowlisted test phone numbers through server environment configuration.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/ForgotPasswordRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Generic password-reset request response.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ForgotPasswordResponse",
+                },
+              },
+            },
+          },
+          400: {
+            $ref: "#/components/responses/ValidationFailed",
+          },
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/api/v1/auth/reset-password": {
+      post: {
+        tags: ["Authentication"],
+        summary: "Reset a password using a password-reset OTP",
+        description:
+          "Validates the latest unused PASSWORD_RESET OTP for the same phone, replaces the stored bcrypt password hash, marks the OTP used, and revokes every active refresh token for the user.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/ResetPasswordRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Password replaced and existing sessions revoked.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ResetPasswordResponse",
+                },
+              },
+            },
+          },
+          400: {
+            description: "Validation failed or reset code is missing/expired.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ErrorResponse",
+                },
+              },
+            },
+          },
+          401: errorResponse("Invalid password reset code."),
+          409: errorResponse("Password reset code is no longer available."),
+          429: errorResponse("Too many OTP attempts."),
           500: {
             $ref: "#/components/responses/InternalServerError",
           },
@@ -2377,6 +2552,62 @@ const swaggerDefinition = {
           500: {
             $ref: "#/components/responses/InternalServerError",
           },
+        },
+      },
+    },
+    "/api/v1/users/me/profile-image": {
+      put: {
+        tags: ["Users"],
+        summary: "Upload or replace current user's profile image",
+        description: "Accepts one JPEG, PNG, or WebP image up to 5 MB. Replacing an image removes the previous stored object after the database is updated.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                required: ["image"],
+                properties: { image: { type: "string", format: "binary" } },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: "Profile image updated successfully.", content: { "application/json": { schema: { $ref: "#/components/schemas/UserProfileResponse" } } } },
+          400: errorResponse("Profile image is missing, invalid, unsupported, or exceeds 5 MB."),
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: errorResponse("User not found."),
+          502: errorResponse("Could not upload profile image."),
+          503: errorResponse("Profile image storage is not configured."),
+        },
+      },
+      delete: {
+        tags: ["Users"],
+        summary: "Delete current user's profile image",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: { description: "Profile image deleted successfully.", content: { "application/json": { schema: { $ref: "#/components/schemas/UserProfileResponse" } } } },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: errorResponse("User not found."),
+        },
+      },
+    },
+    "/api/v1/delivery-pricing/quote": {
+      get: {
+        tags: ["Trips"],
+        summary: "Preview the server-calculated delivery price",
+        description: "Uses the authenticated user's neighborhood unless originNeighborhoodId is supplied. Clients cannot submit or edit the calculated fee.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "originNeighborhoodId", in: "query", required: false, schema: { type: "string", format: "uuid" } },
+          { name: "destinationNeighborhoodId", in: "query", required: true, schema: { type: "string", format: "uuid" } },
+        ],
+        responses: {
+          200: { description: "Delivery price calculated successfully." },
+          400: errorResponse("Neighborhood IDs are invalid or inactive."),
+          401: { $ref: "#/components/responses/Unauthorized" },
+          422: errorResponse("Delivery pricing is not configured for this route."),
         },
       },
     },

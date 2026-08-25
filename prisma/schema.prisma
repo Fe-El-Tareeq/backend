@@ -22,6 +22,11 @@ enum OtpChannel {
   WHATSAPP
 }
 
+enum OtpPurpose {
+  PHONE_VERIFICATION
+  PASSWORD_RESET
+}
+
 enum WeightClass {
   LIGHT
   MEDIUM
@@ -139,16 +144,27 @@ enum DistanceCategory {
   ADJACENT_ZONE
 }
 
+enum DeliveryPricingRule {
+  AREA_OVERRIDE
+  SAME_AREA
+  NEARBY_AREA
+  SAME_ZONE
+  ZONE_RATE
+}
+
 model Neighborhood {
   id          String   @id @default(uuid()) @db.Uuid
+  key         String?  @unique @db.VarChar(80)
   name        String   @db.VarChar(100)
   governorate String   @db.VarChar(100)
   isActive    Boolean  @default(true) @map("is_active")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  users   User[]
-  errands Errand[]
-  trips   Trip[]
+  users              User[]
+  originErrands      Errand[] @relation("ErrandOriginNeighborhood")
+  destinationErrands Errand[] @relation("ErrandDestinationNeighborhood")
+  originTrips        Trip[]   @relation("TripOriginNeighborhood")
+  destinationTrips   Trip[]   @relation("TripDestinationNeighborhood")
 
   @@unique([name, governorate])
   @@map("neighborhoods")
@@ -159,6 +175,8 @@ model User {
   phone            String     @unique @db.VarChar(20)
   passwordHash     String?    @map("password_hash") @db.VarChar(255)
   fullName         String?    @map("full_name") @db.VarChar(100)
+  profileImageUrl  String?    @map("profile_image_url") @db.VarChar(500)
+  profileImagePath String?    @map("profile_image_path") @db.VarChar(255)
   role             UserRole   @default(USER)
   trustScore       Decimal    @default(70.00) @map("trust_score") @db.Decimal(5, 2)
   neighborhoodId   String?    @map("neighborhood_id") @db.Uuid
@@ -207,13 +225,14 @@ model OtpVerification {
   phone        String     @db.VarChar(20)
   otpHash      String     @map("otp_hash") @db.VarChar(255)
   channel      OtpChannel @default(SMS)
+  purpose      OtpPurpose @default(PHONE_VERIFICATION)
   attemptCount Int        @default(0) @map("attempt_count")
   maxAttempts  Int        @default(5) @map("max_attempts")
   expiresAt    DateTime   @map("expires_at") @db.Timestamptz(6)
   verifiedAt   DateTime?  @map("verified_at") @db.Timestamptz(6)
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  @@index([phone, createdAt])
+  @@index([phone, purpose, createdAt])
   @@map("otp_verifications")
 }
 
@@ -258,32 +277,34 @@ model Wallet {
 }
 
 model Errand {
-  id                     String       @id @default(uuid()) @db.Uuid
-  requesterId            String       @map("requester_id") @db.Uuid
-  categoryId             String?      @map("category_id") @db.Uuid
-  neighborhoodId         String       @map("neighborhood_id") @db.Uuid
-  clientRequestKey       String       @map("client_request_key") @db.Uuid
-  title                  String       @db.VarChar(80)
-  itemsDescription       String       @map("items_description")
-  destinationKeyword     String       @map("destination_keyword") @db.VarChar(150)
-  weightClass            WeightClass  @map("weight_class")
-  isUrgent               Boolean      @default(false) @map("is_urgent")
-  isInterZone            Boolean      @default(false) @map("is_inter_zone")
-  priorityScore          Decimal      @default(0) @map("priority_score") @db.Decimal(8, 2)
-  calculatedFeeNis       Decimal      @map("calculated_fee_nis") @db.Decimal(5, 2)
-  postTokenCost          Int          @map("post_token_cost")
-  postTokenTransactionId String?      @unique @map("post_token_transaction_id") @db.Uuid
-  voiceNoteUrl           String?      @map("voice_note_url")
-  voiceNoteDurationSec   Int?         @map("voice_note_duration_sec")
-  status                 ErrandStatus @default(OPEN)
-  neededByTime           DateTime?    @map("needed_by_time") @db.Timestamptz(6)
-  expiresAt              DateTime     @map("expires_at") @db.Timestamptz(6)
-  createdAt              DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt              DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                        String       @id @default(uuid()) @db.Uuid
+  requesterId               String       @map("requester_id") @db.Uuid
+  categoryId                String?      @map("category_id") @db.Uuid
+  neighborhoodId            String       @map("neighborhood_id") @db.Uuid
+  destinationNeighborhoodId String?      @map("destination_neighborhood_id") @db.Uuid
+  clientRequestKey          String       @map("client_request_key") @db.Uuid
+  title                     String       @db.VarChar(80)
+  itemsDescription          String       @map("items_description")
+  destinationKeyword        String       @map("destination_keyword") @db.VarChar(150)
+  weightClass               WeightClass  @map("weight_class")
+  isUrgent                  Boolean      @default(false) @map("is_urgent")
+  isInterZone               Boolean      @default(false) @map("is_inter_zone")
+  priorityScore             Decimal      @default(0) @map("priority_score") @db.Decimal(8, 2)
+  calculatedFeeNis          Decimal      @map("calculated_fee_nis") @db.Decimal(5, 2)
+  postTokenCost             Int          @map("post_token_cost")
+  postTokenTransactionId    String?      @unique @map("post_token_transaction_id") @db.Uuid
+  voiceNoteUrl              String?      @map("voice_note_url")
+  voiceNoteDurationSec      Int?         @map("voice_note_duration_sec")
+  status                    ErrandStatus @default(OPEN)
+  neededByTime              DateTime?    @map("needed_by_time") @db.Timestamptz(6)
+  expiresAt                 DateTime     @map("expires_at") @db.Timestamptz(6)
+  createdAt                 DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  requester    User         @relation("RequesterErrands", fields: [requesterId], references: [id])
-  category     Category?    @relation(fields: [categoryId], references: [id])
-  neighborhood Neighborhood @relation(fields: [neighborhoodId], references: [id])
+  requester               User          @relation("RequesterErrands", fields: [requesterId], references: [id])
+  category                Category?     @relation(fields: [categoryId], references: [id])
+  neighborhood            Neighborhood  @relation("ErrandOriginNeighborhood", fields: [neighborhoodId], references: [id])
+  destinationNeighborhood Neighborhood? @relation("ErrandDestinationNeighborhood", fields: [destinationNeighborhoodId], references: [id])
 
   postTokenTransaction WalletTransaction? @relation("ErrandPostTokenTransaction", fields: [postTokenTransactionId], references: [id])
 
@@ -295,31 +316,37 @@ model Errand {
   @@index([requesterId])
   @@index([categoryId])
   @@index([neighborhoodId])
+  @@index([destinationNeighborhoodId])
   @@index([expiresAt])
   @@index([neighborhoodId, status, isUrgent, createdAt])
   @@map("errands")
 }
 
 model Trip {
-  id                     String      @id @default(uuid()) @db.Uuid
-  travelerId             String      @map("traveler_id") @db.Uuid
-  neighborhoodId         String      @map("neighborhood_id") @db.Uuid
-  clientRequestKey       String      @map("client_request_key") @db.Uuid
-  destinationKeyword     String      @map("destination_keyword") @db.VarChar(150)
-  originType             OriginType  @default(DEFAULT_NEIGHBORHOOD) @map("origin_type")
-  customOriginKeyword    String?     @map("custom_origin_keyword") @db.VarChar(150)
-  departureTime          DateTime    @map("departure_time") @db.Timestamptz(6)
-  maxCapacityClass       WeightClass @map("max_capacity_class")
-  maxCapacityUnits       Int         @map("max_capacity_units")
-  remainingCapacityUnits Int         @map("remaining_capacity_units")
-  notes                  String?     @db.VarChar(120)
-  status                 TripStatus  @default(ACTIVE)
-  expiresAt              DateTime    @map("expires_at") @db.Timestamptz(6)
-  createdAt              DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt              DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                        String               @id @default(uuid()) @db.Uuid
+  travelerId                String               @map("traveler_id") @db.Uuid
+  neighborhoodId            String               @map("neighborhood_id") @db.Uuid
+  destinationNeighborhoodId String?              @map("destination_neighborhood_id") @db.Uuid
+  clientRequestKey          String               @map("client_request_key") @db.Uuid
+  destinationKeyword        String               @map("destination_keyword") @db.VarChar(150)
+  deliveryFeeNis            Int?                 @map("delivery_fee_nis")
+  pricingRule               DeliveryPricingRule? @map("pricing_rule")
+  pricingVersion            Int?                 @map("pricing_version")
+  originType                OriginType           @default(DEFAULT_NEIGHBORHOOD) @map("origin_type")
+  customOriginKeyword       String?              @map("custom_origin_keyword") @db.VarChar(150)
+  departureTime             DateTime             @map("departure_time") @db.Timestamptz(6)
+  maxCapacityClass          WeightClass          @map("max_capacity_class")
+  maxCapacityUnits          Int                  @map("max_capacity_units")
+  remainingCapacityUnits    Int                  @map("remaining_capacity_units")
+  notes                     String?              @db.VarChar(120)
+  status                    TripStatus           @default(ACTIVE)
+  expiresAt                 DateTime             @map("expires_at") @db.Timestamptz(6)
+  createdAt                 DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  traveler     User         @relation("TravelerTrips", fields: [travelerId], references: [id])
-  neighborhood Neighborhood @relation(fields: [neighborhoodId], references: [id])
+  traveler                User          @relation("TravelerTrips", fields: [travelerId], references: [id])
+  neighborhood            Neighborhood  @relation("TripOriginNeighborhood", fields: [neighborhoodId], references: [id])
+  destinationNeighborhood Neighborhood? @relation("TripDestinationNeighborhood", fields: [destinationNeighborhoodId], references: [id])
 
   matches     Match[]
   assignments ErrandAssignment[]
@@ -327,6 +354,7 @@ model Trip {
   @@unique([travelerId, clientRequestKey])
   @@index([travelerId])
   @@index([neighborhoodId])
+  @@index([destinationNeighborhoodId])
   @@index([departureTime])
   @@index([status])
   @@index([expiresAt])
@@ -368,6 +396,8 @@ model ErrandAssignment {
   travelerId               String           @map("traveler_id") @db.Uuid
   tripId                   String?          @map("trip_id") @db.Uuid
   acceptanceSource         AcceptanceSource @map("acceptance_source")
+  agreedDeliveryFeeNis     Int?             @map("agreed_delivery_fee_nis")
+  pricingVersion           Int?             @map("pricing_version")
   acceptTokenTransactionId String           @unique @map("accept_token_transaction_id") @db.Uuid
   status                   AssignmentStatus @default(ACCEPTED)
   acceptedAt               DateTime         @default(now()) @map("accepted_at") @db.Timestamptz(6)

@@ -14,6 +14,8 @@ const findUserById = async (userId) => {
       id: true,
       phone: true,
       fullName: true,
+      profileImageUrl: true,
+      profileImagePath: true,
       role: true,
       trustScore: true,
       neighborhoodId: true,
@@ -61,6 +63,7 @@ const updateUserProfile = async (userId, data) => {
       id: true,
       phone: true,
       fullName: true,
+      profileImageUrl: true,
       role: true,
       trustScore: true,
       neighborhoodId: true,
@@ -79,8 +82,12 @@ const updateUserProfile = async (userId, data) => {
   });
 };
 
+const updateProfileImage = async (userId, profileImageUrl, profileImagePath) =>
+  updateUserProfile(userId, { profileImageUrl, profileImagePath });
+
 module.exports = {
   findUserById,
   findActiveNeighborhoodById,
   updateUserProfile,
+  updateProfileImage,
 };

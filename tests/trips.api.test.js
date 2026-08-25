@@ -22,6 +22,7 @@ const travelerId = "550e8400-e29b-41d4-a716-446655440000";
 const tripId = "880e8400-e29b-41d4-a716-446655440000";
 
 const clientRequestKey = "770e8400-e29b-41d4-a716-446655440000";
+const destinationNeighborhoodId = "990e8400-e29b-41d4-a716-446655440000";
 
 const validDepartureTime = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
@@ -31,6 +32,7 @@ const trip = {
   clientRequestKey,
   neighborhoodId: "660e8400-e29b-41d4-a716-446655440000",
   destinationKeyword: "Ramallah",
+  destinationNeighborhoodId,
   originType: "DEFAULT_NEIGHBORHOOD",
   customOriginKeyword: null,
   departureTime: validDepartureTime,
@@ -53,6 +55,7 @@ describe("Trips API", () => {
       clientRequestKey,
       originType: "DEFAULT_NEIGHBORHOOD",
       destinationKeyword: "Ramallah",
+      destinationNeighborhoodId,
       departureTime: validDepartureTime,
       maxCapacityClass: "MEDIUM",
       maxCapacityUnits: 3,
@@ -68,6 +71,7 @@ describe("Trips API", () => {
         clientRequestKey,
         originType: "DEFAULT_NEIGHBORHOOD",
         destinationKeyword: "Ramallah",
+        destinationNeighborhoodId,
         maxCapacityClass: "MEDIUM",
         maxCapacityUnits: 3,
       }),
@@ -149,6 +153,7 @@ describe("Trips API", () => {
       clientRequestKey,
       originType: "CUSTOM_KEYWORD",
       destinationKeyword: "Ramallah",
+      destinationNeighborhoodId,
       departureTime: validDepartureTime,
       maxCapacityClass: "MEDIUM",
       maxCapacityUnits: 3,
@@ -168,6 +173,7 @@ describe("Trips API", () => {
       clientRequestKey,
       originType: "DEFAULT_NEIGHBORHOOD",
       destinationKeyword: "Ramallah",
+      destinationNeighborhoodId,
       departureTime: tooSoon,
       maxCapacityClass: "MEDIUM",
       maxCapacityUnits: 3,
@@ -186,6 +192,7 @@ describe("Trips API", () => {
       clientRequestKey,
       originType: "DEFAULT_NEIGHBORHOOD",
       destinationKeyword: "Ramallah",
+      destinationNeighborhoodId,
       departureTime: tooFar,
       maxCapacityClass: "MEDIUM",
       maxCapacityUnits: 3,
@@ -203,6 +210,27 @@ describe("Trips API", () => {
 
     expect(response.statusCode).toBe(400);
 
+    expect(tripsService.updateTrip).not.toHaveBeenCalled();
+  });
+
+  test("traveler cannot submit or edit the server-calculated delivery fee", async () => {
+    const createResponse = await request(app).post("/api/v1/trips").send({
+      clientRequestKey,
+      originType: "DEFAULT_NEIGHBORHOOD",
+      destinationKeyword: "Ramallah",
+      destinationNeighborhoodId,
+      departureTime: validDepartureTime,
+      maxCapacityClass: "MEDIUM",
+      maxCapacityUnits: 3,
+      deliveryFeeNis: 15,
+    });
+    expect(createResponse.statusCode).toBe(400);
+
+    const updateResponse = await request(app)
+      .patch(`/api/v1/trips/${tripId}`)
+      .send({ deliveryFeeNis: 15 });
+    expect(updateResponse.statusCode).toBe(400);
+    expect(tripsService.createTrip).not.toHaveBeenCalled();
     expect(tripsService.updateTrip).not.toHaveBeenCalled();
   });
 

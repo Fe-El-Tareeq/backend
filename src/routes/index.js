@@ -12,6 +12,7 @@ const ratingsRoutes = require('../features/ratings/ratings.route');
 const tripsRoutes = require('../features/trips/trips.route');
 const usersRoutes = require('../features/users/users.route');
 const walletRoutes = require('../features/wallet/wallet.route');
+const deliveryPricingRoutes = require('../features/deliveryPricing/deliveryPricing.route');
 
 const router = express.Router();
 
@@ -27,5 +28,6 @@ router.use('/ratings', ratingsRoutes);
 router.use('/trips', tripsRoutes);
 router.use('/users', usersRoutes);
 router.use('/wallet', walletRoutes);
+router.use('/delivery-pricing', deliveryPricingRoutes);
 
 module.exports = router;

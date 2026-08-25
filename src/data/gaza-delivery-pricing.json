@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "pricingVersion": 1,
+  "status": "APPROVED",
+  "currency": "NIS",
+  "areasSource": "gaza-areas.json",
+  "descriptionAr": "قواعد تسعير التوصيل اليدوية المعتمدة على المناطق القريبة والـZones والاستثناءات الخاصة. المسافر لا يستطيع إدخال السعر أو تعديله.",
+  "constraints": {
+    "minimumDeliveryFeeNis": 2,
+    "maximumDeliveryFeeNis": 15,
+    "integerValuesOnly": true,
+    "travelerCanSetFee": false,
+    "travelerCanEditFee": false,
+    "lockFeeWhenTripIsCreated": true,
+    "sameFeeForEveryErrandOnTrip": true,
+    "bidirectionalByDefault": true
+  },
+  "resolutionPriority": [
+    "AREA_OVERRIDE",
+    "SAME_AREA",
+    "NEARBY_AREA",
+    "SAME_ZONE",
+    "ZONE_RATE",
+    "NO_PRICE_AVAILABLE"
+  ],
+  "defaultRules": {
+    "sameArea": {
+      "deliveryFeeNis": 2,
+      "descriptionAr": "نقطة البداية والوجهة داخل المنطقة نفسها."
+    },
+    "nearbyArea": {
+      "deliveryFeeNis": 3,
+      "descriptionAr": "الوجهة موجودة في nearbyAreas لمنطقة البداية أو العكس."
+    },
+    "sameZone": {
+      "deliveryFeeNis": 5,
+      "descriptionAr": "المنطقتان داخل الـZone نفسها ولكنهما ليستا منطقتين قريبتين مباشرة."
+    }
+  },
+  "zoneRates": [
+    {
+      "firstZoneKey": "GAZA_CITY",
+      "secondZoneKey": "MIDDLE_AREA",
+      "deliveryFeeNis": 10,
+      "bidirectional": true,
+      "reviewed": false,
+      "notesAr": "سعر مبدئي يحتاج مراجعة واعتماد."
+    },
+    {
+      "firstZoneKey": "GAZA_CITY",
+      "secondZoneKey": "KHAN_YUNIS",
+      "deliveryFeeNis": 15,
+      "bidirectional": true,
+      "reviewed": false,
+      "notesAr": "سعر مبدئي يحتاج مراجعة واعتماد."
+    },
+    {
+      "firstZoneKey": "MIDDLE_AREA",
+      "secondZoneKey": "KHAN_YUNIS",
+      "deliveryFeeNis": 7,
+      "bidirectional": true,
+      "reviewed": false,
+      "notesAr": "سعر مبدئي يحتاج مراجعة واعتماد."
+    }
+  ],
+  "areaOverrides": [
+    {
+      "firstAreaKey": "AN_NASER",
+      "secondAreaKey": "ASH_SHEIKH_RADWAN",
+      "deliveryFeeNis": 3,
+      "bidirectional": true,
+      "reviewed": true,
+      "notesAr": "مثال معتمد لمنطقتين قريبتين."
+    },
+    {
+      "firstAreaKey": "NORTHERN_RIMAL",
+      "secondAreaKey": "SOUTHERN_RIMAL",
+      "deliveryFeeNis": 3,
+      "bidirectional": true,
+      "reviewed": false,
+      "notesAr": "مثال أولي؛ احذفيه أو عدلي السعر بعد المراجعة."
+    }
+  ],
+  "missingPriceBehavior": {
+    "action": "REJECT_QUOTE",
+    "httpStatus": 422,
+    "errorCode": "DELIVERY_PRICE_NOT_CONFIGURED",
+    "messageEn": "Delivery pricing is not available for this route.",
+    "messageAr": "لا يوجد سعر توصيل معتمد لهذا المسار."
+  },
+  "backendCalculation": {
+    "acceptFeeFromFrontend": false,
+    "recalculateOnTripCreation": true,
+    "storePricingRule": true,
+    "storePricingVersion": true,
+    "storeFinalFeeSnapshot": true
+  },
+  "responseExample": {
+    "originAreaKey": "AN_NASER",
+    "destinationAreaKey": "ASH_SHEIKH_RADWAN",
+    "deliveryFeeNis": 3,
+    "pricingRule": "AREA_OVERRIDE",
+    "pricingVersion": 1,
+    "currency": "NIS"
+  },
+  "reviewChecklist": [
+    "استكمال NORTH_GAZA وRAFAH والمناطق غير الموجودة في ملف المناطق.",
+    "مراجعة nearbyAreas وتصحيح العلاقات غير المتبادلة.",
+    "اعتماد أسعار zoneRates الثلاثة أو تعديلها.",
+    "إضافة areaOverrides فقط للمسارات التي تختلف عن القواعد العامة.",
+    "تغيير status إلى APPROVED قبل ربط الملف بالباك إند."
+  ]
+}

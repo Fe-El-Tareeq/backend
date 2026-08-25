@@ -48,10 +48,7 @@ describe("Signup Bonus Wallet Tests", () => {
     const bcrypt = require("bcryptjs");
     jest.spyOn(bcrypt, "compare").mockResolvedValue(true);
 
-    authRepository.markOtpAsVerified.mockResolvedValue({
-      ...otpRecord,
-      verifiedAt: new Date(),
-    });
+    authRepository.claimOtpVerification.mockResolvedValue({ count: 1 });
 
     authRepository.findUserByPhone.mockResolvedValue({
       ...user,

@@ -1,0 +1,443 @@
+{
+  "region": {
+    "key": "GAZA_STRIP",
+    "nameAr": "قطاع غزة",
+    "nameEn": "Gaza Strip"
+  },
+  "notes": {
+    "pricingIncluded": false,
+    "nearbyAreasMeaning": "Project-curated adjacent/immediately-near areas; review against GIS polygons before production."
+  },
+  "zones": [
+    {
+      "key": "GAZA_CITY",
+      "nameAr": "مدينة غزة",
+      "nameEn": "Gaza City",
+      "areas": [
+        {
+          "key": "AN_NASER",
+          "nameAr": "النصر",
+          "nameEn": "An Naser",
+          "nearbyAreas": [
+            "ASH_SHEIKH_RADWAN",
+            "NORTHERN_RIMAL",
+            "ASH_SHATI_CAMP"
+          ]
+        },
+        {
+          "key": "ASH_SHEIKH_RADWAN",
+          "nameAr": "الشيخ رضوان",
+          "nameEn": "Ash Sheikh Radwan",
+          "nearbyAreas": [
+            "AN_NASER",
+            "AT_TUFFAH",
+            "AD_DARRAJ"
+          ]
+        },
+        {
+          "key": "ASH_SHATI_CAMP",
+          "nameAr": "مخيم الشاطئ",
+          "nameEn": "Ash Shati' Camp",
+          "nearbyAreas": [
+            "AN_NASER",
+            "NORTHERN_RIMAL",
+            "GAZA_HARBOR"
+          ]
+        },
+        {
+          "key": "NORTHERN_RIMAL",
+          "nameAr": "الرمال الشمالي",
+          "nameEn": "Northern Rimal",
+          "nearbyAreas": [
+            "AN_NASER",
+            "ASH_SHATI_CAMP",
+            "SOUTHERN_RIMAL",
+            "AD_DARRAJ",
+            "GAZA_HARBOR"
+          ]
+        },
+        {
+          "key": "SOUTHERN_RIMAL",
+          "nameAr": "الرمال الجنوبي",
+          "nameEn": "Southern Rimal",
+          "nearbyAreas": [
+            "NORTHERN_RIMAL",
+            "OLD_CITY",
+            "AS_SABRA",
+            "TAL_EL_HAWA",
+            "ASH_SHEIKH_IJLEEN"
+          ]
+        },
+        {
+          "key": "GAZA_HARBOR",
+          "nameAr": "ميناء غزة",
+          "nameEn": "Gaza Harbor",
+          "nearbyAreas": [
+            "ASH_SHATI_CAMP",
+            "NORTHERN_RIMAL"
+          ]
+        },
+        {
+          "key": "AD_DARRAJ",
+          "nameAr": "الدرج",
+          "nameEn": "Ad Darraj",
+          "nearbyAreas": [
+            "NORTHERN_RIMAL",
+            "ASH_SHEIKH_RADWAN",
+            "AT_TUFFAH",
+            "OLD_CITY"
+          ]
+        },
+        {
+          "key": "AT_TUFFAH",
+          "nameAr": "التفاح",
+          "nameEn": "At Tuffah",
+          "nearbyAreas": [
+            "ASH_SHEIKH_RADWAN",
+            "AD_DARRAJ",
+            "ASH_SHUJAIYEH"
+          ]
+        },
+        {
+          "key": "OLD_CITY",
+          "nameAr": "البلدة القديمة",
+          "nameEn": "Old City",
+          "nearbyAreas": [
+            "AD_DARRAJ",
+            "SOUTHERN_RIMAL",
+            "AS_SABRA",
+            "AZ_ZAITOUN",
+            "ASH_SHUJAIYEH"
+          ]
+        },
+        {
+          "key": "ASH_SHUJAIYEH",
+          "nameAr": "الشجاعية",
+          "nameEn": "Ash Shuja'iyeh",
+          "nearbyAreas": [
+            "AT_TUFFAH",
+            "AD_DARRAJ",
+            "OLD_CITY",
+            "AZ_ZAITOUN",
+            "AT_TURUKMAN",
+            "IJDEEDEH"
+          ]
+        },
+        {
+          "key": "AT_TURUKMAN",
+          "nameAr": "التركمان",
+          "nameEn": "At Turukman",
+          "nearbyAreas": [
+            "ASH_SHUJAIYEH",
+            "AZ_ZAITOUN",
+            "IJDEEDEH"
+          ]
+        },
+        {
+          "key": "AZ_ZAITOUN",
+          "nameAr": "الزيتون",
+          "nameEn": "Az Zaitoun",
+          "nearbyAreas": [
+            "OLD_CITY",
+            "AS_SABRA",
+            "ASH_SHUJAIYEH",
+            "AT_TURUKMAN",
+            "TAL_EL_HAWA",
+            "IJDEEDEH"
+          ]
+        },
+        {
+          "key": "AS_SABRA",
+          "nameAr": "الصبرة",
+          "nameEn": "As Sabra",
+          "nearbyAreas": [
+            "SOUTHERN_RIMAL",
+            "OLD_CITY",
+            "AZ_ZAITOUN",
+            "TAL_EL_HAWA"
+          ]
+        },
+        {
+          "key": "TAL_EL_HAWA",
+          "nameAr": "تل الهوى",
+          "nameEn": "Tal El Hawa",
+          "nearbyAreas": [
+            "SOUTHERN_RIMAL",
+            "AS_SABRA",
+            "AZ_ZAITOUN",
+            "ASH_SHEIKH_IJLEEN"
+          ]
+        },
+        {
+          "key": "ASH_SHEIKH_IJLEEN",
+          "nameAr": "الشيخ عجلين",
+          "nameEn": "Ash Sheikh 'Ijleen",
+          "nearbyAreas": [
+            "SOUTHERN_RIMAL",
+            "TAL_EL_HAWA"
+          ]
+        },
+        {
+          "key": "IJDEEDEH",
+          "nameAr": "الجديدة",
+          "nameEn": "Ijdeedeh",
+          "nearbyAreas": [
+            "ASH_SHUJAIYEH",
+            "AT_TURUKMAN",
+            "AZ_ZAITOUN"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "MIDDLE_AREA",
+      "nameAr": "الوسطى",
+      "nameEn": "Middle Area",
+      "areas": [
+        {
+          "key": "AL_ZAHRA",
+          "nameAr": "الزهراء",
+          "nameEn": "Al Zahra",
+          "nearbyAreas": [
+            "AN_NUSEIRAT_CAMP",
+            "AL_BUREIJ_CAMP"
+          ]
+        },
+        {
+          "key": "AN_NUSEIRAT_CAMP",
+          "nameAr": "النصيرات",
+          "nameEn": "An Nuseirat Camp",
+          "nearbyAreas": [
+            "AL_ZAHRA",
+            "AL_BUREIJ_CAMP",
+            "AZ_ZAWAYDA"
+          ]
+        },
+        {
+          "key": "AL_BUREIJ_CAMP",
+          "nameAr": "البريج",
+          "nameEn": "Al Bureij Camp",
+          "nearbyAreas": [
+            "AL_ZAHRA",
+            "AN_NUSEIRAT_CAMP",
+            "AL_MAGHAZI_CAMP"
+          ]
+        },
+        {
+          "key": "AL_MAGHAZI_CAMP",
+          "nameAr": "المغازي",
+          "nameEn": "Al Maghazi Camp",
+          "nearbyAreas": [
+            "AL_BUREIJ_CAMP",
+            "AL_MUSADDAR",
+            "AZ_ZAWAYDA"
+          ]
+        },
+        {
+          "key": "AL_MUSADDAR",
+          "nameAr": "المصدر",
+          "nameEn": "Al Musaddar",
+          "nearbyAreas": [
+            "AL_MAGHAZI_CAMP",
+            "AZ_ZAWAYDA",
+            "DEIR_AL_BALAH"
+          ]
+        },
+        {
+          "key": "AZ_ZAWAYDA",
+          "nameAr": "الزوايدة",
+          "nameEn": "Az Zawayda",
+          "nearbyAreas": [
+            "AN_NUSEIRAT_CAMP",
+            "AL_MAGHAZI_CAMP",
+            "AL_MUSADDAR",
+            "DEIR_AL_BALAH"
+          ]
+        },
+        {
+          "key": "DEIR_AL_BALAH",
+          "nameAr": "دير البلح",
+          "nameEn": "Deir al Balah",
+          "nearbyAreas": [
+            "AZ_ZAWAYDA",
+            "AL_MUSADDAR",
+            "DEIR_AL_BALAH_CAMP",
+            "WADI_AS_SALQA"
+          ]
+        },
+        {
+          "key": "DEIR_AL_BALAH_CAMP",
+          "nameAr": "مخيم دير البلح",
+          "nameEn": "Deir al Balah Camp",
+          "nearbyAreas": [
+            "DEIR_AL_BALAH",
+            "WADI_AS_SALQA"
+          ]
+        },
+        {
+          "key": "WADI_AS_SALQA",
+          "nameAr": "وادي السلقا",
+          "nameEn": "Wadi as Salqa",
+          "nearbyAreas": [
+            "DEIR_AL_BALAH",
+            "DEIR_AL_BALAH_CAMP",
+            "AL_QARARA"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "KHAN_YUNIS",
+      "nameAr": "خانيونس",
+      "nameEn": "Khan Yunis",
+      "areas": [
+        {
+          "key": "AL_QARARA",
+          "nameAr": "القرارة",
+          "nameEn": "Al Qarara",
+          "nearbyAreas": [
+            "WADI_AS_SALQA",
+            "KHAN_YUNIS_CITY",
+            "BANI_SUHEILA"
+          ]
+        },
+        {
+          "key": "KHAN_YUNIS_CITY",
+          "nameAr": "مدينة خانيونس",
+          "nameEn": "Khan Yunis",
+          "nearbyAreas": [
+            "AL_QARARA",
+            "KHAN_YUNIS_CAMP",
+            "BANI_SUHEILA",
+            "QIZAN_AN_NAJJAR",
+            "AL_MAWASI_KHAN_YUNIS"
+          ]
+        },
+        {
+          "key": "KHAN_YUNIS_CAMP",
+          "nameAr": "مخيم خانيونس",
+          "nameEn": "Khan Yunis Camp",
+          "nearbyAreas": [
+            "KHAN_YUNIS_CITY",
+            "AL_MAWASI_KHAN_YUNIS",
+            "QIZAN_AN_NAJJAR"
+          ]
+        },
+        {
+          "key": "BANI_SUHEILA",
+          "nameAr": "بني سهيلا",
+          "nameEn": "Bani Suheila",
+          "nearbyAreas": [
+            "AL_QARARA",
+            "KHAN_YUNIS_CITY",
+            "ABASAN_AL_KABIRA",
+            "ABASAN_AL_JADIDA",
+            "AS_SUREIJ"
+          ]
+        },
+        {
+          "key": "ABASAN_AL_KABIRA",
+          "nameAr": "عبسان الكبيرة",
+          "nameEn": "Abasan al Kabira",
+          "nearbyAreas": [
+            "BANI_SUHEILA",
+            "ABASAN_AL_JADIDA",
+            "KHUZAA",
+            "AL_FUKHKHARI"
+          ]
+        },
+        {
+          "key": "ABASAN_AL_JADIDA",
+          "nameAr": "عبسان الجديدة",
+          "nameEn": "Abasan al Jadida",
+          "nearbyAreas": [
+            "BANI_SUHEILA",
+            "ABASAN_AL_KABIRA",
+            "KHUZAA"
+          ]
+        },
+        {
+          "key": "KHUZAA",
+          "nameAr": "خزاعة",
+          "nameEn": "Khuza'a",
+          "nearbyAreas": [
+            "ABASAN_AL_KABIRA",
+            "ABASAN_AL_JADIDA",
+            "AL_FUKHKHARI"
+          ]
+        },
+        {
+          "key": "AS_SUREIJ",
+          "nameAr": "السريج",
+          "nameEn": "As Sureij",
+          "nearbyAreas": [
+            "BANI_SUHEILA",
+            "KHAN_YUNIS_CITY",
+            "QAA_AL_QUREIN"
+          ]
+        },
+        {
+          "key": "QIZAN_AN_NAJJAR",
+          "nameAr": "قيزان النجار",
+          "nameEn": "Qizan an Najjar",
+          "nearbyAreas": [
+            "KHAN_YUNIS_CITY",
+            "KHAN_YUNIS_CAMP",
+            "QAA_AL_QUREIN",
+            "QAA_AL_KHARABA"
+          ]
+        },
+        {
+          "key": "QAA_AL_QUREIN",
+          "nameAr": "قاع القرين",
+          "nameEn": "Qa' al Qurein",
+          "nearbyAreas": [
+            "AS_SUREIJ",
+            "QIZAN_AN_NAJJAR",
+            "QAA_AL_KHARABA",
+            "AL_FUKHKHARI"
+          ]
+        },
+        {
+          "key": "QAA_AL_KHARABA",
+          "nameAr": "قاع الخرابة",
+          "nameEn": "Qa' al Kharaba",
+          "nearbyAreas": [
+            "QIZAN_AN_NAJJAR",
+            "QAA_AL_QUREIN",
+            "AL_FUKHKHARI"
+          ]
+        },
+        {
+          "key": "AL_FUKHKHARI",
+          "nameAr": "الفخاري",
+          "nameEn": "Al Fukhkhari",
+          "nearbyAreas": [
+            "ABASAN_AL_KABIRA",
+            "KHUZAA",
+            "QAA_AL_QUREIN",
+            "QAA_AL_KHARABA",
+            "UMM_KAMEIL"
+          ]
+        },
+        {
+          "key": "UMM_KAMEIL",
+          "nameAr": "أم كميل",
+          "nameEn": "Umm Kameil",
+          "nearbyAreas": [
+            "AL_FUKHKHARI"
+          ]
+        },
+        {
+          "key": "AL_MAWASI_KHAN_YUNIS",
+          "nameAr": "مواصي خانيونس",
+          "nameEn": "Al Mawasi (Khan Yunis)",
+          "nearbyAreas": [
+            "KHAN_YUNIS_CITY",
+            "KHAN_YUNIS_CAMP"
+          ]
+        }
+      ]
+    }
+  ]
+}

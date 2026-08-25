@@ -7,9 +7,11 @@ process.env.JWT_REFRESH_SECRET =
 process.env.NODE_ENV = "test";
 
 jest.mock("../src/features/trips/trips.repository");
+jest.mock("../src/features/deliveryPricing/deliveryPricing.service");
 
 const repository = require("../src/features/trips/trips.repository");
 const service = require("../src/features/trips/trips.service");
+const deliveryPricingService = require("../src/features/deliveryPricing/deliveryPricing.service");
 
 const tx = {
   transaction: "test",
@@ -27,6 +29,7 @@ const traveler = {
     name: "Test Neighborhood",
     governorate: "Test Governorate",
     isActive: true,
+    key: "AN_NASER",
   },
 };
 
@@ -35,6 +38,7 @@ const createData = {
   originType: "DEFAULT_NEIGHBORHOOD",
   customOriginKeyword: null,
   destinationKeyword: "Ramallah City Center",
+  destinationNeighborhoodId: "990e8400-e29b-41d4-a716-446655440000",
   departureTime: "2026-08-24T10:30:00+03:00",
   maxCapacityClass: "MEDIUM",
   maxCapacityUnits: 3,
@@ -64,6 +68,11 @@ beforeEach(() => {
   repository.findTravelerForPosting.mockResolvedValue(traveler);
 
   repository.createTrip.mockResolvedValue(createdTrip);
+  deliveryPricingService.quoteByNeighborhoodIds.mockResolvedValue({
+    deliveryFeeNis: 5,
+    pricingRule: "SAME_ZONE",
+    pricingVersion: 1,
+  });
 });
 
 describe("Trips create", () => {
@@ -89,6 +98,10 @@ describe("Trips create", () => {
         originType: "DEFAULT_NEIGHBORHOOD",
         customOriginKeyword: null,
         destinationKeyword: "Ramallah City Center",
+        destinationNeighborhoodId: createData.destinationNeighborhoodId,
+        deliveryFeeNis: 5,
+        pricingRule: "SAME_ZONE",
+        pricingVersion: 1,
         maxCapacityClass: "MEDIUM",
         maxCapacityUnits: 3,
         remainingCapacityUnits: 3,
@@ -116,6 +129,7 @@ describe("Trips create", () => {
       ...createData,
       originType: "CUSTOM_KEYWORD",
       customOriginKeyword: "  Al Manara Square  ",
+      originNeighborhoodId: "aa0e8400-e29b-41d4-a716-446655440000",
     };
 
     await service.createTrip(traveler.id, customData);

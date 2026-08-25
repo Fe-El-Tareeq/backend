@@ -78,6 +78,8 @@ const createTripSchema = z.object({
 
       originType: z.enum(ORIGIN_TYPES),
 
+      originNeighborhoodId: z.string().uuid("Origin neighborhood ID must be a valid UUID.").optional(),
+
       customOriginKeyword: z
         .string()
         .trim()
@@ -91,6 +93,8 @@ const createTripSchema = z.object({
         .trim()
         .min(2, "Destination must be at least 2 characters.")
         .max(150, "Destination must not exceed 150 characters."),
+
+      destinationNeighborhoodId: z.string().uuid("Destination neighborhood ID must be a valid UUID."),
 
       departureTime: departureTimeSchema,
 
@@ -113,7 +117,7 @@ const createTripSchema = z.object({
     .superRefine((data, ctx) => {
       if (
         data.originType === "DEFAULT_NEIGHBORHOOD" &&
-        data.customOriginKeyword != null
+        (data.customOriginKeyword != null || data.originNeighborhoodId != null)
       ) {
         ctx.addIssue({
           code: "custom",
@@ -125,13 +129,13 @@ const createTripSchema = z.object({
 
       if (
         data.originType === "CUSTOM_KEYWORD" &&
-        !data.customOriginKeyword
+        (!data.customOriginKeyword || !data.originNeighborhoodId)
       ) {
         ctx.addIssue({
           code: "custom",
           path: ["customOriginKeyword"],
           message:
-            "Custom origin is required when origin type is CUSTOM_KEYWORD.",
+            "Custom origin text and origin neighborhood ID are required when origin type is CUSTOM_KEYWORD.",
         });
       }
     }),

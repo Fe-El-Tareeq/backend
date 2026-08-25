@@ -1,6 +1,7 @@
 const ApiError = require("../../utils/ApiError");
 
 const repository = require("./trips.repository");
+const deliveryPricingService = require("../deliveryPricing/deliveryPricing.service");
 
 const {
   MIN_DEPARTURE_LEAD_MINUTES,
@@ -66,6 +67,8 @@ const isSameCreateRequest = (trip, data) => {
 
   return (
     trip.originType === data.originType &&
+    trip.destinationNeighborhoodId === data.destinationNeighborhoodId &&
+    (data.originType !== "CUSTOM_KEYWORD" || trip.neighborhoodId === data.originNeighborhoodId) &&
     normalizeOptionalText(trip.customOriginKeyword) ===
       normalizeOptionalText(data.customOriginKeyword) &&
     trip.destinationKeyword.trim() === data.destinationKeyword.trim() &&
@@ -102,9 +105,20 @@ const createTrip = async (travelerId, data) => {
 
     validateTravelerForPosting(traveler);
 
+    const originNeighborhoodId = data.originType === "CUSTOM_KEYWORD"
+      ? data.originNeighborhoodId
+      : traveler.neighborhoodId;
+
+    const quote = await deliveryPricingService.quoteByNeighborhoodIds(
+      originNeighborhoodId,
+      data.destinationNeighborhoodId,
+      tx,
+    );
+
     const tripData = {
       travelerId,
-      neighborhoodId: traveler.neighborhoodId,
+      neighborhoodId: originNeighborhoodId,
+      destinationNeighborhoodId: data.destinationNeighborhoodId,
       clientRequestKey: data.clientRequestKey,
 
       originType: data.originType,
@@ -115,6 +129,10 @@ const createTrip = async (travelerId, data) => {
           : null,
 
       destinationKeyword: data.destinationKeyword.trim(),
+
+      deliveryFeeNis: quote.deliveryFeeNis,
+      pricingRule: quote.pricingRule,
+      pricingVersion: quote.pricingVersion,
 
       departureTime: new Date(data.departureTime),
 

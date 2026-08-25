@@ -8,9 +8,13 @@ const findActiveNeighborhoods = async () => {
   return prisma.neighborhood.findMany({
     where: {
       isActive: true,
+      key: {
+        not: null,
+      },
     },
     select: {
       id: true,
+      key: true,
       name: true,
       governorate: true,
     },
