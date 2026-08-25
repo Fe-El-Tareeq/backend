@@ -9,6 +9,7 @@ const MAX_DEPARTURE_DAYS = 3;
 // Fields that the traveler is allowed to change after publishing the trip.
 const TRIP_UPDATE_ALLOWED_FIELDS = [
   "departureTime",
+  "expectedReturnTime",
   "maxCapacityClass",
   "maxCapacityUnits",
   "notes",

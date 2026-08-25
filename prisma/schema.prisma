@@ -318,6 +318,7 @@ model Errand {
   @@index([neighborhoodId])
   @@index([destinationNeighborhoodId])
   @@index([expiresAt])
+  @@index([neighborhoodId, destinationNeighborhoodId, status, expiresAt])
   @@index([neighborhoodId, status, isUrgent, createdAt])
   @@map("errands")
 }
@@ -335,6 +336,7 @@ model Trip {
   originType                OriginType           @default(DEFAULT_NEIGHBORHOOD) @map("origin_type")
   customOriginKeyword       String?              @map("custom_origin_keyword") @db.VarChar(150)
   departureTime             DateTime             @map("departure_time") @db.Timestamptz(6)
+  expectedReturnTime        DateTime?            @map("expected_return_time") @db.Timestamptz(6)
   maxCapacityClass          WeightClass          @map("max_capacity_class")
   maxCapacityUnits          Int                  @map("max_capacity_units")
   remainingCapacityUnits    Int                  @map("remaining_capacity_units")
@@ -356,6 +358,7 @@ model Trip {
   @@index([neighborhoodId])
   @@index([destinationNeighborhoodId])
   @@index([departureTime])
+  @@index([neighborhoodId, destinationNeighborhoodId, status, expectedReturnTime])
   @@index([status])
   @@index([expiresAt])
   @@map("trips")

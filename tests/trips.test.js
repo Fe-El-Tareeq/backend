@@ -40,6 +40,7 @@ const createData = {
   destinationKeyword: "Ramallah City Center",
   destinationNeighborhoodId: "990e8400-e29b-41d4-a716-446655440000",
   departureTime: "2026-08-24T10:30:00+03:00",
+  expectedReturnTime: "2026-08-24T13:30:00+03:00",
   maxCapacityClass: "MEDIUM",
   maxCapacityUnits: 3,
   notes: "Leaving from the main street",
@@ -51,6 +52,7 @@ const createdTrip = {
   neighborhoodId: traveler.neighborhoodId,
   ...createData,
   departureTime: new Date(createData.departureTime),
+  expectedReturnTime: new Date(createData.expectedReturnTime),
   remainingCapacityUnits: 3,
   status: "ACTIVE",
   expiresAt: new Date(createData.departureTime),
@@ -102,6 +104,7 @@ describe("Trips create", () => {
         deliveryFeeNis: 5,
         pricingRule: "SAME_ZONE",
         pricingVersion: 1,
+        expectedReturnTime: new Date(createData.expectedReturnTime),
         maxCapacityClass: "MEDIUM",
         maxCapacityUnits: 3,
         remainingCapacityUnits: 3,
@@ -278,7 +281,8 @@ describe("Trips update", () => {
   const activeTrip = {
     ...createdTrip,
     departureTime: new Date(Date.now() + 60 * 60 * 1000),
-    expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    expectedReturnTime: new Date(Date.now() + 2 * 60 * 60 * 1000),
+    expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
     maxCapacityUnits: 5,
     remainingCapacityUnits: 3,
   };

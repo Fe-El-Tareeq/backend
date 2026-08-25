@@ -80,6 +80,10 @@ const swaggerDefinition = {
       name: "Wallet",
       description: "Authenticated token wallet and transaction history APIs.",
     },
+    {
+      name: "Matching",
+      description: "Owner-only ranked matching for open errands and active round trips.",
+    },
   ],
   components: {
     securitySchemes: {
@@ -440,6 +444,7 @@ const swaggerDefinition = {
         required: [
           "clientRequestKey",
           "categoryId",
+          "pickupNeighborhoodId",
           "title",
           "itemsDescription",
           "destinationKeyword",
@@ -458,6 +463,11 @@ const swaggerDefinition = {
             format: "uuid",
             description: "Must reference an active seeded category.",
             example: "60a32850-bd3f-444a-84b4-c750abf6ecb6",
+          },
+          pickupNeighborhoodId: {
+            type: "string",
+            format: "uuid",
+            description: "Neighborhood where the requested item will be bought or picked up.",
           },
           title: {
             type: "string",
@@ -520,6 +530,10 @@ const swaggerDefinition = {
         minProperties: 1,
         properties: {
           categoryId: {
+            type: "string",
+            format: "uuid",
+          },
+          pickupNeighborhoodId: {
             type: "string",
             format: "uuid",
           },
@@ -606,6 +620,12 @@ const swaggerDefinition = {
           neighborhoodId: {
             type: "string",
             format: "uuid",
+          },
+          destinationNeighborhoodId: {
+            type: "string",
+            format: "uuid",
+            nullable: true,
+            description: "Stored pickup neighborhood ID.",
           },
           clientRequestKey: {
             type: "string",
@@ -739,6 +759,7 @@ const swaggerDefinition = {
           "destinationKeyword",
           "destinationNeighborhoodId",
           "departureTime",
+          "expectedReturnTime",
           "maxCapacityClass",
           "maxCapacityUnits",
         ],
@@ -788,6 +809,12 @@ const swaggerDefinition = {
               "Must be at least 15 minutes from now and no more than 3 days in the future.",
             example: "2026-08-23T10:30:00+03:00",
           },
+          expectedReturnTime: {
+            type: "string",
+            format: "date-time",
+            description: "Required return time; must be after departureTime and is used for delivery matching.",
+            example: "2026-08-23T13:30:00+03:00",
+          },
           maxCapacityClass: {
             type: "string",
             enum: ["LIGHT", "MEDIUM", "HEAVY"],
@@ -817,6 +844,11 @@ const swaggerDefinition = {
             description:
               "Must be at least 15 minutes from now and no more than 3 days in the future.",
             example: "2026-08-23T11:00:00+03:00",
+          },
+          expectedReturnTime: {
+            type: "string",
+            format: "date-time",
+            description: "Must be after the effective departure time.",
           },
           maxCapacityClass: {
             type: "string",
@@ -917,6 +949,11 @@ const swaggerDefinition = {
           departureTime: {
             type: "string",
             format: "date-time",
+          },
+          expectedReturnTime: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
           },
           maxCapacityClass: {
             type: "string",
@@ -2108,6 +2145,25 @@ const swaggerDefinition = {
         },
       },
     },
+    "/api/v1/errands/{id}/matches": {
+      get: {
+        tags: ["Matching"],
+        summary: "Get ranked compatible trips for an errand",
+        description: "Owner-only, computed-on-read results. Filters OPEN/unexpired errand, ACTIVE future round trips, same/nearby origin and destination areas, return before deadline, capacity class/units, and self-matches. No token cost.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 20, default: 10 } },
+        ],
+        responses: {
+          200: { description: "Ranked matching trips. Each item contains trip and score components." },
+          400: errorResponse("Validation failed or errand is not matchable."),
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Only the errand owner can view its matches."),
+          404: errorResponse("Errand not found."),
+        },
+      },
+    },
     "/api/v1/trips": {
       get: {
         tags: ["Trips"],
@@ -2434,6 +2490,25 @@ const swaggerDefinition = {
           500: {
             $ref: "#/components/responses/InternalServerError",
           },
+        },
+      },
+    },
+    "/api/v1/trips/{id}/matching-errands": {
+      get: {
+        tags: ["Matching"],
+        summary: "Get ranked compatible errands for a trip",
+        description: "Owner-only, computed-on-read results. Trust scoring uses requester trust for this direction. Delivery fee shown is the trip deliveryFeeNis. No token cost.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 20, default: 10 } },
+        ],
+        responses: {
+          200: { description: "Ranked matching errands. Each item contains errand and score components." },
+          400: errorResponse("Validation failed or trip is not matchable."),
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Only the trip owner can view its matching errands."),
+          404: errorResponse("Trip not found."),
         },
       },
     },

@@ -60,6 +60,11 @@ const departureTimeSchema = z
   })
   .superRefine(validateDepartureTime);
 
+const returnTimeSchema = z.string().datetime({
+  offset: true,
+  message: "Expected return time must be a valid ISO datetime with timezone.",
+});
+
 // Reusable Trip UUID param.
 const tripIdParamsSchema = z.object({
   id: z.string().uuid("Trip ID must be a valid UUID."),
@@ -98,6 +103,8 @@ const createTripSchema = z.object({
 
       departureTime: departureTimeSchema,
 
+      expectedReturnTime: returnTimeSchema,
+
       maxCapacityClass: z.enum(WEIGHT_CLASSES),
 
       maxCapacityUnits: z
@@ -115,6 +122,13 @@ const createTripSchema = z.object({
     })
     .strict()
     .superRefine((data, ctx) => {
+      if (new Date(data.expectedReturnTime) <= new Date(data.departureTime)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["expectedReturnTime"],
+          message: "Expected return time must be after departure time.",
+        });
+      }
       if (
         data.originType === "DEFAULT_NEIGHBORHOOD" &&
         (data.customOriginKeyword != null || data.originNeighborhoodId != null)
@@ -162,6 +176,8 @@ const updateTripSchema = z.object({
   body: z
     .object({
       departureTime: departureTimeSchema.optional(),
+
+      expectedReturnTime: returnTimeSchema.optional(),
 
       maxCapacityClass: z
         .enum(WEIGHT_CLASSES)
