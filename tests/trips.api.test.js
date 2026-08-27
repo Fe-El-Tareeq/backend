@@ -25,6 +25,7 @@ const clientRequestKey = "770e8400-e29b-41d4-a716-446655440000";
 const destinationNeighborhoodId = "990e8400-e29b-41d4-a716-446655440000";
 
 const validDepartureTime = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+const validReturnTime = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
 
 const trip = {
   id: tripId,
@@ -36,6 +37,7 @@ const trip = {
   originType: "DEFAULT_NEIGHBORHOOD",
   customOriginKeyword: null,
   departureTime: validDepartureTime,
+  expectedReturnTime: validReturnTime,
   maxCapacityClass: "MEDIUM",
   maxCapacityUnits: 3,
   remainingCapacityUnits: 3,
@@ -57,6 +59,7 @@ describe("Trips API", () => {
       destinationKeyword: "Ramallah",
       destinationNeighborhoodId,
       departureTime: validDepartureTime,
+      expectedReturnTime: validReturnTime,
       maxCapacityClass: "MEDIUM",
       maxCapacityUnits: 3,
     });
@@ -155,6 +158,7 @@ describe("Trips API", () => {
       destinationKeyword: "Ramallah",
       destinationNeighborhoodId,
       departureTime: validDepartureTime,
+      expectedReturnTime: validReturnTime,
       maxCapacityClass: "MEDIUM",
       maxCapacityUnits: 3,
     });
@@ -175,6 +179,7 @@ describe("Trips API", () => {
       destinationKeyword: "Ramallah",
       destinationNeighborhoodId,
       departureTime: tooSoon,
+      expectedReturnTime: validReturnTime,
       maxCapacityClass: "MEDIUM",
       maxCapacityUnits: 3,
     });
@@ -194,6 +199,7 @@ describe("Trips API", () => {
       destinationKeyword: "Ramallah",
       destinationNeighborhoodId,
       departureTime: tooFar,
+      expectedReturnTime: new Date(Date.now() + 97 * 60 * 60 * 1000).toISOString(),
       maxCapacityClass: "MEDIUM",
       maxCapacityUnits: 3,
     });
@@ -220,6 +226,7 @@ describe("Trips API", () => {
       destinationKeyword: "Ramallah",
       destinationNeighborhoodId,
       departureTime: validDepartureTime,
+      expectedReturnTime: validReturnTime,
       maxCapacityClass: "MEDIUM",
       maxCapacityUnits: 3,
       deliveryFeeNis: 15,

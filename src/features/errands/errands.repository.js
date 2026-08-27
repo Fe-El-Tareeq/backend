@@ -5,6 +5,7 @@ const errandSelect = {
   requesterId: true,
   categoryId: true,
   neighborhoodId: true,
+  destinationNeighborhoodId: true,
   clientRequestKey: true,
   title: true,
   itemsDescription: true,
@@ -34,6 +35,14 @@ const errandSelect = {
   neighborhood: {
     select: {
       id: true,
+      name: true,
+      governorate: true,
+    },
+  },
+  destinationNeighborhood: {
+    select: {
+      id: true,
+      key: true,
       name: true,
       governorate: true,
     },
@@ -77,6 +86,13 @@ const findActiveCategoryById = async (categoryId, client = prisma) => {
       priorityWeight: true,
       icon: true,
     },
+  });
+};
+
+const findActiveNeighborhoodById = async (neighborhoodId, client = prisma) => {
+  return client.neighborhood.findFirst({
+    where: { id: neighborhoodId, isActive: true, key: { not: null } },
+    select: { id: true, key: true, name: true, governorate: true },
   });
 };
 
@@ -140,6 +156,7 @@ module.exports = {
   runTransaction,
   findRequesterForPosting,
   findActiveCategoryById,
+  findActiveNeighborhoodById,
   findByRequesterAndClientKey,
   createErrand,
   findById,

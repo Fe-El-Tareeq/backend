@@ -32,6 +32,9 @@ const voiceNoteDurationSchema = z
 
 const baseWriteFields = {
   categoryId: z.string().uuid("Category ID must be a valid UUID."),
+  pickupNeighborhoodId: z
+    .string()
+    .uuid("Pickup neighborhood ID must be a valid UUID."),
   title: z
     .string()
     .trim()

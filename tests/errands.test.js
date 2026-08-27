@@ -27,6 +27,7 @@ const userId = "550e8400-e29b-41d4-a716-446655440000";
 const otherUserId = "550e8400-e29b-41d4-a716-446655440001";
 const categoryId = "60a32850-bd3f-444a-84b4-c750abf6ecb6";
 const neighborhoodId = "60a32850-bd3f-444a-84b4-c750abf6ecb7";
+const pickupNeighborhoodId = "60a32850-bd3f-444a-84b4-c750abf6ed00";
 const clientRequestKey = "60a32850-bd3f-444a-84b4-c750abf6ecb8";
 const errandId = "60a32850-bd3f-444a-84b4-c750abf6ecb9";
 const transactionId = "60a32850-bd3f-444a-84b4-c750abf6eca0";
@@ -62,6 +63,7 @@ const createPayload = {
   title: "Buy medicine",
   itemsDescription: "One box of Panadol",
   destinationKeyword: "Central Pharmacy",
+  pickupNeighborhoodId,
   weightClass: "LIGHT",
   isUrgent: false,
   isInterZone: false,
@@ -75,6 +77,7 @@ const makeErrand = (overrides = {}) => ({
   requesterId: userId,
   categoryId,
   neighborhoodId,
+  destinationNeighborhoodId: pickupNeighborhoodId,
   clientRequestKey,
   title: createPayload.title,
   itemsDescription: createPayload.itemsDescription,
@@ -121,6 +124,12 @@ beforeEach(() => {
   repository.findByRequesterAndClientKey.mockResolvedValue(null);
   repository.findRequesterForPosting.mockResolvedValue(requester);
   repository.findActiveCategoryById.mockResolvedValue(category);
+  repository.findActiveNeighborhoodById.mockResolvedValue({
+    id: pickupNeighborhoodId,
+    key: "ASH_SHUJAIYEH",
+    name: "Ash Shujaiyeh",
+    governorate: "Gaza",
+  });
   repository.createErrand.mockImplementation(async (data) => makeErrand(data));
   repository.findById.mockResolvedValue(makeErrand());
   repository.updateErrand.mockImplementation(async (id, data) =>
@@ -163,6 +172,7 @@ describe("Errands create", () => {
       expect.objectContaining({
         requesterId: userId,
         neighborhoodId,
+        destinationNeighborhoodId: pickupNeighborhoodId,
         calculatedFeeNis: 5,
         priorityScore: 8,
         postTokenTransactionId: transactionId,

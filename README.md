@@ -1,5 +1,27 @@
 # Backend
 
+## Phase 7 - Matching Engine
+
+The matching engine treats each trip as a round outing: the traveler leaves their origin area, visits a destination area, then returns to the origin area with accepted errands.
+
+- Errand writes require `pickupNeighborhoodId`; it is stored as `destinationNeighborhoodId` and represents where the item is bought.
+- Trip creation requires `expectedReturnTime`, which must be after `departureTime`.
+- `GET /api/v1/errands/:id/matches` returns ranked compatible trips to the errand owner.
+- `GET /api/v1/trips/:id/matching-errands` returns ranked compatible errands to the trip owner.
+- Hard filters require OPEN/ACTIVE status, unexpired records, exact or nearby origin and destination neighborhoods, return before the errand deadline, enough weight class and remaining units, and different users.
+- Capacity consumption mapping is `LIGHT=1`, `MEDIUM=2`, and `HEAVY=3` units.
+- Ranking uses destination (40), time (30), load fit (15), urgency boost (10), and a trust penalty up to 10; the final value is normalized to 0-100.
+- Results are computed on read, capped at 10 by default and 20 maximum, and do not deduct wallet tokens.
+- Tie-breaking is score descending, relevant time ascending, then UUID ascending.
+- Existing trips without `expectedReturnTime` remain readable but are excluded from matching.
+
+Example request:
+
+```http
+GET /api/v1/errands/{errandId}/matches?limit=10
+Authorization: Bearer <access-token>
+```
+
 ## Phase 1 - Database Foundation
 
 Built and prepared the database foundation based on the SRS and ERD.

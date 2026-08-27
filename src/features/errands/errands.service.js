@@ -34,6 +34,7 @@ const toComparablePayload = (payload) => {
 
   return {
     categoryId: normalized.categoryId,
+    pickupNeighborhoodId: normalized.pickupNeighborhoodId,
     title: normalized.title,
     itemsDescription: normalized.itemsDescription,
     destinationKeyword: normalized.destinationKeyword,
@@ -51,6 +52,7 @@ const toComparablePayload = (payload) => {
 const existingToComparablePayload = (errand) => {
   return {
     categoryId: errand.categoryId,
+    pickupNeighborhoodId: errand.destinationNeighborhoodId,
     title: errand.title,
     itemsDescription: errand.itemsDescription,
     destinationKeyword: errand.destinationKeyword,
@@ -155,6 +157,15 @@ const createErrand = async (requesterId, payload) => {
       throw new ApiError(400, "Selected category does not exist or is inactive.");
     }
 
+    const pickupNeighborhood = await repository.findActiveNeighborhoodById(
+      normalized.pickupNeighborhoodId,
+      tx,
+    );
+
+    if (!pickupNeighborhood) {
+      throw new ApiError(400, "Selected pickup neighborhood does not exist or is inactive.");
+    }
+
     const derivedFields = buildDerivedFields(normalized, category);
     const debit = await walletService.debit({
       userId: requesterId,
@@ -172,6 +183,7 @@ const createErrand = async (requesterId, payload) => {
         requesterId,
         categoryId: normalized.categoryId,
         neighborhoodId: requester.neighborhoodId,
+        destinationNeighborhoodId: pickupNeighborhood.id,
         clientRequestKey: normalized.clientRequestKey,
         title: normalized.title,
         itemsDescription: normalized.itemsDescription,
@@ -266,6 +278,7 @@ const updateErrand = async (userId, id, payload) => {
 
   const merged = normalizePayload({
     categoryId: existingErrand.categoryId,
+    pickupNeighborhoodId: existingErrand.destinationNeighborhoodId,
     title: existingErrand.title,
     itemsDescription: existingErrand.itemsDescription,
     destinationKeyword: existingErrand.destinationKeyword,
@@ -285,11 +298,19 @@ const updateErrand = async (userId, id, payload) => {
   if (!category) {
     throw new ApiError(400, "Selected category does not exist or is inactive.");
   }
+  const pickupNeighborhood = await repository.findActiveNeighborhoodById(
+    merged.pickupNeighborhoodId,
+  );
+
+  if (!pickupNeighborhood) {
+    throw new ApiError(400, "Selected pickup neighborhood does not exist or is inactive.");
+  }
 
   const derivedFields = buildDerivedFields(merged, category);
 
   return repository.updateErrand(id, {
     categoryId: merged.categoryId,
+    destinationNeighborhoodId: pickupNeighborhood.id,
     title: merged.title,
     itemsDescription: merged.itemsDescription,
     destinationKeyword: merged.destinationKeyword,

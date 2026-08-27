@@ -17,10 +17,9 @@ const normalizeOptionalText = (value) => {
   return value.trim();
 };
 
-// Returns the expiration time for a trip.
-// In Phase 6, a trip expires when its departure time is reached.
-const calculateExpiresAt = (departureTime) => {
-  return new Date(departureTime);
+// A round trip remains active until its expected return time.
+const calculateExpiresAt = (expectedReturnTime) => {
+  return new Date(expectedReturnTime);
 };
 
 // Checks that the traveler can create trips.
@@ -73,6 +72,7 @@ const isSameCreateRequest = (trip, data) => {
       normalizeOptionalText(data.customOriginKeyword) &&
     trip.destinationKeyword.trim() === data.destinationKeyword.trim() &&
     existingDepartureTime === requestedDepartureTime &&
+    new Date(trip.expectedReturnTime).getTime() === new Date(data.expectedReturnTime).getTime() &&
     trip.maxCapacityClass === data.maxCapacityClass &&
     trip.maxCapacityUnits === data.maxCapacityUnits &&
     normalizeOptionalText(trip.notes) === normalizeOptionalText(data.notes)
@@ -135,6 +135,7 @@ const createTrip = async (travelerId, data) => {
       pricingVersion: quote.pricingVersion,
 
       departureTime: new Date(data.departureTime),
+      expectedReturnTime: new Date(data.expectedReturnTime),
 
       maxCapacityClass: data.maxCapacityClass,
 
@@ -150,7 +151,7 @@ const createTrip = async (travelerId, data) => {
 
       status: "ACTIVE",
 
-      expiresAt: calculateExpiresAt(data.departureTime),
+      expiresAt: calculateExpiresAt(data.expectedReturnTime),
     };
 
     return repository.createTrip(tripData, tx);
@@ -240,8 +241,17 @@ const updateTrip = async (travelerId, tripId, data) => {
 
     if (data.departureTime !== undefined) {
       updateData.departureTime = new Date(data.departureTime);
+    }
 
-      updateData.expiresAt = calculateExpiresAt(data.departureTime);
+    if (data.expectedReturnTime !== undefined) {
+      updateData.expectedReturnTime = new Date(data.expectedReturnTime);
+      updateData.expiresAt = calculateExpiresAt(data.expectedReturnTime);
+    }
+
+    const effectiveDeparture = updateData.departureTime || trip.departureTime;
+    const effectiveReturn = updateData.expectedReturnTime || trip.expectedReturnTime;
+    if (!effectiveReturn || effectiveReturn <= effectiveDeparture) {
+      throw new ApiError(400, "Expected return time must be after departure time.");
     }
 
     if (data.maxCapacityClass !== undefined) {
