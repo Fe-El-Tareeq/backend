@@ -2145,7 +2145,7 @@ const swaggerDefinition = {
         },
       },
     },
-    "/api/v1/errands/{id}/matches": {
+    "/api/v1/matching/errands/{id}": {
       get: {
         tags: ["Matching"],
         summary: "Get ranked compatible trips for an errand",
@@ -2493,7 +2493,7 @@ const swaggerDefinition = {
         },
       },
     },
-    "/api/v1/trips/{id}/matching-errands": {
+    "/api/v1/matching/trips/{id}": {
       get: {
         tags: ["Matching"],
         summary: "Get ranked compatible errands for a trip",
