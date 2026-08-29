@@ -35,6 +35,86 @@ const errorResponse = (message, errors = []) => ({
   },
 });
 
+const matchIdParameter = {
+  name: "id",
+  in: "path",
+  required: true,
+  schema: {
+    type: "string",
+    format: "uuid",
+  },
+  description: "Source errand or trip ID that initiates the matching lookup.",
+};
+
+const matchLimitParameter = {
+  name: "limit",
+  in: "query",
+  required: false,
+  schema: {
+    type: "integer",
+    minimum: 1,
+    maximum: 20,
+    default: 10,
+  },
+  description: "Maximum number of ranked matches to return.",
+};
+
+const rankedTripsForErrandOperation = {
+  tags: ["Matching"],
+  summary: "Get ranked compatible trips for an errand",
+  description:
+    "The authenticated errand requester initiates this owner-only lookup from one OPEN, unexpired errand. Results are computed on read and return an empty matches array when no compatible trips pass the filters. Hard filters require authenticated ownership, an active origin and destination area pair, active unexpired future round trips, non-self traveler/requester pairs, compatible same/nearby origin and destination areas, enough capacity class and remaining capacity, and an expected return no later than the errand deadline. Results are ordered by matchScore descending, then earlier deadline/return time, then stable resource ID. Score fields include matchScore (overall normalized compatibility), destinationScore (destination fit), timeScore (return-time fit), loadScore (capacity usage fit), urgentBoost (urgent errand boost), and trustPenalty (deduction for low candidate trust).",
+  security: [{ bearerAuth: [] }],
+  parameters: [matchIdParameter, matchLimitParameter],
+  responses: {
+    200: {
+      description:
+        "Ranked compatible trips for the errand. Empty results return 200 with matches: [].",
+      content: {
+        "application/json": {
+          schema: {
+            $ref: "#/components/schemas/MatchingTripsResponse",
+          },
+        },
+      },
+    },
+    400: errorResponse("Validation failed or the errand is not matchable."),
+    401: { $ref: "#/components/responses/Unauthorized" },
+    403: errorResponse("Only the errand owner can view its matches."),
+    404: errorResponse("Errand not found."),
+    429: { $ref: "#/components/responses/TooManyRequests" },
+    500: { $ref: "#/components/responses/InternalServerError" },
+  },
+};
+
+const rankedErrandsForTripOperation = {
+  tags: ["Matching"],
+  summary: "Get ranked compatible errands for a trip",
+  description:
+    "The authenticated traveler initiates this owner-only lookup from one ACTIVE, unexpired trip with an expected return time. Results are computed on read and return an empty matches array when no compatible errands pass the filters. Hard filters require authenticated ownership, an active origin and destination area pair, open unexpired errands, non-self traveler/requester pairs, compatible same/nearby origin and destination areas, errand deadlines at or after the trip expected return, and enough trip capacity class and remaining capacity. Results are ordered by matchScore descending, then earlier deadline/return time, then stable resource ID. Score fields include matchScore (overall normalized compatibility), destinationScore (destination fit), timeScore (return-time fit), loadScore (capacity usage fit), urgentBoost (urgent errand boost), and trustPenalty (deduction for low candidate trust).",
+  security: [{ bearerAuth: [] }],
+  parameters: [matchIdParameter, matchLimitParameter],
+  responses: {
+    200: {
+      description:
+        "Ranked compatible errands for the trip. Empty results return 200 with matches: [].",
+      content: {
+        "application/json": {
+          schema: {
+            $ref: "#/components/schemas/MatchingErrandsResponse",
+          },
+        },
+      },
+    },
+    400: errorResponse("Validation failed or the trip is not matchable."),
+    401: { $ref: "#/components/responses/Unauthorized" },
+    403: errorResponse("Only the trip owner can view its matching errands."),
+    404: errorResponse("Trip not found."),
+    429: { $ref: "#/components/responses/TooManyRequests" },
+    500: { $ref: "#/components/responses/InternalServerError" },
+  },
+};
+
 const swaggerDefinition = {
   openapi: "3.0.3",
   info: {
@@ -82,7 +162,8 @@ const swaggerDefinition = {
     },
     {
       name: "Matching",
-      description: "Owner-only ranked matching for open errands and active round trips.",
+      description:
+        "Phase 7 matching engine endpoints for discovering and ranking compatible errands and trips.",
     },
   ],
   components: {
@@ -1030,6 +1111,130 @@ const swaggerDefinition = {
           },
         },
       },
+      MatchingScore: {
+        type: "object",
+        required: [
+          "matchScore",
+          "destinationScore",
+          "timeScore",
+          "loadScore",
+          "urgentBoost",
+          "trustPenalty",
+        ],
+        properties: {
+          matchScore: {
+            type: "number",
+            minimum: 0,
+            maximum: 100,
+            example: 86.32,
+            description:
+              "Overall normalized compatibility score. Matching results are primarily ranked highest to lowest by this field.",
+          },
+          destinationScore: {
+            type: "number",
+            example: 40,
+            description:
+              "Contribution for exact or nearby destination compatibility.",
+          },
+          timeScore: {
+            type: "number",
+            example: 22.5,
+            description:
+              "Contribution for how well the trip expected return fits the errand deadline.",
+          },
+          loadScore: {
+            type: "number",
+            example: 5,
+            description:
+              "Contribution based on the errand weight class relative to available trip capacity.",
+          },
+          urgentBoost: {
+            type: "number",
+            example: 10,
+            description: "Additional score applied when the errand is urgent.",
+          },
+          trustPenalty: {
+            type: "number",
+            example: 0,
+            description:
+              "Score deduction when the candidate user's trust score is below the matching baseline.",
+          },
+        },
+      },
+      MatchingTripResult: {
+        type: "object",
+        required: ["trip", "score"],
+        properties: {
+          trip: {
+            $ref: "#/components/schemas/Trip",
+          },
+          score: {
+            $ref: "#/components/schemas/MatchingScore",
+          },
+        },
+      },
+      MatchingErrandResult: {
+        type: "object",
+        required: ["errand", "score"],
+        properties: {
+          errand: {
+            $ref: "#/components/schemas/Errand",
+          },
+          score: {
+            $ref: "#/components/schemas/MatchingScore",
+          },
+        },
+      },
+      MatchingTripsData: {
+        type: "object",
+        required: ["matches", "limit", "recalculatedAt"],
+        properties: {
+          matches: {
+            type: "array",
+            description:
+              "Ranked compatible trips. An empty array means no candidate passed the matching filters.",
+            items: {
+              $ref: "#/components/schemas/MatchingTripResult",
+            },
+          },
+          limit: {
+            type: "integer",
+            minimum: 1,
+            maximum: 20,
+            example: 10,
+          },
+          recalculatedAt: {
+            type: "string",
+            format: "date-time",
+            description: "Timestamp when the matching results were computed.",
+          },
+        },
+      },
+      MatchingErrandsData: {
+        type: "object",
+        required: ["matches", "limit", "recalculatedAt"],
+        properties: {
+          matches: {
+            type: "array",
+            description:
+              "Ranked compatible errands. An empty array means no candidate passed the matching filters.",
+            items: {
+              $ref: "#/components/schemas/MatchingErrandResult",
+            },
+          },
+          limit: {
+            type: "integer",
+            minimum: 1,
+            maximum: 20,
+            example: 10,
+          },
+          recalculatedAt: {
+            type: "string",
+            format: "date-time",
+            description: "Timestamp when the matching results were computed.",
+          },
+        },
+      },
       Wallet: {
         type: "object",
         required: ["id", "userId", "tokenBalance", "createdAt", "updatedAt"],
@@ -1333,6 +1538,12 @@ const swaggerDefinition = {
       }),
       TripListResponse: apiResponse({
         $ref: "#/components/schemas/TripListData",
+      }),
+      MatchingTripsResponse: apiResponse({
+        $ref: "#/components/schemas/MatchingTripsData",
+      }),
+      MatchingErrandsResponse: apiResponse({
+        $ref: "#/components/schemas/MatchingErrandsData",
       }),
       WalletResponse: apiResponse({
         $ref: "#/components/schemas/Wallet",
@@ -2145,24 +2356,11 @@ const swaggerDefinition = {
         },
       },
     },
+    "/api/v1/errands/{id}/matches": {
+      get: rankedTripsForErrandOperation,
+    },
     "/api/v1/matching/errands/{id}": {
-      get: {
-        tags: ["Matching"],
-        summary: "Get ranked compatible trips for an errand",
-        description: "Owner-only, computed-on-read results. Filters OPEN/unexpired errand, ACTIVE future round trips, same/nearby origin and destination areas, return before deadline, capacity class/units, and self-matches. No token cost.",
-        security: [{ bearerAuth: [] }],
-        parameters: [
-          { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
-          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 20, default: 10 } },
-        ],
-        responses: {
-          200: { description: "Ranked matching trips. Each item contains trip and score components." },
-          400: errorResponse("Validation failed or errand is not matchable."),
-          401: { $ref: "#/components/responses/Unauthorized" },
-          403: errorResponse("Only the errand owner can view its matches."),
-          404: errorResponse("Errand not found."),
-        },
-      },
+      get: rankedTripsForErrandOperation,
     },
     "/api/v1/trips": {
       get: {
@@ -2443,6 +2641,9 @@ const swaggerDefinition = {
         },
       },
     },
+    "/api/v1/trips/{id}/matching-errands": {
+      get: rankedErrandsForTripOperation,
+    },
     "/api/v1/trips/{id}/cancel": {
       post: {
         tags: ["Trips"],
@@ -2494,23 +2695,7 @@ const swaggerDefinition = {
       },
     },
     "/api/v1/matching/trips/{id}": {
-      get: {
-        tags: ["Matching"],
-        summary: "Get ranked compatible errands for a trip",
-        description: "Owner-only, computed-on-read results. Trust scoring uses requester trust for this direction. Delivery fee shown is the trip deliveryFeeNis. No token cost.",
-        security: [{ bearerAuth: [] }],
-        parameters: [
-          { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
-          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 20, default: 10 } },
-        ],
-        responses: {
-          200: { description: "Ranked matching errands. Each item contains errand and score components." },
-          400: errorResponse("Validation failed or trip is not matchable."),
-          401: { $ref: "#/components/responses/Unauthorized" },
-          403: errorResponse("Only the trip owner can view its matching errands."),
-          404: errorResponse("Trip not found."),
-        },
-      },
+      get: rankedErrandsForTripOperation,
     },
     "/api/v1/users/me": {
       get: {
