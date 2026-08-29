@@ -18,7 +18,7 @@ const router = express.Router();
 
 router.use('/admin', adminRoutes);
 router.use('/auth', authRoutes);
-router.use('/chat', chatRoutes);
+router.use('/chat-rooms', chatRoutes);
 router.use('/errands', errandsRoutes);
 router.use('/locations', locationsRoutes);
 router.use('/matching', matchingRoutes);
