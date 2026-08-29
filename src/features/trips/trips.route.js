@@ -11,8 +11,6 @@ const {
   cancelTripSchema,
   listTripsSchema,
 } = require("./trips.validation");
-const matchingController = require("../matching/matching.controller");
-const { matchListSchema } = require("../matching/matching.validation");
 
 const router = express.Router();
 
@@ -24,12 +22,6 @@ router.post("/", validate(createTripSchema), controller.createTrip);
 
 // Get a paginated/filterable list of trips.
 router.get("/", validate(listTripsSchema), controller.getTrips);
-
-router.get(
-  "/:id/matching-errands",
-  validate(matchListSchema),
-  matchingController.getErrandsForTrip,
-);
 
 // Get one trip by ID.
 router.get("/:id", validate(getTripByIdSchema), controller.getTripById);

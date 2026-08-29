@@ -121,7 +121,7 @@ const swaggerDefinition = {
     title: "Fe El-Tareeq API",
     version: "1.0.0",
     description:
-      "Interactive API contract for the Fe El-Tareeq peer-to-peer micro-errand backend. The documented endpoints cover health checks, authentication, user profiles, locations, errands, trips, and wallet token ledger APIs.",
+      "Interactive API contract for the Fe El-Tareeq peer-to-peer micro-errand backend. The documented modules are Authentication, Users, Locations, Errands, Trips, Matching, Delivery Pricing, and Wallet.",
   },
   servers: [
     {
@@ -157,13 +157,18 @@ const swaggerDefinition = {
         "Authenticated traveler trip posting and management. Trips can be created, listed, viewed, updated, and cancelled.",
     },
     {
-      name: "Wallet",
-      description: "Authenticated token wallet and transaction history APIs.",
-    },
-    {
       name: "Matching",
       description:
         "Phase 7 matching engine endpoints for discovering and ranking compatible errands and trips.",
+    },
+    {
+      name: "Delivery Pricing",
+      description:
+        "Server-side delivery pricing preview and fee calculation APIs.",
+    },
+    {
+      name: "Wallet",
+      description: "Authenticated token wallet and transaction history APIs.",
     },
   ],
   components: {
@@ -2356,9 +2361,6 @@ const swaggerDefinition = {
         },
       },
     },
-    "/api/v1/errands/{id}/matches": {
-      get: rankedTripsForErrandOperation,
-    },
     "/api/v1/matching/errands/{id}": {
       get: rankedTripsForErrandOperation,
     },
@@ -2641,9 +2643,6 @@ const swaggerDefinition = {
         },
       },
     },
-    "/api/v1/trips/{id}/matching-errands": {
-      get: rankedErrandsForTripOperation,
-    },
     "/api/v1/trips/{id}/cancel": {
       post: {
         tags: ["Trips"],
@@ -2855,7 +2854,7 @@ const swaggerDefinition = {
     },
     "/api/v1/delivery-pricing/quote": {
       get: {
-        tags: ["Trips"],
+        tags: ["Delivery Pricing"],
         summary: "Preview the server-calculated delivery price",
         description: "Uses the authenticated user's neighborhood unless originNeighborhoodId is supplied. Clients cannot submit or edit the calculated fee.",
         security: [{ bearerAuth: [] }],

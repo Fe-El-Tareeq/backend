@@ -107,20 +107,20 @@ describe("Matching hard filters and ranking", () => {
 });
 
 describe("Matching API", () => {
-  test("GET /errands/:id/matches is authenticated and returns matches", async () => {
+  test("GET /matching/errands/:id is authenticated and returns matches", async () => {
     const response = await request(app)
-      .get(`/api/v1/errands/${errandId}/matches?limit=5`)
+      .get(`/api/v1/matching/errands/${errandId}?limit=5`)
       .set("Authorization", `Bearer ${token}`);
     expect(response.statusCode).toBe(200);
     expect(response.body.data.matches).toHaveLength(1);
     expect(response.body.data.limit).toBe(5);
   });
 
-  test("GET /trips/:id/matching-errands is authenticated", async () => {
-    const unauthenticated = await request(app).get(`/api/v1/trips/${tripId}/matching-errands`);
+  test("GET /matching/trips/:id is authenticated", async () => {
+    const unauthenticated = await request(app).get(`/api/v1/matching/trips/${tripId}`);
     expect(unauthenticated.statusCode).toBe(401);
     const response = await request(app)
-      .get(`/api/v1/trips/${tripId}/matching-errands`)
+      .get(`/api/v1/matching/trips/${tripId}`)
       .set("Authorization", `Bearer ${token}`);
     expect(response.statusCode).toBe(200);
     expect(response.body.data.matches).toHaveLength(1);
@@ -128,9 +128,21 @@ describe("Matching API", () => {
 
   test("rejects limits above 20", async () => {
     const response = await request(app)
-      .get(`/api/v1/errands/${errandId}/matches?limit=21`)
+      .get(`/api/v1/matching/errands/${errandId}?limit=21`)
       .set("Authorization", `Bearer ${token}`);
     expect(response.statusCode).toBe(400);
     expect(repository.findErrandSource).not.toHaveBeenCalled();
+  });
+
+  test("does not expose legacy nested matching aliases", async () => {
+    const errandAlias = await request(app)
+      .get(`/api/v1/errands/${errandId}/matches`)
+      .set("Authorization", `Bearer ${token}`);
+    const tripAlias = await request(app)
+      .get(`/api/v1/trips/${tripId}/matching-errands`)
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(errandAlias.statusCode).toBe(404);
+    expect(tripAlias.statusCode).toBe(404);
   });
 });
