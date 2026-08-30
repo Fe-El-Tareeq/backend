@@ -121,7 +121,7 @@ const swaggerDefinition = {
     title: "Fe El-Tareeq API",
     version: "1.0.0",
     description:
-      "Interactive API contract for the Fe El-Tareeq peer-to-peer micro-errand backend. The documented modules are Authentication, Users, Locations, Errands, Trips, Matching, Assignments, Delivery Pricing, and Wallet.",
+      "Interactive API contract for the Fe El-Tareeq peer-to-peer micro-errand backend. The documented modules are Authentication, Users, Locations, Errands, Trips, Matching, Assignments, Chat, Delivery Pricing, and Wallet.",
   },
   servers: [
     {
@@ -165,6 +165,11 @@ const swaggerDefinition = {
       name: "Assignments",
       description:
         "Assignment lifecycle APIs that convert accepted matches into active deliveries.",
+    },
+    {
+      name: "Chat",
+      description:
+        "Low-bandwidth assignment chat APIs for authenticated requesters and travelers.",
     },
     {
       name: "Delivery Pricing",
@@ -1347,6 +1352,412 @@ const swaggerDefinition = {
           },
         },
       },
+      ChatUserSummary: {
+        type: "object",
+        required: ["id", "fullName"],
+        description:
+          "Safe public participant summary. Phone, auth, and wallet fields are never exposed by Chat responses.",
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid",
+            example: "550e8400-e29b-41d4-a716-446655440000",
+          },
+          fullName: {
+            type: "string",
+            example: "Leenah Alborsh",
+          },
+          trustScore: {
+            type: "integer",
+            minimum: 0,
+            maximum: 100,
+            example: 80,
+          },
+          profileImageUrl: {
+            type: "string",
+            nullable: true,
+            example: null,
+          },
+        },
+      },
+      ChatMessage: {
+        type: "object",
+        required: [
+          "id",
+          "roomId",
+          "senderId",
+          "clientMessageKey",
+          "type",
+          "isRead",
+          "sentAt",
+        ],
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid",
+            example: "950e8400-e29b-41d4-a716-446655440000",
+          },
+          roomId: {
+            type: "string",
+            format: "uuid",
+            example: "650e8400-e29b-41d4-a716-446655440000",
+          },
+          senderId: {
+            type: "string",
+            format: "uuid",
+            example: "550e8400-e29b-41d4-a716-446655440000",
+          },
+          clientMessageKey: {
+            type: "string",
+            format: "uuid",
+            description:
+              "Client-generated idempotency key scoped to the sender.",
+            example: "150e8400-e29b-41d4-a716-446655440000",
+          },
+          type: {
+            type: "string",
+            enum: ["TEXT", "VOICE"],
+            example: "TEXT",
+          },
+          text: {
+            type: "string",
+            nullable: true,
+            maxLength: 500,
+            example: "I'm on the way",
+          },
+          voiceNoteUrl: {
+            type: "string",
+            nullable: true,
+            example: null,
+          },
+          voiceNoteDurationSec: {
+            type: "integer",
+            nullable: true,
+            minimum: 0,
+            maximum: 30,
+            example: null,
+          },
+          isRead: {
+            type: "boolean",
+            description:
+              "Existing per-message read flag. Phase 9 exposes it but does not add edit/delete endpoints.",
+            example: false,
+          },
+          readAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+            example: null,
+          },
+          sentAt: {
+            type: "string",
+            format: "date-time",
+            example: "2026-08-29T08:10:00.000Z",
+          },
+          sender: {
+            $ref: "#/components/schemas/ChatUserSummary",
+          },
+        },
+      },
+      ChatRoom: {
+        type: "object",
+        required: [
+          "id",
+          "assignmentId",
+          "assignment",
+          "participants",
+          "createdAt",
+          "updatedAt",
+        ],
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid",
+            example: "650e8400-e29b-41d4-a716-446655440000",
+          },
+          assignmentId: {
+            type: "string",
+            format: "uuid",
+            example: "750e8400-e29b-41d4-a716-446655440000",
+          },
+          assignment: {
+            type: "object",
+            required: ["id", "status", "errandId"],
+            properties: {
+              id: {
+                type: "string",
+                format: "uuid",
+              },
+              status: {
+                type: "string",
+                enum: [
+                  "ACCEPTED",
+                  "PICKED_UP",
+                  "IN_TRANSIT",
+                  "COMPLETED",
+                  "CANCELLED",
+                ],
+                description:
+                  "Sending is allowed only while status is ACCEPTED, PICKED_UP, or IN_TRANSIT.",
+              },
+              errandId: {
+                type: "string",
+                format: "uuid",
+              },
+              tripId: {
+                type: "string",
+                format: "uuid",
+                nullable: true,
+              },
+              acceptedAt: {
+                type: "string",
+                format: "date-time",
+              },
+              completedAt: {
+                type: "string",
+                format: "date-time",
+                nullable: true,
+              },
+              cancelledAt: {
+                type: "string",
+                format: "date-time",
+                nullable: true,
+              },
+              errand: {
+                type: "object",
+                nullable: true,
+                properties: {
+                  id: {
+                    type: "string",
+                    format: "uuid",
+                  },
+                  title: {
+                    type: "string",
+                  },
+                  status: {
+                    type: "string",
+                  },
+                },
+              },
+            },
+          },
+          participants: {
+            type: "object",
+            required: ["requester", "traveler"],
+            properties: {
+              requester: {
+                $ref: "#/components/schemas/ChatUserSummary",
+              },
+              traveler: {
+                $ref: "#/components/schemas/ChatUserSummary",
+              },
+            },
+          },
+          lastMessageAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time",
+          },
+          updatedAt: {
+            type: "string",
+            format: "date-time",
+          },
+        },
+      },
+      ChatRoomSummary: {
+        allOf: [
+          {
+            $ref: "#/components/schemas/ChatRoom",
+          },
+          {
+            type: "object",
+            properties: {
+              latestMessage: {
+                nullable: true,
+                allOf: [{ $ref: "#/components/schemas/ChatMessage" }],
+              },
+              unreadCount: {
+                type: "integer",
+                minimum: 0,
+                example: 1,
+              },
+            },
+          },
+        ],
+      },
+      ChatRoomsData: {
+        type: "object",
+        required: ["rooms"],
+        properties: {
+          rooms: {
+            type: "array",
+            description:
+              "Only rooms where the authenticated user is the requester or traveler are returned.",
+            items: {
+              $ref: "#/components/schemas/ChatRoomSummary",
+            },
+          },
+        },
+      },
+      ChatRoomData: {
+        type: "object",
+        required: ["room"],
+        properties: {
+          room: {
+            $ref: "#/components/schemas/ChatRoom",
+          },
+        },
+      },
+      ChatMessagesData: {
+        type: "object",
+        required: ["messages", "pagination"],
+        properties: {
+          messages: {
+            type: "array",
+            items: {
+              $ref: "#/components/schemas/ChatMessage",
+            },
+          },
+          pagination: {
+            type: "object",
+            required: ["order", "limit", "hasMore", "nextBefore"],
+            properties: {
+              order: {
+                type: "string",
+                enum: ["desc"],
+                description:
+                  "Messages are returned newest first, then by stable message ID descending.",
+              },
+              limit: {
+                type: "integer",
+                minimum: 1,
+                maximum: 100,
+                example: 30,
+              },
+              hasMore: {
+                type: "boolean",
+                example: true,
+              },
+              nextBefore: {
+                type: "string",
+                format: "uuid",
+                nullable: true,
+                description:
+                  "Use this message ID as before on the next request to fetch older messages.",
+              },
+            },
+          },
+        },
+      },
+      ChatSyncData: {
+        type: "object",
+        required: ["messages", "sync"],
+        properties: {
+          messages: {
+            type: "array",
+            description:
+              "Only messages with sentAt greater than since and no later than serverTime are returned.",
+            items: {
+              $ref: "#/components/schemas/ChatMessage",
+            },
+          },
+          sync: {
+            type: "object",
+            required: ["serverTime", "nextSince", "limit"],
+            properties: {
+              serverTime: {
+                type: "string",
+                format: "date-time",
+              },
+              nextSince: {
+                type: "string",
+                format: "date-time",
+                description:
+                  "Send this value as since on the next sync request.",
+              },
+              limit: {
+                type: "integer",
+                minimum: 1,
+                maximum: 100,
+                example: 30,
+              },
+            },
+          },
+        },
+      },
+      ChatReadData: {
+        type: "object",
+        required: ["read"],
+        properties: {
+          read: {
+            type: "object",
+            required: ["count", "readAt"],
+            properties: {
+              count: {
+                type: "integer",
+                minimum: 0,
+                description:
+                  "Number of incoming unread messages marked as read.",
+                example: 2,
+              },
+              readAt: {
+                type: "string",
+                format: "date-time",
+              },
+            },
+          },
+        },
+      },
+      SendTextMessageRequest: {
+        type: "object",
+        required: ["clientMessageKey", "type", "text"],
+        additionalProperties: false,
+        properties: {
+          clientMessageKey: {
+            type: "string",
+            format: "uuid",
+          },
+          type: {
+            type: "string",
+            enum: ["TEXT"],
+          },
+          text: {
+            type: "string",
+            minLength: 1,
+            maxLength: 500,
+            description: "Trimmed before storage; blank text is rejected.",
+          },
+        },
+      },
+      SendVoiceMessageRequest: {
+        type: "object",
+        required: ["clientMessageKey", "type", "voiceNoteUrl", "voiceNoteDurationSec"],
+        additionalProperties: false,
+        properties: {
+          clientMessageKey: {
+            type: "string",
+            format: "uuid",
+          },
+          type: {
+            type: "string",
+            enum: ["VOICE"],
+          },
+          voiceNoteUrl: {
+            type: "string",
+            description:
+              "Metadata URL only. Phase 9 does not implement audio storage.",
+          },
+          voiceNoteDurationSec: {
+            type: "integer",
+            minimum: 0,
+            maximum: 30,
+          },
+        },
+      },
       Wallet: {
         type: "object",
         required: ["id", "userId", "tokenBalance", "createdAt", "updatedAt"],
@@ -1668,6 +2079,30 @@ const swaggerDefinition = {
       }),
       AssignmentListResponse: apiResponse({
         $ref: "#/components/schemas/AssignmentListData",
+      }),
+      ChatRoomsResponse: apiResponse({
+        $ref: "#/components/schemas/ChatRoomsData",
+      }),
+      ChatRoomResponse: apiResponse({
+        $ref: "#/components/schemas/ChatRoomData",
+      }),
+      ChatMessagesResponse: apiResponse({
+        $ref: "#/components/schemas/ChatMessagesData",
+      }),
+      ChatSendMessageResponse: apiResponse({
+        type: "object",
+        required: ["message"],
+        properties: {
+          message: {
+            $ref: "#/components/schemas/ChatMessage",
+          },
+        },
+      }),
+      ChatSyncResponse: apiResponse({
+        $ref: "#/components/schemas/ChatSyncData",
+      }),
+      ChatReadResponse: apiResponse({
+        $ref: "#/components/schemas/ChatReadData",
       }),
       WalletResponse: apiResponse({
         $ref: "#/components/schemas/Wallet",
@@ -2990,6 +3425,323 @@ const swaggerDefinition = {
           401: { $ref: "#/components/responses/Unauthorized" },
           403: errorResponse("Only the requester or traveler can cancel this assignment."),
           404: errorResponse("Assignment not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/chat-rooms": {
+      get: {
+        tags: ["Chat"],
+        summary: "List current user's chat rooms",
+        description:
+          "Returns compact chat room summaries only for rooms where the authenticated user is either the assignment requester or traveler. ChatRoom rows are unique per assignmentId; Phase 9 does not create duplicate rooms and expects assignment creation to provision them once the Phase 8 assignment lifecycle is merged. Latest message preview and unread count are included from existing message metadata when available.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: "Chat rooms retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ChatRoomsResponse",
+                },
+              },
+            },
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/chat-rooms/{roomId}": {
+      get: {
+        tags: ["Chat"],
+        summary: "Get chat room details",
+        description:
+          "Returns one assignment chat room for an authenticated participant. The requester and traveler are identified from the related assignment; unrelated users receive 403 and missing rooms receive 404. The response contains compact assignment and participant summaries only.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "roomId",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+            description: "Chat room ID.",
+          },
+        ],
+        responses: {
+          200: {
+            description: "Chat room retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ChatRoomResponse",
+                },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("You are not allowed to access this chat room."),
+          404: errorResponse("Chat room not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/chat-rooms/{roomId}/messages": {
+      get: {
+        tags: ["Chat"],
+        summary: "List chat room messages",
+        description:
+          "Lists messages for an authenticated requester or traveler in a chat room. Messages are returned newest first with deterministic sentAt desc, id desc ordering. Use the nextBefore message ID to fetch older messages. Empty rooms or exhausted pages return 200 with messages: [].",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "roomId",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+          },
+          {
+            name: "limit",
+            in: "query",
+            required: false,
+            schema: {
+              type: "integer",
+              minimum: 1,
+              maximum: 100,
+              default: 30,
+            },
+            description: "Maximum messages to return.",
+          },
+          {
+            name: "before",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+            description:
+              "Message ID cursor. When supplied, returns older messages before that message.",
+          },
+        ],
+        responses: {
+          200: {
+            description: "Chat messages retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ChatMessagesResponse",
+                },
+              },
+            },
+          },
+          400: errorResponse("Validation failed or before cursor is invalid."),
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("You are not allowed to access this chat room."),
+          404: errorResponse("Chat room not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+      post: {
+        tags: ["Chat"],
+        summary: "Send a chat message",
+        description:
+          "Sends a TEXT or VOICE metadata message as an authenticated assignment participant. TEXT messages are trimmed, must be non-empty, and cannot exceed 500 characters. VOICE messages require voiceNoteUrl and voiceNoteDurationSec up to 30 seconds; file storage is not implemented here. clientMessageKey provides offline retry idempotency scoped to sender: the same sender/key/payload returns the existing message, while the same sender/key with different payload returns 409. Sending is allowed while the assignment is ACCEPTED, PICKED_UP, or IN_TRANSIT. COMPLETED or CANCELLED assignments remain readable but reject new sends with 409.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "roomId",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                oneOf: [
+                  { $ref: "#/components/schemas/SendTextMessageRequest" },
+                  { $ref: "#/components/schemas/SendVoiceMessageRequest" },
+                ],
+                discriminator: {
+                  propertyName: "type",
+                },
+              },
+              examples: {
+                text: {
+                  value: {
+                    clientMessageKey: "150e8400-e29b-41d4-a716-446655440000",
+                    type: "TEXT",
+                    text: "I'm on the way",
+                  },
+                },
+                voice: {
+                  value: {
+                    clientMessageKey: "250e8400-e29b-41d4-a716-446655440000",
+                    type: "VOICE",
+                    voiceNoteUrl: "https://media.example.test/voice/1.ogg",
+                    voiceNoteDurationSec: 18,
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description: "Chat message sent successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ChatSendMessageResponse",
+                },
+              },
+            },
+          },
+          200: {
+            description:
+              "Idempotent retry returned the existing message without creating a duplicate.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ChatSendMessageResponse",
+                },
+              },
+            },
+          },
+          400: errorResponse("Validation failed."),
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("You are not allowed to access this chat room."),
+          404: errorResponse("Chat room not found."),
+          409: errorResponse(
+            "Client message key has already been used with different message data, or assignment is closed.",
+          ),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/chat-rooms/{roomId}/sync": {
+      get: {
+        tags: ["Chat"],
+        summary: "Delta sync chat messages",
+        description:
+          "Returns only messages created after the required since timestamp and no later than the server sync timestamp. This endpoint is for low-bandwidth mobile/PWA sync and intentionally does not return full chat history without a cursor. Empty deltas return 200 with messages: []. Use sync.nextSince as the next request's since value.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "roomId",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+          },
+          {
+            name: "since",
+            in: "query",
+            required: true,
+            schema: {
+              type: "string",
+              format: "date-time",
+            },
+            description:
+              "ISO timestamp from the last successful sync. Required to avoid returning whole history.",
+          },
+          {
+            name: "limit",
+            in: "query",
+            required: false,
+            schema: {
+              type: "integer",
+              minimum: 1,
+              maximum: 100,
+              default: 30,
+            },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Chat messages synced successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ChatSyncResponse",
+                },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("You are not allowed to access this chat room."),
+          404: errorResponse("Chat room not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/chat-rooms/{roomId}/read": {
+      post: {
+        tags: ["Chat"],
+        summary: "Mark incoming chat messages read",
+        description:
+          "Marks unread messages in the room as read when they were sent by the other assignment participant. This uses the existing per-message isRead/readAt fields and does not add message edit or delete behavior.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "roomId",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+          },
+        ],
+        requestBody: {
+          required: false,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: false,
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Incoming messages marked read successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ChatReadResponse",
+                },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("You are not allowed to access this chat room."),
+          404: errorResponse("Chat room not found."),
           429: { $ref: "#/components/responses/TooManyRequests" },
           500: { $ref: "#/components/responses/InternalServerError" },
         },
