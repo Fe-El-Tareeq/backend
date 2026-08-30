@@ -1,6 +1,7 @@
 const express = require('express');
 
 const adminRoutes = require('../features/admin/admin.route');
+const assignmentsRoutes = require('../features/assignments/assignments.route');
 const authRoutes = require('../features/auth/auth.route');
 const chatRoutes = require('../features/chat/chat.route');
 const errandsRoutes = require('../features/errands/errands.route');
@@ -17,6 +18,7 @@ const deliveryPricingRoutes = require('../features/deliveryPricing/deliveryPrici
 const router = express.Router();
 
 router.use('/admin', adminRoutes);
+router.use('/assignments', assignmentsRoutes);
 router.use('/auth', authRoutes);
 router.use('/chat', chatRoutes);
 router.use('/errands', errandsRoutes);
