@@ -121,7 +121,7 @@ const swaggerDefinition = {
     title: "Fe El-Tareeq API",
     version: "1.0.0",
     description:
-      "Interactive API contract for the Fe El-Tareeq peer-to-peer micro-errand backend. The documented modules are Authentication, Users, Locations, Errands, Trips, Matching, Chat, Delivery Pricing, and Wallet.",
+      "Interactive API contract for the Fe El-Tareeq peer-to-peer micro-errand backend. The documented modules are Authentication, Users, Locations, Errands, Trips, Matching, Assignments, Chat, Delivery Pricing, and Wallet.",
   },
   servers: [
     {
@@ -160,6 +160,11 @@ const swaggerDefinition = {
       name: "Matching",
       description:
         "Phase 7 matching engine endpoints for discovering and ranking compatible errands and trips.",
+    },
+    {
+      name: "Assignments",
+      description:
+        "Assignment lifecycle APIs that convert accepted matches into active deliveries.",
     },
     {
       name: "Chat",
@@ -1245,6 +1250,108 @@ const swaggerDefinition = {
           },
         },
       },
+      AssignmentCreateRequest: {
+        type: "object",
+        required: ["errandId", "tripId"],
+        additionalProperties: false,
+        properties: {
+          errandId: {
+            type: "string",
+            format: "uuid",
+            description: "Open errand to assign.",
+          },
+          tripId: {
+            type: "string",
+            format: "uuid",
+            description: "Active trip owned by the authenticated traveler.",
+          },
+        },
+      },
+      AssignmentCancelRequest: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          cancellationReason: {
+            type: "string",
+            maxLength: 255,
+            description: "Optional short reason stored with the cancelled assignment.",
+          },
+        },
+      },
+      AssignmentChatRoom: {
+        type: "object",
+        nullable: true,
+        properties: {
+          id: { type: "string", format: "uuid" },
+          assignmentId: { type: "string", format: "uuid" },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+          lastMessageAt: { type: "string", format: "date-time", nullable: true },
+        },
+      },
+      Assignment: {
+        type: "object",
+        required: [
+          "id",
+          "errandId",
+          "travelerId",
+          "tripId",
+          "acceptanceSource",
+          "acceptTokenTransactionId",
+          "status",
+          "acceptedAt",
+        ],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          errandId: { type: "string", format: "uuid" },
+          travelerId: { type: "string", format: "uuid" },
+          tripId: { type: "string", format: "uuid", nullable: true },
+          acceptanceSource: { type: "string", enum: ["DIRECT", "TRIP_MATCH"] },
+          agreedDeliveryFeeNis: { type: "integer", nullable: true, example: 5 },
+          pricingVersion: { type: "integer", nullable: true, example: 1 },
+          acceptTokenTransactionId: {
+            type: "string",
+            format: "uuid",
+            description: "Wallet ledger entry for the 1-token assignment acceptance debit.",
+          },
+          status: {
+            type: "string",
+            enum: ["ACCEPTED", "PICKED_UP", "IN_TRANSIT", "COMPLETED", "CANCELLED"],
+          },
+          acceptedAt: { type: "string", format: "date-time" },
+          pickedUpAt: { type: "string", format: "date-time", nullable: true },
+          inTransitAt: { type: "string", format: "date-time", nullable: true },
+          completedAt: { type: "string", format: "date-time", nullable: true },
+          cancelledAt: { type: "string", format: "date-time", nullable: true },
+          cancelledByUserId: { type: "string", format: "uuid", nullable: true },
+          cancellationReason: { type: "string", nullable: true },
+          errand: { $ref: "#/components/schemas/Errand" },
+          trip: { $ref: "#/components/schemas/Trip" },
+          traveler: { $ref: "#/components/schemas/TripTravelerSummary" },
+          chatRoom: { $ref: "#/components/schemas/AssignmentChatRoom" },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+        },
+      },
+      AssignmentListData: {
+        type: "object",
+        required: ["assignments", "pagination"],
+        properties: {
+          assignments: {
+            type: "array",
+            items: { $ref: "#/components/schemas/Assignment" },
+          },
+          pagination: {
+            type: "object",
+            required: ["skip", "take", "total"],
+            properties: {
+              skip: { type: "integer", example: 0 },
+              take: { type: "integer", example: 20 },
+              total: { type: "integer", example: 1 },
+            },
+          },
+        },
+      },
       ChatUserSummary: {
         type: "object",
         required: ["id", "fullName"],
@@ -1651,30 +1758,6 @@ const swaggerDefinition = {
           },
         },
       },
-      ChatRoomsResponse: apiResponse({
-        $ref: "#/components/schemas/ChatRoomsData",
-      }),
-      ChatRoomResponse: apiResponse({
-        $ref: "#/components/schemas/ChatRoomData",
-      }),
-      ChatMessagesResponse: apiResponse({
-        $ref: "#/components/schemas/ChatMessagesData",
-      }),
-      ChatSendMessageResponse: apiResponse({
-        type: "object",
-        required: ["message"],
-        properties: {
-          message: {
-            $ref: "#/components/schemas/ChatMessage",
-          },
-        },
-      }),
-      ChatSyncResponse: apiResponse({
-        $ref: "#/components/schemas/ChatSyncData",
-      }),
-      ChatReadResponse: apiResponse({
-        $ref: "#/components/schemas/ChatReadData",
-      }),
       Wallet: {
         type: "object",
         required: ["id", "userId", "tokenBalance", "createdAt", "updatedAt"],
@@ -1984,6 +2067,42 @@ const swaggerDefinition = {
       }),
       MatchingErrandsResponse: apiResponse({
         $ref: "#/components/schemas/MatchingErrandsData",
+      }),
+      AssignmentResponse: apiResponse({
+        type: "object",
+        required: ["assignment"],
+        properties: {
+          assignment: {
+            $ref: "#/components/schemas/Assignment",
+          },
+        },
+      }),
+      AssignmentListResponse: apiResponse({
+        $ref: "#/components/schemas/AssignmentListData",
+      }),
+      ChatRoomsResponse: apiResponse({
+        $ref: "#/components/schemas/ChatRoomsData",
+      }),
+      ChatRoomResponse: apiResponse({
+        $ref: "#/components/schemas/ChatRoomData",
+      }),
+      ChatMessagesResponse: apiResponse({
+        $ref: "#/components/schemas/ChatMessagesData",
+      }),
+      ChatSendMessageResponse: apiResponse({
+        type: "object",
+        required: ["message"],
+        properties: {
+          message: {
+            $ref: "#/components/schemas/ChatMessage",
+          },
+        },
+      }),
+      ChatSyncResponse: apiResponse({
+        $ref: "#/components/schemas/ChatSyncData",
+      }),
+      ChatReadResponse: apiResponse({
+        $ref: "#/components/schemas/ChatReadData",
       }),
       WalletResponse: apiResponse({
         $ref: "#/components/schemas/Wallet",
@@ -3130,6 +3249,186 @@ const swaggerDefinition = {
     },
     "/api/v1/matching/trips/{id}": {
       get: rankedErrandsForTripOperation,
+    },
+    "/api/v1/assignments": {
+      post: {
+        tags: ["Assignments"],
+        summary: "Accept a compatible errand/trip assignment",
+        description:
+          "Traveler-owned action. The authenticated traveler accepts an open errand for one of their active compatible trips. Accepting an assignment costs 1 wallet token. The server revalidates compatibility, ownership, errand availability, trip availability, remaining capacity, and one-active-assignment-per-errand inside a transaction. On success, it debits the traveler wallet, creates the assignment, reduces trip capacity, marks the errand MATCHED, records the accepted match if a persisted match exists, and creates one chat room for the assignment. Race losers receive 409.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/AssignmentCreateRequest" },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description: "Assignment accepted successfully.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AssignmentResponse" },
+              },
+            },
+          },
+          400: errorResponse("Validation failed, pair is incompatible, trip is unavailable, capacity is insufficient, or wallet balance is insufficient."),
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Only the trip owner can accept an assignment for this trip."),
+          404: errorResponse("Errand or trip not found."),
+          409: errorResponse("Errand already has an active assignment."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+      get: {
+        tags: ["Assignments"],
+        summary: "List my assignments",
+        description:
+          "Returns only assignments where the authenticated user is either the requester of the errand or the traveler on the assignment.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "skip", in: "query", required: false, schema: { type: "integer", minimum: 0, default: 0 } },
+          { name: "take", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 50, default: 20 } },
+        ],
+        responses: {
+          200: {
+            description: "Assignments retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AssignmentListResponse" },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/assignments/{id}": {
+      get: {
+        tags: ["Assignments"],
+        summary: "Get assignment details",
+        description:
+          "Requester/traveler-only assignment detail. Unrelated authenticated users cannot read the assignment.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+        ],
+        responses: {
+          200: {
+            description: "Assignment retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AssignmentResponse" },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("You are not allowed to access this assignment."),
+          404: errorResponse("Assignment not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/assignments/{id}/pickup": {
+      post: {
+        tags: ["Assignments"],
+        summary: "Mark assignment picked up",
+        description:
+          "Traveler-only action. Valid transition: ACCEPTED to PICKED_UP.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+        ],
+        responses: {
+          200: { description: "Assignment marked as picked up.", content: { "application/json": { schema: { $ref: "#/components/schemas/AssignmentResponse" } } } },
+          400: errorResponse("Only accepted assignments can be marked as picked up."),
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Only the traveler can mark this assignment as picked up."),
+          404: errorResponse("Assignment not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/assignments/{id}/start-delivery": {
+      post: {
+        tags: ["Assignments"],
+        summary: "Start assignment delivery",
+        description:
+          "Traveler-only action. Valid transition: PICKED_UP to IN_TRANSIT.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+        ],
+        responses: {
+          200: { description: "Assignment delivery started.", content: { "application/json": { schema: { $ref: "#/components/schemas/AssignmentResponse" } } } },
+          400: errorResponse("Only picked up assignments can start delivery."),
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Only the traveler can start delivery."),
+          404: errorResponse("Assignment not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/assignments/{id}/complete": {
+      post: {
+        tags: ["Assignments"],
+        summary: "Complete assignment",
+        description:
+          "Requester-only action. Valid transition: IN_TRANSIT to COMPLETED. On success the errand status becomes COMPLETED.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+        ],
+        responses: {
+          200: { description: "Assignment completed successfully.", content: { "application/json": { schema: { $ref: "#/components/schemas/AssignmentResponse" } } } },
+          400: errorResponse("Only in-transit assignments can be completed."),
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Only the requester can complete this assignment."),
+          404: errorResponse("Assignment not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/assignments/{id}/cancel": {
+      post: {
+        tags: ["Assignments"],
+        summary: "Cancel accepted assignment",
+        description:
+          "Requester or traveler action. Valid transition: ACCEPTED to CANCELLED only. Cancellation restores the trip capacity and reopens the errand, but does not refund the 1-token accept debit. Existing chat room history is retained.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+        ],
+        requestBody: {
+          required: false,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/AssignmentCancelRequest" },
+            },
+          },
+        },
+        responses: {
+          200: { description: "Assignment cancelled successfully.", content: { "application/json": { schema: { $ref: "#/components/schemas/AssignmentResponse" } } } },
+          400: errorResponse("Only accepted assignments can be cancelled."),
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Only the requester or traveler can cancel this assignment."),
+          404: errorResponse("Assignment not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
     },
     "/api/v1/chat-rooms": {
       get: {
