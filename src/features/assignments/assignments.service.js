@@ -2,6 +2,7 @@ const { randomUUID } = require("crypto");
 
 const ApiError = require("../../utils/ApiError");
 const walletService = require("../wallet/wallet.service");
+const badgeService = require("../badges/badges.service");
 const { compatibleAreaKeys } = require("../matching/matching.service");
 const { WEIGHT_CLASS_UNITS } = require("../matching/matching.constants");
 const repository = require("./assignments.repository");
@@ -13,17 +14,24 @@ const isUniqueConflict = (error) =>
 
 const assertUsableAreaPair = (resource, label) => {
   if (!resource.neighborhood?.key || !resource.destinationNeighborhood?.key) {
-    throw new ApiError(400, `${label} must have active origin and destination neighborhoods.`);
+    throw new ApiError(
+      400,
+      `${label} must have active origin and destination neighborhoods.`,
+    );
   }
 };
 
 const assertSameOrNearby = (sourceKey, candidateKey, label) => {
   if (!compatibleAreaKeys(sourceKey).includes(candidateKey)) {
-    throw new ApiError(400, `${label} neighborhoods are not compatible for assignment.`);
+    throw new ApiError(
+      400,
+      `${label} neighborhoods are not compatible for assignment.`,
+    );
   }
 };
 
-const requiredCapacityUnitsFor = (errand) => WEIGHT_CLASS_UNITS[errand.weightClass];
+const requiredCapacityUnitsFor = (errand) =>
+  WEIGHT_CLASS_UNITS[errand.weightClass];
 
 const assertCompatiblePair = ({ errand, trip, travelerId, now }) => {
   if (!errand) {
@@ -35,7 +43,10 @@ const assertCompatiblePair = ({ errand, trip, travelerId, now }) => {
   }
 
   if (trip.travelerId !== travelerId) {
-    throw new ApiError(403, "Only the trip owner can accept an assignment for this trip.");
+    throw new ApiError(
+      403,
+      "Only the trip owner can accept an assignment for this trip.",
+    );
   }
 
   if (errand.requesterId === travelerId) {
@@ -46,14 +57,23 @@ const assertCompatiblePair = ({ errand, trip, travelerId, now }) => {
     throw new ApiError(409, "Errand is no longer available for assignment.");
   }
 
-  if (trip.status !== "ACTIVE" || trip.expiresAt <= now || trip.departureTime <= now || !trip.expectedReturnTime) {
+  if (
+    trip.status !== "ACTIVE" ||
+    trip.expiresAt <= now ||
+    trip.departureTime <= now ||
+    !trip.expectedReturnTime
+  ) {
     throw new ApiError(400, "Trip is not available for assignment.");
   }
 
   assertUsableAreaPair(errand, "Errand");
   assertUsableAreaPair(trip, "Trip");
   assertSameOrNearby(errand.neighborhood.key, trip.neighborhood.key, "Origin");
-  assertSameOrNearby(errand.destinationNeighborhood.key, trip.destinationNeighborhood.key, "Destination");
+  assertSameOrNearby(
+    errand.destinationNeighborhood.key,
+    trip.destinationNeighborhood.key,
+    "Destination",
+  );
 
   const deadline = errand.neededByTime || errand.expiresAt;
   if (new Date(trip.expectedReturnTime) > new Date(deadline)) {
@@ -73,7 +93,10 @@ const assertCompatiblePair = ({ errand, trip, travelerId, now }) => {
 };
 
 const assertParticipant = (assignment, userId) => {
-  if (assignment.travelerId !== userId && assignment.errand.requesterId !== userId) {
+  if (
+    assignment.travelerId !== userId &&
+    assignment.errand.requesterId !== userId
+  ) {
     throw new ApiError(403, "You are not allowed to access this assignment.");
   }
 };
@@ -102,11 +125,22 @@ const createAssignment = async (travelerId, { errandId, tripId }) => {
       const now = new Date();
       const errand = await repository.findErrandForAccept(errandId, tx);
       const trip = await repository.findTripForAccept(tripId, tx);
-      const { requiredCapacityUnits } = assertCompatiblePair({ errand, trip, travelerId, now });
+      const { requiredCapacityUnits } = assertCompatiblePair({
+        errand,
+        trip,
+        travelerId,
+        now,
+      });
 
-      const existingAssignment = await repository.findActiveAssignmentForErrand(errandId, tx);
+      const existingAssignment = await repository.findActiveAssignmentForErrand(
+        errandId,
+        tx,
+      );
       if (existingAssignment) {
-        if (existingAssignment.travelerId === travelerId && existingAssignment.tripId === tripId) {
+        if (
+          existingAssignment.travelerId === travelerId &&
+          existingAssignment.tripId === tripId
+        ) {
           return existingAssignment;
         }
         throw new ApiError(409, "Errand already has an active assignment.");
@@ -145,7 +179,10 @@ const createAssignment = async (travelerId, { errandId, tripId }) => {
         tx,
       );
       await repository.updateErrandStatus(errandId, "MATCHED", tx);
-      await repository.markMatchAcceptedIfPresent({ errandId, tripId, acceptedAt: now }, tx);
+      await repository.markMatchAcceptedIfPresent(
+        { errandId, tripId, acceptedAt: now },
+        tx,
+      );
       await repository.createChatRoom(assignmentId, tx);
 
       return repository.findAssignmentById(assignmentId, tx);
@@ -191,7 +228,10 @@ const transitionAssignment = async ({
   updateErrandTo,
 }) => {
   return repository.runTransaction(async (tx) => {
-    const assignment = await repository.findAssignmentByIdForUpdate(assignmentId, tx);
+    const assignment = await repository.findAssignmentByIdForUpdate(
+      assignmentId,
+      tx,
+    );
     if (!assignment) {
       throw new ApiError(404, "Assignment not found.");
     }
@@ -214,8 +254,25 @@ const transitionAssignment = async ({
     );
 
     if (updateErrandTo) {
-      await repository.updateErrandStatus(assignment.errandId, updateErrandTo, tx);
-      return repository.findAssignmentById(assignmentId, tx);
+      await repository.updateErrandStatus(
+        assignment.errandId,
+        updateErrandTo,
+        tx,
+      );
+      const result = await repository.findAssignmentById(assignmentId, tx);
+      if (toStatus === "COMPLETED") {
+        await badgeService.evaluateAndAward(assignment.travelerId, tx);
+        return {
+          ...result,
+          ratingPrompt: {
+            required: true,
+            assignmentId,
+            reviewedUser: result.traveler,
+            reviewedRole: "TRAVELER",
+          },
+        };
+      }
+      return result;
     }
 
     return updated;
@@ -259,15 +316,26 @@ const completeAssignment = (userId, assignmentId) =>
     updateErrandTo: "COMPLETED",
   });
 
-const cancelAssignment = async (userId, assignmentId, { cancellationReason = null } = {}) => {
+const cancelAssignment = async (
+  userId,
+  assignmentId,
+  { cancellationReason = null } = {},
+) => {
   return repository.runTransaction(async (tx) => {
-    const assignment = await repository.findAssignmentByIdForUpdate(assignmentId, tx);
+    const assignment = await repository.findAssignmentByIdForUpdate(
+      assignmentId,
+      tx,
+    );
     if (!assignment) {
       throw new ApiError(404, "Assignment not found.");
     }
 
     assertParticipant(assignment, userId);
-    assertStatus(assignment, "ACCEPTED", "Only accepted assignments can be cancelled.");
+    assertStatus(
+      assignment,
+      "ACCEPTED",
+      "Only accepted assignments can be cancelled.",
+    );
 
     if (!assignment.tripId || !assignment.trip) {
       throw new ApiError(400, "Assignment is not linked to a trip.");
@@ -285,7 +353,11 @@ const cancelAssignment = async (userId, assignmentId, { cancellationReason = nul
       },
       tx,
     );
-    await repository.restoreTripCapacity(assignment.tripId, requiredCapacityUnits, tx);
+    await repository.restoreTripCapacity(
+      assignment.tripId,
+      requiredCapacityUnits,
+      tx,
+    );
     await repository.updateErrandStatus(assignment.errandId, "OPEN", tx);
 
     return repository.findAssignmentById(assignmentId, tx);

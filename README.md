@@ -1,5 +1,17 @@
 # Backend
 
+## Phase 10 - Ratings, Trust Score, and Badges
+
+- Ratings are allowed only after an assignment reaches `COMPLETED`; requester and traveler each rate the other participant once.
+- `POST /api/v1/ratings` accepts integer stars from 1 to 5, an optional 500-character comment, up to 5 approved unique feedback tags, and optional `CASH`/`BARTER` payment confirmation.
+- Ratings are immutable. An identical retry is idempotent; a changed second submission returns `409`.
+- `GET /api/v1/ratings/pending` returns unfinished rating prompts. The frontend treats the prompt as required, while the backend does not block login or unrelated endpoints.
+- `GET /api/v1/ratings/me/received`, `GET /api/v1/ratings/me/summary`, and `GET /api/v1/ratings/assignments/:assignmentId` expose received ratings, trust/badges, and participant-only assignment ratings.
+- Trust is recalculated immediately from all received stars: `((70 * 5) + sum(stars * 20)) / (5 + ratingCount)`, clamped to 0-100 and rounded to two decimals.
+- Comments, feedback tags, and payment modality do not affect Trust Score. Submitting a rating has no wallet token cost.
+- Badges are awarded idempotently: First Delivery (1 completed traveler delivery), Helpful Neighbor (5), Trusted Traveler (5+ ratings and trust >= 80), and Top Rated (10+ ratings, average >= 4.5, trust >= 90).
+- Completing an assignment returns `ratingPrompt` so the frontend can immediately open the rating screen.
+
 ## Phase 7 - Matching Engine
 
 The matching engine treats each trip as a round outing: the traveler leaves their origin area, visits a destination area, then returns to the origin area with accepted errands.

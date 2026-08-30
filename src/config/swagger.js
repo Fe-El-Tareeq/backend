@@ -121,7 +121,7 @@ const swaggerDefinition = {
     title: "Fe El-Tareeq API",
     version: "1.0.0",
     description:
-      "Interactive API contract for the Fe El-Tareeq peer-to-peer micro-errand backend. The documented modules are Authentication, Users, Locations, Errands, Trips, Matching, Assignments, Chat, Delivery Pricing, and Wallet.",
+      "Interactive API contract for the Fe El-Tareeq peer-to-peer micro-errand backend. The documented modules are Authentication, Users, Locations, Errands, Trips, Matching, Assignments, Chat, Ratings, Delivery Pricing, and Wallet.",
   },
   servers: [
     {
@@ -170,6 +170,11 @@ const swaggerDefinition = {
       name: "Chat",
       description:
         "Low-bandwidth assignment chat APIs for authenticated requesters and travelers.",
+    },
+    {
+      name: "Ratings",
+      description:
+        "Post-completion mutual ratings, trust scores, pending prompts, and earned badges.",
     },
     {
       name: "Delivery Pricing",
@@ -403,7 +408,8 @@ const swaggerDefinition = {
           key: {
             type: "string",
             example: "AN_NASER",
-            description: "Stable delivery-area key used by the pricing configuration.",
+            description:
+              "Stable delivery-area key used by the pricing configuration.",
           },
           id: {
             type: "string",
@@ -467,7 +473,8 @@ const swaggerDefinition = {
             type: "string",
             format: "uri",
             nullable: true,
-            example: "https://project.supabase.co/storage/v1/object/public/profile-images/user-id/image.jpg",
+            example:
+              "https://project.supabase.co/storage/v1/object/public/profile-images/user-id/image.jpg",
           },
           role: {
             type: "string",
@@ -563,7 +570,8 @@ const swaggerDefinition = {
           pickupNeighborhoodId: {
             type: "string",
             format: "uuid",
-            description: "Neighborhood where the requested item will be bought or picked up.",
+            description:
+              "Neighborhood where the requested item will be bought or picked up.",
           },
           title: {
             type: "string",
@@ -896,7 +904,8 @@ const swaggerDefinition = {
           destinationNeighborhoodId: {
             type: "string",
             format: "uuid",
-            description: "Structured destination used for pricing and matching.",
+            description:
+              "Structured destination used for pricing and matching.",
           },
           departureTime: {
             type: "string",
@@ -908,7 +917,8 @@ const swaggerDefinition = {
           expectedReturnTime: {
             type: "string",
             format: "date-time",
-            description: "Required return time; must be after departureTime and is used for delivery matching.",
+            description:
+              "Required return time; must be after departureTime and is used for delivery matching.",
             example: "2026-08-23T13:30:00+03:00",
           },
           maxCapacityClass: {
@@ -1016,14 +1026,35 @@ const swaggerDefinition = {
             type: "string",
             format: "uuid",
           },
-          destinationNeighborhoodId: { type: "string", format: "uuid", nullable: true },
-          deliveryFeeNis: { type: "integer", minimum: 2, maximum: 15, nullable: true, example: 5 },
-          pricingRule: {
+          destinationNeighborhoodId: {
             type: "string",
-            enum: ["AREA_OVERRIDE", "SAME_AREA", "NEARBY_AREA", "SAME_ZONE", "ZONE_RATE"],
+            format: "uuid",
             nullable: true,
           },
-          pricingVersion: { type: "integer", minimum: 1, nullable: true, example: 1 },
+          deliveryFeeNis: {
+            type: "integer",
+            minimum: 2,
+            maximum: 15,
+            nullable: true,
+            example: 5,
+          },
+          pricingRule: {
+            type: "string",
+            enum: [
+              "AREA_OVERRIDE",
+              "SAME_AREA",
+              "NEARBY_AREA",
+              "SAME_ZONE",
+              "ZONE_RATE",
+            ],
+            nullable: true,
+          },
+          pricingVersion: {
+            type: "integer",
+            minimum: 1,
+            nullable: true,
+            example: 1,
+          },
           clientRequestKey: {
             type: "string",
             format: "uuid",
@@ -1274,7 +1305,8 @@ const swaggerDefinition = {
           cancellationReason: {
             type: "string",
             maxLength: 255,
-            description: "Optional short reason stored with the cancelled assignment.",
+            description:
+              "Optional short reason stored with the cancelled assignment.",
           },
         },
       },
@@ -1286,7 +1318,11 @@ const swaggerDefinition = {
           assignmentId: { type: "string", format: "uuid" },
           createdAt: { type: "string", format: "date-time" },
           updatedAt: { type: "string", format: "date-time" },
-          lastMessageAt: { type: "string", format: "date-time", nullable: true },
+          lastMessageAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+          },
         },
       },
       Assignment: {
@@ -1312,11 +1348,18 @@ const swaggerDefinition = {
           acceptTokenTransactionId: {
             type: "string",
             format: "uuid",
-            description: "Wallet ledger entry for the 1-token assignment acceptance debit.",
+            description:
+              "Wallet ledger entry for the 1-token assignment acceptance debit.",
           },
           status: {
             type: "string",
-            enum: ["ACCEPTED", "PICKED_UP", "IN_TRANSIT", "COMPLETED", "CANCELLED"],
+            enum: [
+              "ACCEPTED",
+              "PICKED_UP",
+              "IN_TRANSIT",
+              "COMPLETED",
+              "CANCELLED",
+            ],
           },
           acceptedAt: { type: "string", format: "date-time" },
           pickedUpAt: { type: "string", format: "date-time", nullable: true },
@@ -1329,6 +1372,20 @@ const swaggerDefinition = {
           trip: { $ref: "#/components/schemas/Trip" },
           traveler: { $ref: "#/components/schemas/TripTravelerSummary" },
           chatRoom: { $ref: "#/components/schemas/AssignmentChatRoom" },
+          ratingPrompt: {
+            type: "object",
+            nullable: true,
+            description:
+              "Returned on completion so the frontend opens the required rating screen.",
+            properties: {
+              required: { type: "boolean", example: true },
+              assignmentId: { type: "string", format: "uuid" },
+              reviewedUser: {
+                $ref: "#/components/schemas/TripTravelerSummary",
+              },
+              reviewedRole: { type: "string", enum: ["TRAVELER"] },
+            },
+          },
           createdAt: { type: "string", format: "date-time" },
           updatedAt: { type: "string", format: "date-time" },
         },
@@ -1350,6 +1407,71 @@ const swaggerDefinition = {
               total: { type: "integer", example: 1 },
             },
           },
+        },
+      },
+      RatingCreateRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["assignmentId", "ratingStars"],
+        properties: {
+          assignmentId: { type: "string", format: "uuid" },
+          ratingStars: { type: "integer", minimum: 1, maximum: 5 },
+          comments: { type: "string", maxLength: 500, nullable: true },
+          feedbackTags: {
+            type: "array",
+            maxItems: 5,
+            uniqueItems: true,
+            items: {
+              type: "string",
+              enum: [
+                "GOOD_COMMUNICATION",
+                "ON_TIME",
+                "RESPECTFUL",
+                "CAREFUL_HANDLING",
+                "HELPFUL",
+                "LATE",
+                "POOR_COMMUNICATION",
+                "ITEM_PROBLEM",
+              ],
+            },
+          },
+          paymentModalityConfirmed: {
+            type: "string",
+            nullable: true,
+            enum: ["CASH", "BARTER"],
+          },
+        },
+      },
+      Rating: {
+        type: "object",
+        required: [
+          "id",
+          "assignmentId",
+          "reviewerId",
+          "reviewedUserId",
+          "ratingStars",
+          "createdAt",
+        ],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          assignmentId: { type: "string", format: "uuid" },
+          reviewerId: { type: "string", format: "uuid" },
+          reviewedUserId: { type: "string", format: "uuid" },
+          ratingStars: { type: "integer", minimum: 1, maximum: 5 },
+          comments: { type: "string", nullable: true },
+          paymentModalityConfirmed: {
+            type: "string",
+            nullable: true,
+            enum: ["CASH", "BARTER"],
+          },
+          feedbackTags: {
+            type: "array",
+            items: { type: "object", properties: { tag: { type: "string" } } },
+          },
+          reviewer: { $ref: "#/components/schemas/TripTravelerSummary" },
+          reviewedUser: { $ref: "#/components/schemas/TripTravelerSummary" },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
         },
       },
       ChatUserSummary: {
@@ -1735,7 +1857,12 @@ const swaggerDefinition = {
       },
       SendVoiceMessageRequest: {
         type: "object",
-        required: ["clientMessageKey", "type", "voiceNoteUrl", "voiceNoteDurationSec"],
+        required: [
+          "clientMessageKey",
+          "type",
+          "voiceNoteUrl",
+          "voiceNoteDurationSec",
+        ],
         additionalProperties: false,
         properties: {
           clientMessageKey: {
@@ -3274,9 +3401,13 @@ const swaggerDefinition = {
               },
             },
           },
-          400: errorResponse("Validation failed, pair is incompatible, trip is unavailable, capacity is insufficient, or wallet balance is insufficient."),
+          400: errorResponse(
+            "Validation failed, pair is incompatible, trip is unavailable, capacity is insufficient, or wallet balance is insufficient.",
+          ),
           401: { $ref: "#/components/responses/Unauthorized" },
-          403: errorResponse("Only the trip owner can accept an assignment for this trip."),
+          403: errorResponse(
+            "Only the trip owner can accept an assignment for this trip.",
+          ),
           404: errorResponse("Errand or trip not found."),
           409: errorResponse("Errand already has an active assignment."),
           429: { $ref: "#/components/responses/TooManyRequests" },
@@ -3290,8 +3421,18 @@ const swaggerDefinition = {
           "Returns only assignments where the authenticated user is either the requester of the errand or the traveler on the assignment.",
         security: [{ bearerAuth: [] }],
         parameters: [
-          { name: "skip", in: "query", required: false, schema: { type: "integer", minimum: 0, default: 0 } },
-          { name: "take", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 50, default: 20 } },
+          {
+            name: "skip",
+            in: "query",
+            required: false,
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            required: false,
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
         ],
         responses: {
           200: {
@@ -3318,7 +3459,12 @@ const swaggerDefinition = {
           "Requester/traveler-only assignment detail. Unrelated authenticated users cannot read the assignment.",
         security: [{ bearerAuth: [] }],
         parameters: [
-          { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
         ],
         responses: {
           200: {
@@ -3346,13 +3492,29 @@ const swaggerDefinition = {
           "Traveler-only action. Valid transition: ACCEPTED to PICKED_UP.",
         security: [{ bearerAuth: [] }],
         parameters: [
-          { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
         ],
         responses: {
-          200: { description: "Assignment marked as picked up.", content: { "application/json": { schema: { $ref: "#/components/schemas/AssignmentResponse" } } } },
-          400: errorResponse("Only accepted assignments can be marked as picked up."),
+          200: {
+            description: "Assignment marked as picked up.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AssignmentResponse" },
+              },
+            },
+          },
+          400: errorResponse(
+            "Only accepted assignments can be marked as picked up.",
+          ),
           401: { $ref: "#/components/responses/Unauthorized" },
-          403: errorResponse("Only the traveler can mark this assignment as picked up."),
+          403: errorResponse(
+            "Only the traveler can mark this assignment as picked up.",
+          ),
           404: errorResponse("Assignment not found."),
           429: { $ref: "#/components/responses/TooManyRequests" },
           500: { $ref: "#/components/responses/InternalServerError" },
@@ -3367,10 +3529,22 @@ const swaggerDefinition = {
           "Traveler-only action. Valid transition: PICKED_UP to IN_TRANSIT.",
         security: [{ bearerAuth: [] }],
         parameters: [
-          { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
         ],
         responses: {
-          200: { description: "Assignment delivery started.", content: { "application/json": { schema: { $ref: "#/components/schemas/AssignmentResponse" } } } },
+          200: {
+            description: "Assignment delivery started.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AssignmentResponse" },
+              },
+            },
+          },
           400: errorResponse("Only picked up assignments can start delivery."),
           401: { $ref: "#/components/responses/Unauthorized" },
           403: errorResponse("Only the traveler can start delivery."),
@@ -3385,16 +3559,30 @@ const swaggerDefinition = {
         tags: ["Assignments"],
         summary: "Complete assignment",
         description:
-          "Requester-only action. Valid transition: IN_TRANSIT to COMPLETED. On success the errand status becomes COMPLETED.",
+          "Requester-only action. Valid transition: IN_TRANSIT to COMPLETED. On success the errand becomes COMPLETED, traveler delivery badges are evaluated, and ratingPrompt tells the frontend to open the rating screen.",
         security: [{ bearerAuth: [] }],
         parameters: [
-          { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
         ],
         responses: {
-          200: { description: "Assignment completed successfully.", content: { "application/json": { schema: { $ref: "#/components/schemas/AssignmentResponse" } } } },
+          200: {
+            description: "Assignment completed successfully.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AssignmentResponse" },
+              },
+            },
+          },
           400: errorResponse("Only in-transit assignments can be completed."),
           401: { $ref: "#/components/responses/Unauthorized" },
-          403: errorResponse("Only the requester can complete this assignment."),
+          403: errorResponse(
+            "Only the requester can complete this assignment.",
+          ),
           404: errorResponse("Assignment not found."),
           429: { $ref: "#/components/responses/TooManyRequests" },
           500: { $ref: "#/components/responses/InternalServerError" },
@@ -3409,7 +3597,12 @@ const swaggerDefinition = {
           "Requester or traveler action. Valid transition: ACCEPTED to CANCELLED only. Cancellation restores the trip capacity and reopens the errand, but does not refund the 1-token accept debit. Existing chat room history is retained.",
         security: [{ bearerAuth: [] }],
         parameters: [
-          { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
         ],
         requestBody: {
           required: false,
@@ -3420,13 +3613,139 @@ const swaggerDefinition = {
           },
         },
         responses: {
-          200: { description: "Assignment cancelled successfully.", content: { "application/json": { schema: { $ref: "#/components/schemas/AssignmentResponse" } } } },
+          200: {
+            description: "Assignment cancelled successfully.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AssignmentResponse" },
+              },
+            },
+          },
           400: errorResponse("Only accepted assignments can be cancelled."),
           401: { $ref: "#/components/responses/Unauthorized" },
-          403: errorResponse("Only the requester or traveler can cancel this assignment."),
+          403: errorResponse(
+            "Only the requester or traveler can cancel this assignment.",
+          ),
           404: errorResponse("Assignment not found."),
           429: { $ref: "#/components/responses/TooManyRequests" },
           500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/ratings": {
+      post: {
+        tags: ["Ratings"],
+        summary: "Rate the other assignment participant",
+        description:
+          "Requester and traveler may each submit exactly one immutable rating after COMPLETED. Identical retries are idempotent. Trust is recalculated from all received stars using a 70-point prior weighted as five ratings; comments, tags, and payment modality do not affect trust. No wallet token is charged.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/RatingCreateRequest" },
+            },
+          },
+        },
+        responses: {
+          201: { description: "Rating submitted successfully." },
+          200: { description: "Identical retry returned without a duplicate." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse(
+            "Only assignment participants can submit a rating.",
+          ),
+          404: errorResponse("Assignment not found."),
+          409: errorResponse(
+            "Assignment is incomplete or this participant already submitted a different rating.",
+          ),
+        },
+      },
+    },
+    "/api/v1/ratings/pending": {
+      get: {
+        tags: ["Ratings"],
+        summary: "List my pending ratings",
+        description:
+          "Returns completed assignments the user has not rated; this supports a required frontend prompt without blocking login or unrelated APIs.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "skip",
+            in: "query",
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
+        ],
+        responses: {
+          200: { description: "Pending ratings retrieved successfully." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/api/v1/ratings/me/received": {
+      get: {
+        tags: ["Ratings"],
+        summary: "List ratings I received",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "skip",
+            in: "query",
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
+        ],
+        responses: {
+          200: { description: "Received ratings retrieved successfully." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/api/v1/ratings/me/summary": {
+      get: {
+        tags: ["Ratings"],
+        summary: "Get my trust, rating summary, and badges",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: { description: "Rating summary retrieved successfully." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/api/v1/ratings/assignments/{assignmentId}": {
+      get: {
+        tags: ["Ratings"],
+        summary: "Get ratings for one assignment",
+        description:
+          "Visible immediately, only to the assignment requester and traveler.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "assignmentId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: { description: "Assignment ratings retrieved successfully." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse(
+            "Only assignment participants can view these ratings.",
+          ),
+          404: errorResponse("Assignment not found."),
         },
       },
     },
@@ -3869,7 +4188,8 @@ const swaggerDefinition = {
       put: {
         tags: ["Users"],
         summary: "Upload or replace current user's profile image",
-        description: "Accepts one JPEG, PNG, or WebP image up to 5 MB. Replacing an image removes the previous stored object after the database is updated.",
+        description:
+          "Accepts one JPEG, PNG, or WebP image up to 5 MB. Replacing an image removes the previous stored object after the database is updated.",
         security: [{ bearerAuth: [] }],
         requestBody: {
           required: true,
@@ -3884,8 +4204,17 @@ const swaggerDefinition = {
           },
         },
         responses: {
-          200: { description: "Profile image updated successfully.", content: { "application/json": { schema: { $ref: "#/components/schemas/UserProfileResponse" } } } },
-          400: errorResponse("Profile image is missing, invalid, unsupported, or exceeds 5 MB."),
+          200: {
+            description: "Profile image updated successfully.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/UserProfileResponse" },
+              },
+            },
+          },
+          400: errorResponse(
+            "Profile image is missing, invalid, unsupported, or exceeds 5 MB.",
+          ),
           401: { $ref: "#/components/responses/Unauthorized" },
           404: errorResponse("User not found."),
           502: errorResponse("Could not upload profile image."),
@@ -3897,7 +4226,14 @@ const swaggerDefinition = {
         summary: "Delete current user's profile image",
         security: [{ bearerAuth: [] }],
         responses: {
-          200: { description: "Profile image deleted successfully.", content: { "application/json": { schema: { $ref: "#/components/schemas/UserProfileResponse" } } } },
+          200: {
+            description: "Profile image deleted successfully.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/UserProfileResponse" },
+              },
+            },
+          },
           401: { $ref: "#/components/responses/Unauthorized" },
           404: errorResponse("User not found."),
         },
@@ -3907,17 +4243,30 @@ const swaggerDefinition = {
       get: {
         tags: ["Delivery Pricing"],
         summary: "Preview the server-calculated delivery price",
-        description: "Uses the authenticated user's neighborhood unless originNeighborhoodId is supplied. Clients cannot submit or edit the calculated fee.",
+        description:
+          "Uses the authenticated user's neighborhood unless originNeighborhoodId is supplied. Clients cannot submit or edit the calculated fee.",
         security: [{ bearerAuth: [] }],
         parameters: [
-          { name: "originNeighborhoodId", in: "query", required: false, schema: { type: "string", format: "uuid" } },
-          { name: "destinationNeighborhoodId", in: "query", required: true, schema: { type: "string", format: "uuid" } },
+          {
+            name: "originNeighborhoodId",
+            in: "query",
+            required: false,
+            schema: { type: "string", format: "uuid" },
+          },
+          {
+            name: "destinationNeighborhoodId",
+            in: "query",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
         ],
         responses: {
           200: { description: "Delivery price calculated successfully." },
           400: errorResponse("Neighborhood IDs are invalid or inactive."),
           401: { $ref: "#/components/responses/Unauthorized" },
-          422: errorResponse("Delivery pricing is not configured for this route."),
+          422: errorResponse(
+            "Delivery pricing is not configured for this route.",
+          ),
         },
       },
     },
