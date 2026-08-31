@@ -1,3 +1,22 @@
-const FEATURE_NAME = 'ratings';
+const FEEDBACK_TAGS = Object.freeze([
+  "GOOD_COMMUNICATION",
+  "ON_TIME",
+  "RESPECTFUL",
+  "CAREFUL_HANDLING",
+  "HELPFUL",
+  "LATE",
+  "POOR_COMMUNICATION",
+  "ITEM_PROBLEM",
+]);
+const PAYMENT_MODALITIES = Object.freeze(["CASH", "BARTER"]);
+const MAX_FEEDBACK_TAGS = 5;
+const TRUST_PRIOR_SCORE = 70;
+const TRUST_PRIOR_WEIGHT = 5;
 
-module.exports = { FEATURE_NAME };
+module.exports = {
+  FEEDBACK_TAGS,
+  PAYMENT_MODALITIES,
+  MAX_FEEDBACK_TAGS,
+  TRUST_PRIOR_SCORE,
+  TRUST_PRIOR_WEIGHT,
+};

@@ -8,9 +8,11 @@ const ApiError = require("../src/utils/ApiError");
 
 jest.mock("../src/features/assignments/assignments.repository");
 jest.mock("../src/features/wallet/wallet.service");
+jest.mock("../src/features/badges/badges.service");
 
 const repository = require("../src/features/assignments/assignments.repository");
 const walletService = require("../src/features/wallet/wallet.service");
+const badgeService = require("../src/features/badges/badges.service");
 const service = require("../src/features/assignments/assignments.service");
 
 const requesterId = "550e8400-e29b-41d4-a716-446655440000";
@@ -97,6 +99,7 @@ beforeEach(() => {
   repository.countAssignmentsForUser.mockResolvedValue(1);
   repository.lockTrip.mockResolvedValue({ id: tripId });
   walletService.debit.mockResolvedValue({ id: walletTransactionId });
+  badgeService.evaluateAndAward.mockResolvedValue([]);
 });
 
 describe("Assignment accept flow", () => {
@@ -270,7 +273,9 @@ describe("Assignment lifecycle transitions", () => {
     const result = await service.completeAssignment(requesterId, assignmentId);
 
     expect(result.status).toBe("COMPLETED");
+    expect(result.ratingPrompt).toMatchObject({ required: true, assignmentId, reviewedRole: "TRAVELER" });
     expect(repository.updateErrandStatus).toHaveBeenCalledWith(errandId, "COMPLETED", tx);
+    expect(badgeService.evaluateAndAward).toHaveBeenCalledWith(travelerId, tx);
   });
 
   test("traveler cannot complete", async () => {
