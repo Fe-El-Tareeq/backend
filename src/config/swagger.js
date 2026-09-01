@@ -246,7 +246,9 @@ const swaggerDefinition = {
             type: "string",
             minLength: 8,
             maxLength: 20,
-            example: "+970599123456",
+            description:
+              "Dedicated frontend test phone. Use the exact local format shown; phone values are not normalized automatically.",
+            example: "0599000000",
           },
           password: {
             type: "string",
@@ -274,7 +276,9 @@ const swaggerDefinition = {
             type: "string",
             minLength: 8,
             maxLength: 20,
-            example: "+970599123456",
+            description:
+              "Verified test account phone. Normal login requires phone and password only; OTP is not part of this request.",
+            example: "0599000000",
           },
           password: {
             type: "string",
@@ -292,7 +296,9 @@ const swaggerDefinition = {
             type: "string",
             minLength: 8,
             maxLength: 20,
-            example: "+970599123456",
+            description:
+              "For frontend testing, 0599000000 receives the fixed code only when the server allowlist is configured.",
+            example: "0599000000",
           },
           channel: {
             type: "string",
@@ -310,14 +316,16 @@ const swaggerDefinition = {
             type: "string",
             minLength: 8,
             maxLength: 20,
-            example: "+970599123456",
+            example: "0599000000",
           },
           otp: {
             type: "string",
             minLength: 6,
             maxLength: 6,
             pattern: "^\\d{6}$",
-            example: "123456",
+            description:
+              "Use 000000 only for the allowlisted frontend test phone 0599000000. Other phones require their generated OTP.",
+            example: "000000",
           },
         },
       },
@@ -355,7 +363,7 @@ const swaggerDefinition = {
             type: "string",
             minLength: 8,
             maxLength: 20,
-            example: "0595101902",
+            example: "0599000000",
           },
           otp: {
             type: "string",
@@ -2291,7 +2299,7 @@ const swaggerDefinition = {
         tags: ["Authentication"],
         summary: "Register and request phone verification",
         description:
-          "Creates or prepares an unverified password user with basic profile data and sends a phone verification OTP. This endpoint does not issue access or refresh tokens. neighborhoodId must be selected from an existing active neighborhood returned by GET /api/v1/locations/neighborhoods. Passwords must be at least 8 characters and include one uppercase letter, one number, and one special character.",
+          "Creates or prepares an unverified password user with basic profile data and sends a phone verification OTP. This endpoint does not issue access or refresh tokens. For frontend testing, the dedicated phone 0599000000 uses OTP 000000 only when OTP_FIXED_CODE and OTP_TEST_PHONES are configured on the running server. neighborhoodId must be selected from an existing active neighborhood returned by GET /api/v1/locations/neighborhoods. Passwords must be at least 8 characters and include one uppercase letter, one number, and one special character.",
         requestBody: {
           required: true,
           content: {
@@ -2362,7 +2370,7 @@ const swaggerDefinition = {
         tags: ["Authentication"],
         summary: "Log in with phone and password",
         description:
-          "Authenticates a verified ACTIVE user with phone and password. Wrong phone, missing password support on a legacy user, and wrong password all return a generic invalid-credentials response. Users whose phoneVerifiedAt is null are rejected until OTP verification succeeds.",
+          "Authenticates a verified ACTIVE user with phone and password only. Normal login never accepts or requires OTP. OTP is used only for initial phone verification and password reset. Wrong phone, missing password support on a legacy user, and wrong password all return a generic invalid-credentials response. Users whose phoneVerifiedAt is null are rejected until initial OTP verification succeeds.",
         requestBody: {
           required: true,
           content: {
@@ -2429,7 +2437,7 @@ const swaggerDefinition = {
         tags: ["Authentication"],
         summary: "Request a phone verification OTP",
         description:
-          "Creates a six-digit phone verification OTP for the provided phone number. This endpoint does not authenticate the user by itself and verification tokens are issued only for a prepared or existing user. In development the OTP is logged by the backend; production delivery is left to the OTP provider integration.",
+          "Creates a six-digit PHONE_VERIFICATION OTP for the provided phone number. It supports initial registration verification and is not part of normal login. For frontend testing, 0599000000 uses 000000 only when explicitly allowlisted by the running server. Request a new code after changing OTP environment settings because existing OTP rows keep their original hash. The code expires after two minutes and allows at most three attempts.",
         requestBody: {
           required: true,
           content: {
@@ -2468,7 +2476,7 @@ const swaggerDefinition = {
         tags: ["Authentication"],
         summary: "Verify phone OTP and receive tokens",
         description:
-          "Verifies the latest phone verification OTP for a phone number. On success, the backend marks the OTP used, sets phoneVerifiedAt, ensures a wallet exists with exactly one signup bonus ledger entry for new wallets, and returns access and refresh tokens.",
+          "Verifies the latest PHONE_VERIFICATION OTP for initial account activation. For the allowlisted frontend test phone 0599000000, use 000000. On success, the backend marks the OTP used, sets phoneVerifiedAt, ensures a wallet exists with exactly one signup bonus ledger entry for new wallets, and returns access and refresh tokens. Later logins use phone and password without OTP.",
         requestBody: {
           required: true,
           content: {
@@ -2644,7 +2652,7 @@ const swaggerDefinition = {
         tags: ["Authentication"],
         summary: "Request a password-reset OTP",
         description:
-          "Creates a purpose-scoped password-reset OTP when the account exists. The response is intentionally identical for existing and missing accounts. A fixed OTP can be enabled only for explicitly allowlisted test phone numbers through server environment configuration.",
+          "Creates a purpose-scoped PASSWORD_RESET OTP when the account exists. The response is intentionally identical for existing and missing accounts. For frontend testing, 0599000000 uses 000000 only when explicitly allowlisted through server environment configuration. This flow is separate from normal login.",
         requestBody: {
           required: true,
           content: {
@@ -2683,7 +2691,7 @@ const swaggerDefinition = {
         tags: ["Authentication"],
         summary: "Reset a password using a password-reset OTP",
         description:
-          "Validates the latest unused PASSWORD_RESET OTP for the same phone, replaces the stored bcrypt password hash, marks the OTP used, and revokes every active refresh token for the user.",
+          "Validates the latest unused PASSWORD_RESET OTP for the same phone, replaces the stored bcrypt password hash, marks the OTP used, and revokes every active refresh token for the user. The allowlisted test phone 0599000000 uses 000000; after reset, the user logs in normally with phone and the new password without OTP.",
         requestBody: {
           required: true,
           content: {
