@@ -149,6 +149,26 @@ describe("Wallet idempotency scope", () => {
     expect(repository.updateBalance).toHaveBeenCalledWith("wallet-1", 13, tx);
   });
 
+  test("credit joins a caller-owned transaction for atomic payment processing", async () => {
+    const paymentTx = { transaction: "payment" };
+
+    await service.credit({
+      userId: "user-1",
+      amount: 7,
+      transactionType: "TOKEN_TOP_UP",
+      idempotencyKey: "payment-invoice:invoice-1",
+      paymentInvoiceId: "invoice-1",
+      client: paymentTx,
+    });
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(repository.lockWallet).toHaveBeenCalledWith("user-1", paymentTx);
+    expect(repository.createLedgerEntry).toHaveBeenCalledWith(
+      expect.objectContaining({ paymentInvoiceId: "invoice-1" }),
+      paymentTx,
+    );
+  });
+
   test("debit creates one scoped ledger entry and updates the balance", async () => {
     const result = await service.debit({
       userId: "user-1",

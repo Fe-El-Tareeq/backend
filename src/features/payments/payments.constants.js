@@ -1,3 +1,9 @@
-const FEATURE_NAME = 'payments';
+const INVOICE_EXPIRY_MINUTES = 15;
+const MOCK_PROVIDER = "MOCK";
+const MOCK_SIGNATURE_HEADER = "x-payment-signature";
 
-module.exports = { FEATURE_NAME };
+module.exports = {
+  INVOICE_EXPIRY_MINUTES,
+  MOCK_PROVIDER,
+  MOCK_SIGNATURE_HEADER,
+};

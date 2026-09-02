@@ -1,5 +1,26 @@
 # Backend
 
+## Phase 11 - Payments and QR Token Top-Up
+
+- `GET /api/v1/payments/packages` returns active server-controlled token packages.
+- `POST /api/v1/payments/invoices` creates a 15-minute QR invoice. The client sends only `tokenPackageId` and a UUID `clientRequestKey`; price and token quantities are snapshotted from the database.
+- `GET /api/v1/payments/invoices` and `GET /api/v1/payments/invoices/:id` expose only the authenticated user's invoices and lazily mark overdue pending invoices as `EXPIRED`.
+- `POST /api/v1/payments/mock/invoices/:id/pay` simulates a successful provider payment only when `MOCK_PAYMENT_ENABLED=true`. It must remain disabled in production.
+- `POST /api/v1/payments/webhooks/mock` verifies an HMAC SHA-256 signature using `MOCK_PAYMENT_WEBHOOK_SECRET` and does not use user JWT authentication.
+- A successful exact-amount webhook creates the provider transaction, locks and credits the wallet, writes one immutable `TOKEN_TOP_UP` ledger entry, creates an in-app notification, and marks the invoice `PAID` in one database transaction.
+- Duplicate create requests, duplicate provider transaction IDs, repeated paid-invoice webhooks, and concurrent wallet updates are protected by database constraints, row locks, and idempotency checks.
+- The QR value is returned as `qrCodePayload`; the frontend renders the QR image. This MVP does not transfer real money.
+- The payment provider contract isolates the current `MockPaymentProvider`; a future `JawwalPayProvider` can implement the same create-payment and webhook-verification responsibilities.
+
+Local/staging mock configuration:
+
+```env
+MOCK_PAYMENT_ENABLED=true
+MOCK_PAYMENT_WEBHOOK_SECRET=replace_with_a_long_random_environment_secret
+```
+
+Never enable mock payment confirmation in a real production environment.
+
 ## Phase 10 - Ratings, Trust Score, and Badges
 
 - Ratings are allowed only after an assignment reaches `COMPLETED`; requester and traveler each rate the other participant once.

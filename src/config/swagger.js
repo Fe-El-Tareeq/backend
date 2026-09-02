@@ -121,7 +121,7 @@ const swaggerDefinition = {
     title: "Fe El-Tareeq API",
     version: "1.0.0",
     description:
-      "Interactive API contract for the Fe El-Tareeq peer-to-peer micro-errand backend. The documented modules are Authentication, Users, Locations, Errands, Trips, Matching, Assignments, Chat, Ratings, Delivery Pricing, and Wallet.",
+      "Interactive API contract for the Fe El-Tareeq peer-to-peer micro-errand backend. The documented modules are Authentication, Users, Locations, Errands, Trips, Matching, Assignments, Chat, Ratings, Delivery Pricing, Wallet, and Payments.",
   },
   servers: [
     {
@@ -184,6 +184,11 @@ const swaggerDefinition = {
     {
       name: "Wallet",
       description: "Authenticated token wallet and transaction history APIs.",
+    },
+    {
+      name: "Payments",
+      description:
+        "Phase 11 token packages, QR invoices, mock payment confirmation, and signed webhook processing.",
     },
   ],
   components: {
@@ -2028,6 +2033,84 @@ const swaggerDefinition = {
           },
         },
       },
+      TokenPackage: {
+        type: "object",
+        required: [
+          "id",
+          "name",
+          "tokenAmount",
+          "bonusTokens",
+          "totalTokens",
+          "priceNis",
+          "currency",
+        ],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          name: { type: "string", example: "Standard" },
+          tokenAmount: { type: "integer", example: 25 },
+          bonusTokens: { type: "integer", example: 3 },
+          totalTokens: { type: "integer", example: 28 },
+          priceNis: { type: "number", format: "double", example: 12 },
+          currency: { type: "string", enum: ["NIS"] },
+          isActive: { type: "boolean", example: true },
+        },
+      },
+      PaymentInvoice: {
+        type: "object",
+        required: [
+          "id",
+          "clientRequestKey",
+          "tokenPackageId",
+          "totalTokens",
+          "amountNis",
+          "currency",
+          "paymentProvider",
+          "qrCodePayload",
+          "status",
+          "createdAt",
+          "expiresAt",
+        ],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          clientRequestKey: {
+            type: "string",
+            format: "uuid",
+            nullable: true,
+            description:
+              "Null only for legacy invoices created before Phase 11.",
+          },
+          tokenPackageId: { type: "string", format: "uuid" },
+          tokenAmount: { type: "integer", example: 25 },
+          bonusTokens: { type: "integer", example: 3 },
+          totalTokens: { type: "integer", example: 28 },
+          amountNis: { type: "number", format: "double", example: 12 },
+          currency: { type: "string", enum: ["NIS"] },
+          paymentProvider: { type: "string", enum: ["MOCK", "JAWWAL_PAY"] },
+          providerInvoiceId: {
+            type: "string",
+            nullable: true,
+            example: "mock-invoice-uuid",
+          },
+          qrCodePayload: {
+            type: "string",
+            example: "feeltareeq://payments/mock?invoiceId=uuid",
+          },
+          paymentUrl: { type: "string", nullable: true },
+          status: {
+            type: "string",
+            enum: ["PENDING", "PAID", "FAILED", "EXPIRED"],
+          },
+          createdAt: { type: "string", format: "date-time" },
+          expiresAt: { type: "string", format: "date-time" },
+          paidAt: { type: "string", format: "date-time", nullable: true },
+          failedAt: { type: "string", format: "date-time", nullable: true },
+          tokenPackage: { $ref: "#/components/schemas/TokenPackage" },
+          walletTransaction: {
+            nullable: true,
+            allOf: [{ $ref: "#/components/schemas/WalletTransaction" }],
+          },
+        },
+      },
       AuthTokens: {
         type: "object",
         required: [
@@ -2244,6 +2327,31 @@ const swaggerDefinition = {
       }),
       WalletTransactionsResponse: apiResponse({
         $ref: "#/components/schemas/WalletTransactionsData",
+      }),
+      TokenPackagesResponse: apiResponse({
+        type: "object",
+        required: ["packages"],
+        properties: {
+          packages: {
+            type: "array",
+            items: { $ref: "#/components/schemas/TokenPackage" },
+          },
+        },
+      }),
+      PaymentInvoiceResponse: apiResponse({
+        type: "object",
+        required: ["invoice"],
+        properties: {
+          invoice: { $ref: "#/components/schemas/PaymentInvoice" },
+        },
+      }),
+      CreatePaymentInvoiceResponse: apiResponse({
+        type: "object",
+        required: ["created", "invoice"],
+        properties: {
+          created: { type: "boolean" },
+          invoice: { $ref: "#/components/schemas/PaymentInvoice" },
+        },
       }),
     },
     responses: {
@@ -4275,6 +4383,222 @@ const swaggerDefinition = {
           422: errorResponse(
             "Delivery pricing is not configured for this route.",
           ),
+        },
+      },
+    },
+    "/api/v1/payments/packages": {
+      get: {
+        tags: ["Payments"],
+        summary: "List active token packages",
+        description:
+          "Returns server-controlled package prices and token quantities. Clients must not calculate or submit package pricing.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: "Active token packages retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/TokenPackagesResponse" },
+              },
+            },
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          429: { $ref: "#/components/responses/TooManyRequests" },
+        },
+      },
+    },
+    "/api/v1/payments/invoices": {
+      post: {
+        tags: ["Payments"],
+        summary: "Create a QR token top-up invoice",
+        description:
+          "Creates a 15-minute PENDING invoice using an active package snapshot when the mock flow is explicitly enabled. Reusing the same clientRequestKey with the same package returns the original invoice; reusing it with another package returns 409. Creating an invoice never credits the wallet.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["tokenPackageId", "clientRequestKey"],
+                additionalProperties: false,
+                properties: {
+                  tokenPackageId: { type: "string", format: "uuid" },
+                  clientRequestKey: {
+                    type: "string",
+                    format: "uuid",
+                    description:
+                      "A fresh UUID generated once by the client and reused only when retrying this request.",
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description: "Payment invoice created.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/CreatePaymentInvoiceResponse",
+                },
+              },
+            },
+          },
+          200: {
+            description: "Idempotent retry returned the existing invoice.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/CreatePaymentInvoiceResponse",
+                },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: errorResponse("Active token package was not found."),
+          409: errorResponse(
+            "Client request key was already used for a different token package.",
+          ),
+        },
+      },
+      get: {
+        tags: ["Payments"],
+        summary: "List the current user's payment invoices",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "status",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: ["PENDING", "PAID", "FAILED", "EXPIRED"],
+            },
+          },
+          {
+            name: "skip",
+            in: "query",
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
+        ],
+        responses: {
+          200: { description: "Owned invoices and pagination metadata." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/api/v1/payments/invoices/{id}": {
+      get: {
+        tags: ["Payments"],
+        summary: "Get an owned payment invoice",
+        description:
+          "Returns only an invoice owned by the authenticated user and lazily marks an expired PENDING invoice as EXPIRED.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Payment invoice retrieved.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/PaymentInvoiceResponse" },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: errorResponse("Payment invoice was not found."),
+        },
+      },
+    },
+    "/api/v1/payments/mock/invoices/{id}/pay": {
+      post: {
+        tags: ["Payments"],
+        summary: "Simulate payment for an owned invoice",
+        description:
+          "Local/staging-only helper that emits a correctly signed successful mock webhook. It returns 404 when MOCK_PAYMENT_ENABLED is not true and must never be enabled in production.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: {
+            description:
+              "Mock payment processed; repeat calls do not credit the wallet twice.",
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: errorResponse("Mock payment flow or invoice was not found."),
+          409: errorResponse("Invoice is no longer pending."),
+        },
+      },
+    },
+    "/api/v1/payments/webhooks/mock": {
+      post: {
+        tags: ["Payments"],
+        summary: "Receive a signed mock provider webhook",
+        description:
+          "Provider callback authenticated with x-payment-signature, not a user JWT. A successful exact-amount event records the provider transaction, locks and credits the wallet, creates one ledger entry and notification, and marks the invoice PAID in one database transaction.",
+        parameters: [
+          {
+            name: "x-payment-signature",
+            in: "header",
+            required: true,
+            schema: { type: "string", pattern: "^[a-fA-F0-9]{64}$" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: [
+                  "providerInvoiceId",
+                  "providerTransactionId",
+                  "status",
+                  "amountPaidNis",
+                  "providerTimestamp",
+                ],
+                additionalProperties: false,
+                properties: {
+                  providerInvoiceId: { type: "string", maxLength: 150 },
+                  providerTransactionId: { type: "string", maxLength: 150 },
+                  status: { type: "string", enum: ["SUCCESS", "FAILED"] },
+                  amountPaidNis: { type: "number", minimum: 0 },
+                  providerTimestamp: { type: "string", format: "date-time" },
+                  failureReason: { type: "string", maxLength: 255 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description:
+              "Webhook processed or safely recognized as a duplicate/terminal invoice.",
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: errorResponse("Invalid payment webhook signature."),
+          404: errorResponse("Mock flow or invoice was not found."),
         },
       },
     },

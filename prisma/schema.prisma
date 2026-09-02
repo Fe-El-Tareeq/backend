@@ -97,6 +97,7 @@ enum InvoiceStatus {
 }
 
 enum PaymentProvider {
+  MOCK
   JAWWAL_PAY
 }
 
@@ -558,6 +559,7 @@ model TokenPackage {
 model PaymentInvoice {
   id                String             @id @default(uuid()) @db.Uuid
   userId            String             @map("user_id") @db.Uuid
+  clientRequestKey  String?            @map("client_request_key") @db.Uuid
   tokenPackageId    String             @map("token_package_id") @db.Uuid
   tokenAmount       Int                @map("token_amount")
   bonusTokens       Int                @default(0) @map("bonus_tokens")
@@ -579,6 +581,7 @@ model PaymentInvoice {
 
   paymentTransactions PaymentTransaction[]
 
+  @@unique([userId, clientRequestKey])
   @@index([userId])
   @@index([tokenPackageId])
   @@index([status])
