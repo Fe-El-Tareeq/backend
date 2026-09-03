@@ -30,6 +30,8 @@ const otpTestPhones = (process.env.OTP_TEST_PHONES || "")
   .map((phone) => phone.trim())
   .filter(Boolean);
 
+const mockPaymentEnabled = process.env.MOCK_PAYMENT_ENABLED === "true";
+
 module.exports = {
   nodeEnv: process.env.NODE_ENV || "development",
   port,
@@ -42,4 +44,6 @@ module.exports = {
   supabaseUrl: process.env.SUPABASE_URL || null,
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || null,
   profileImagesBucket: process.env.PROFILE_IMAGES_BUCKET || "profile-images",
+  mockPaymentEnabled,
+  mockPaymentWebhookSecret: process.env.MOCK_PAYMENT_WEBHOOK_SECRET || null,
 };

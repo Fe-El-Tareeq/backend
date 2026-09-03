@@ -161,7 +161,65 @@ const debit = async ({
 
   return prisma.$transaction((tx) => executeDebit(payload, tx));
 };
-// Adds tokens to a user's wallet safely inside a database transaction.
+const executeCredit = async (
+  {
+    userId,
+    amount,
+    transactionType,
+    referenceType = null,
+    referenceId = null,
+    idempotencyKey = null,
+    description = null,
+    paymentInvoiceId = null,
+  },
+  client,
+) => {
+  const wallet = await repository.lockWallet(userId, client);
+
+  if (!wallet) {
+    throw new ApiError(404, "Wallet not found");
+  }
+
+  if (idempotencyKey) {
+    const existingTransaction = await repository.findByIdempotencyKey(
+      wallet.id,
+      idempotencyKey,
+      client,
+    );
+
+    if (existingTransaction) {
+      return validateIdempotentOperation(existingTransaction, {
+        amount,
+        transactionType,
+        referenceType,
+        referenceId,
+      });
+    }
+  }
+
+  const balanceBefore = wallet.token_balance;
+  const balanceAfter = balanceBefore + amount;
+
+  await repository.updateBalance(wallet.id, balanceAfter, client);
+
+  return repository.createLedgerEntry(
+    {
+      walletId: wallet.id,
+      transactionType,
+      tokenAmount: amount,
+      balanceBefore,
+      balanceAfter,
+      referenceType,
+      referenceId,
+      idempotencyKey,
+      description,
+      paymentInvoiceId,
+    },
+    client,
+  );
+};
+
+// Adds tokens safely and can join a caller-owned transaction.
 const credit = async ({
   userId,
   amount,
@@ -170,59 +228,27 @@ const credit = async ({
   referenceId = null,
   idempotencyKey = null,
   description = null,
+  paymentInvoiceId = null,
+  client = null,
 }) => {
   validateTokenAmount(amount);
 
-  return prisma.$transaction(async (tx) => {
-    // Locks the wallet so concurrent operations cannot update the same balance.
-    const wallet = await repository.lockWallet(userId, tx);
+  const payload = {
+    userId,
+    amount,
+    transactionType,
+    referenceType,
+    referenceId,
+    idempotencyKey,
+    description,
+    paymentInvoiceId,
+  };
 
-    if (!wallet) {
-      throw new ApiError(404, "Wallet not found");
-    }
+  if (client) {
+    return executeCredit(payload, client);
+  }
 
-    // Prevents the same credit operation from being processed more than once.
-    if (idempotencyKey) {
-      const existingTransaction = await repository.findByIdempotencyKey(
-        wallet.id,
-        idempotencyKey,
-        tx,
-      );
-
-      if (existingTransaction) {
-        return validateIdempotentOperation(existingTransaction, {
-          amount,
-          transactionType,
-          referenceType,
-          referenceId,
-        });
-      }
-    }
-
-    const balanceBefore = wallet.token_balance;
-    const balanceAfter = balanceBefore + amount;
-
-    // Updates the wallet balance inside the same database transaction.
-    await repository.updateBalance(wallet.id, balanceAfter, tx);
-
-    // Records the credit operation in the wallet ledger.
-    const ledgerEntry = await repository.createLedgerEntry(
-      {
-        walletId: wallet.id,
-        transactionType,
-        tokenAmount: amount,
-        balanceBefore,
-        balanceAfter,
-        referenceType,
-        referenceId,
-        idempotencyKey,
-        description,
-      },
-      tx,
-    );
-
-    return ledgerEntry;
-  });
+  return prisma.$transaction((tx) => executeCredit(payload, tx));
 }; // Refunds tokens back to a user's wallet.
 const refund = async ({
   userId,
