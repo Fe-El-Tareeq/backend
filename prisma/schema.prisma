@@ -685,6 +685,8 @@ model Notification {
   title             String              @db.VarChar(100)
   message           String              @db.VarChar(500)
   status            NotificationStatus  @default(PENDING)
+  metadata          Json?
+  idempotencyKey    String?             @unique @map("idempotency_key") @db.VarChar(150)
   providerMessageId String?             @map("provider_message_id") @db.VarChar(150)
   createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   sentAt            DateTime?           @map("sent_at") @db.Timestamptz(6)
@@ -702,6 +704,7 @@ model Notification {
   @@index([assignmentId])
   @@index([status])
   @@index([userId, status, createdAt])
+  @@index([userId, notificationType, createdAt])
   @@map("notifications")
 }
 

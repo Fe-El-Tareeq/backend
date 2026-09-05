@@ -7,11 +7,13 @@ jest.mock("../src/config/env", () => ({
 jest.mock("../src/config/prisma", () => ({ $transaction: jest.fn() }));
 jest.mock("../src/features/payments/payments.repository");
 jest.mock("../src/features/wallet/wallet.service");
+jest.mock("../src/features/notifications/notifications.service");
 
 const prisma = require("../src/config/prisma");
 const env = require("../src/config/env");
 const repository = require("../src/features/payments/payments.repository");
 const walletService = require("../src/features/wallet/wallet.service");
+const notificationService = require("../src/features/notifications/notifications.service");
 const service = require("../src/features/payments/payments.service");
 const {
   MockPaymentProvider,
@@ -56,6 +58,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   env.mockPaymentEnabled = true;
   prisma.$transaction.mockImplementation((callback) => callback(tx));
+  notificationService.templates.paymentSuccess.mockResolvedValue({});
+  notificationService.templates.paymentFailure.mockResolvedValue({});
 });
 
 test("does not create mock invoices when the mock flow is disabled", async () => {
@@ -136,7 +140,6 @@ test("a valid signed webhook credits the wallet and pays the invoice atomically"
   repository.findPaymentTransactionByProviderId.mockResolvedValue(null);
   repository.createPaymentTransaction.mockResolvedValue({});
   walletService.credit.mockResolvedValue({ id: "ledger-1" });
-  repository.createTopUpNotification.mockResolvedValue({});
   repository.updateInvoice.mockResolvedValue({
     ...invoice,
     status: "PAID",
@@ -158,6 +161,14 @@ test("a valid signed webhook credits the wallet and pays the invoice atomically"
   expect(repository.updateInvoice).toHaveBeenCalledWith(
     invoiceId,
     expect.objectContaining({ status: "PAID" }),
+    tx,
+  );
+  expect(notificationService.templates.paymentSuccess).toHaveBeenCalledWith(
+    {
+      userId,
+      invoiceId,
+      totalTokens: 28,
+    },
     tx,
   );
 });
@@ -193,6 +204,8 @@ test("a duplicate provider transaction never credits the wallet twice", async ()
   const result = await service.processMockWebhook(payload, signature);
   expect(result.reason).toBe("DUPLICATE_WEBHOOK");
   expect(walletService.credit).not.toHaveBeenCalled();
+  expect(notificationService.templates.paymentSuccess).not.toHaveBeenCalled();
+  expect(notificationService.templates.paymentFailure).not.toHaveBeenCalled();
 });
 
 test("a paid invoice ignores a new webhook transaction without another credit", async () => {
@@ -229,6 +242,46 @@ test("an amount mismatch fails the invoice without crediting tokens", async () =
   const result = await service.processMockWebhook(payload, signature);
   expect(result.reason).toBe("AMOUNT_MISMATCH");
   expect(walletService.credit).not.toHaveBeenCalled();
+  expect(notificationService.templates.paymentFailure).toHaveBeenCalledWith(
+    {
+      userId,
+      invoiceId,
+      reason: "AMOUNT_MISMATCH",
+    },
+    tx,
+  );
+});
+
+test("a provider-reported failed payment creates a failure notification", async () => {
+  const provider = new MockPaymentProvider("phase-11-test-webhook-secret");
+  const payload = {
+    providerInvoiceId: invoice.providerInvoiceId,
+    providerTransactionId: "mock-transaction-failed",
+    status: "FAILED",
+    amountPaidNis: 0,
+    providerTimestamp: new Date().toISOString(),
+    failureReason: "Insufficient funds",
+  };
+  const signature = provider.signWebhook(payload);
+  repository.lockInvoiceByProviderInvoiceId.mockResolvedValue({
+    id: invoiceId,
+  });
+  repository.findInvoiceByProviderInvoiceId.mockResolvedValue(invoice);
+  repository.findPaymentTransactionByProviderId.mockResolvedValue(null);
+  repository.updateInvoice.mockResolvedValue({ ...invoice, status: "FAILED" });
+
+  const result = await service.processMockWebhook(payload, signature);
+
+  expect(result.reason).toBe("PAYMENT_FAILED");
+  expect(walletService.credit).not.toHaveBeenCalled();
+  expect(notificationService.templates.paymentFailure).toHaveBeenCalledWith(
+    {
+      userId,
+      invoiceId,
+      reason: "PAYMENT_FAILED",
+    },
+    tx,
+  );
 });
 
 test("an expired invoice records failure and never credits the wallet", async () => {

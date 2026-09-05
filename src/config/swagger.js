@@ -190,6 +190,10 @@ const swaggerDefinition = {
       description:
         "Phase 11 token packages, QR invoices, mock payment confirmation, and signed webhook processing.",
     },
+    {
+      name: "Notifications",
+      description: "In-app user notifications and read-state APIs.",
+    },
   ],
   components: {
     securitySchemes: {
@@ -2111,6 +2115,108 @@ const swaggerDefinition = {
           },
         },
       },
+      NotificationMetadata: {
+        type: "object",
+        additionalProperties: true,
+        description:
+          "Lightweight navigation metadata only, such as errandId, tripId, assignmentId, chatRoomId, messageId, invoiceId, status, or actorUserId. Sensitive payment, auth, phone, and provider details are not exposed.",
+        properties: {
+          errandId: { type: "string", format: "uuid" },
+          tripId: { type: "string", format: "uuid" },
+          assignmentId: { type: "string", format: "uuid" },
+          chatRoomId: { type: "string", format: "uuid" },
+          messageId: { type: "string", format: "uuid" },
+          invoiceId: { type: "string", format: "uuid" },
+        },
+      },
+      Notification: {
+        type: "object",
+        required: [
+          "id",
+          "type",
+          "channel",
+          "title",
+          "message",
+          "status",
+          "isRead",
+          "createdAt",
+          "metadata",
+        ],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          type: {
+            type: "string",
+            example: "NEW_CHAT_MESSAGE",
+          },
+          channel: {
+            type: "string",
+            enum: ["IN_APP"],
+            description:
+              "Phase 12 exposes in-app notifications only. SMS and WhatsApp remain provider-ready schema values, not delivered channels.",
+          },
+          title: { type: "string", example: "New chat message" },
+          message: {
+            type: "string",
+            example: "You have a new message about an assignment.",
+          },
+          status: {
+            type: "string",
+            enum: ["PENDING", "SENT", "FAILED", "READ"],
+            description:
+              "Unread in-app notifications are any records whose status is not READ. Mark-read is idempotent.",
+          },
+          isRead: { type: "boolean", example: false },
+          createdAt: { type: "string", format: "date-time" },
+          readAt: { type: "string", format: "date-time", nullable: true },
+          metadata: { $ref: "#/components/schemas/NotificationMetadata" },
+        },
+      },
+      NotificationListData: {
+        type: "object",
+        required: ["notifications", "pagination"],
+        properties: {
+          notifications: {
+            type: "array",
+            items: { $ref: "#/components/schemas/Notification" },
+          },
+          pagination: {
+            type: "object",
+            required: ["skip", "take", "total"],
+            properties: {
+              skip: { type: "integer", minimum: 0, default: 0 },
+              take: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+              total: { type: "integer", minimum: 0, example: 4 },
+            },
+          },
+        },
+      },
+      NotificationUnreadCountData: {
+        type: "object",
+        required: ["count"],
+        properties: {
+          count: { type: "integer", minimum: 0, example: 4 },
+        },
+      },
+      NotificationMarkReadData: {
+        type: "object",
+        required: ["notification"],
+        properties: {
+          notification: { $ref: "#/components/schemas/Notification" },
+        },
+      },
+      NotificationMarkAllReadData: {
+        type: "object",
+        required: ["updatedCount"],
+        properties: {
+          updatedCount: {
+            type: "integer",
+            minimum: 0,
+            description:
+              "Number of unread notifications changed to READ for the authenticated user.",
+            example: 3,
+          },
+        },
+      },
       AuthTokens: {
         type: "object",
         required: [
@@ -2352,6 +2458,18 @@ const swaggerDefinition = {
           created: { type: "boolean" },
           invoice: { $ref: "#/components/schemas/PaymentInvoice" },
         },
+      }),
+      NotificationListResponse: apiResponse({
+        $ref: "#/components/schemas/NotificationListData",
+      }),
+      NotificationUnreadCountResponse: apiResponse({
+        $ref: "#/components/schemas/NotificationUnreadCountData",
+      }),
+      NotificationMarkReadResponse: apiResponse({
+        $ref: "#/components/schemas/NotificationMarkReadData",
+      }),
+      NotificationMarkAllReadResponse: apiResponse({
+        $ref: "#/components/schemas/NotificationMarkAllReadData",
       }),
     },
     responses: {
@@ -4383,6 +4501,208 @@ const swaggerDefinition = {
           422: errorResponse(
             "Delivery pricing is not configured for this route.",
           ),
+        },
+      },
+    },
+    "/api/v1/notifications": {
+      get: {
+        tags: ["Notifications"],
+        summary: "List in-app notifications",
+        description:
+          "Returns newest-first, paginated in-app notifications belonging only to the authenticated user. Use status=UNREAD to fetch records whose status is not READ. This endpoint does not expose provider payloads, phone numbers, or sensitive payment/auth data.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "status",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              enum: ["UNREAD", "PENDING", "SENT", "FAILED", "READ"],
+            },
+            description:
+              "Optional read-state/status filter. UNREAD means any notification whose status is not READ.",
+          },
+          {
+            name: "skip",
+            in: "query",
+            required: false,
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            required: false,
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Notifications retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/NotificationListResponse" },
+                example: {
+                  success: true,
+                  message: "Notifications retrieved successfully.",
+                  data: {
+                    notifications: [
+                      {
+                        id: "650e8400-e29b-41d4-a716-446655440001",
+                        type: "NEW_CHAT_MESSAGE",
+                        channel: "IN_APP",
+                        title: "New chat message",
+                        message: "You have a new message about an assignment.",
+                        status: "PENDING",
+                        isRead: false,
+                        createdAt: "2026-09-05T08:00:00.000Z",
+                        readAt: null,
+                        metadata: {
+                          errandId: "750e8400-e29b-41d4-a716-446655440001",
+                          assignmentId:
+                            "850e8400-e29b-41d4-a716-446655440001",
+                          chatRoomId:
+                            "950e8400-e29b-41d4-a716-446655440001",
+                        },
+                      },
+                    ],
+                    pagination: { skip: 0, take: 20, total: 1 },
+                  },
+                },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" },
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/notifications/unread-count": {
+      get: {
+        tags: ["Notifications"],
+        summary: "Get unread notification count",
+        description:
+          "Returns a compact count of the authenticated user's unread in-app notifications. Unread means status is not READ.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: "Unread notification count retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/NotificationUnreadCountResponse",
+                },
+                example: {
+                  success: true,
+                  message:
+                    "Unread notification count retrieved successfully.",
+                  data: { count: 4 },
+                },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" },
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/notifications/{id}/read": {
+      post: {
+        tags: ["Notifications"],
+        summary: "Mark one notification read",
+        description:
+          "Idempotently marks one notification belonging to the authenticated user as READ and sets readAt when it was previously unread. Repeating the call for an already-read notification succeeds without extra side effects.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+            description: "Notification ID.",
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: false,
+              },
+              example: {},
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Notification marked read successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/NotificationMarkReadResponse",
+                },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: errorResponse("Notification not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/notifications/read-all": {
+      post: {
+        tags: ["Notifications"],
+        summary: "Mark all notifications read",
+        description:
+          "Marks all unread notifications for the authenticated user as READ in one update and returns the number of rows changed. Notifications belonging to other users are never updated.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: false,
+              },
+              example: {},
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Notifications marked read successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/NotificationMarkAllReadResponse",
+                },
+                example: {
+                  success: true,
+                  message: "Notifications marked read successfully.",
+                  data: { updatedCount: 3 },
+                },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" },
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
         },
       },
     },
