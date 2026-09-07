@@ -1551,7 +1551,7 @@ const swaggerDefinition = {
           },
           type: {
             type: "string",
-            enum: ["TEXT", "VOICE"],
+            enum: ["TEXT", "VOICE", "IMAGE"],
             example: "TEXT",
           },
           text: {
@@ -1570,6 +1570,37 @@ const swaggerDefinition = {
             nullable: true,
             minimum: 0,
             maximum: 30,
+            example: null,
+          },
+          voiceNoteSizeBytes: {
+            type: "integer",
+            nullable: true,
+            minimum: 1,
+            maximum: 512000,
+            example: null,
+          },
+          voiceMimeType: {
+            type: "string",
+            nullable: true,
+            enum: ["audio/webm", "audio/ogg", "audio/mp4"],
+            example: null,
+          },
+          imageUrl: {
+            type: "string",
+            nullable: true,
+            example: null,
+          },
+          imageSizeBytes: {
+            type: "integer",
+            nullable: true,
+            minimum: 1,
+            maximum: 307200,
+            example: null,
+          },
+          imageMimeType: {
+            type: "string",
+            nullable: true,
+            enum: ["image/jpeg", "image/png", "image/webp"],
             example: null,
           },
           isRead: {
@@ -1875,6 +1906,8 @@ const swaggerDefinition = {
           "type",
           "voiceNoteUrl",
           "voiceNoteDurationSec",
+          "voiceNoteSizeBytes",
+          "voiceMimeType",
         ],
         additionalProperties: false,
         properties: {
@@ -1889,12 +1922,58 @@ const swaggerDefinition = {
           voiceNoteUrl: {
             type: "string",
             description:
-              "Metadata URL only. Phase 9 does not implement audio storage.",
+              "Metadata URL only. Phase 9 does not implement chat audio storage. Frontend must record/compress audio before upload and only send the resulting compact URL.",
           },
           voiceNoteDurationSec: {
             type: "integer",
             minimum: 0,
             maximum: 30,
+          },
+          voiceNoteSizeBytes: {
+            type: "integer",
+            minimum: 1,
+            maximum: 512000,
+            description: "Voice note must not exceed 500 KB.",
+          },
+          voiceMimeType: {
+            type: "string",
+            enum: ["audio/webm", "audio/ogg", "audio/mp4"],
+          },
+        },
+      },
+      SendImageMessageRequest: {
+        type: "object",
+        required: [
+          "clientMessageKey",
+          "type",
+          "imageUrl",
+          "imageSizeBytes",
+          "imageMimeType",
+        ],
+        additionalProperties: false,
+        properties: {
+          clientMessageKey: {
+            type: "string",
+            format: "uuid",
+          },
+          type: {
+            type: "string",
+            enum: ["IMAGE"],
+          },
+          imageUrl: {
+            type: "string",
+            description:
+              "Exactly one compressed image URL. Original large camera images and base64/binary payloads are not accepted by the chat API.",
+          },
+          imageSizeBytes: {
+            type: "integer",
+            minimum: 1,
+            maximum: 307200,
+            description: "Image must not exceed 300 KB.",
+          },
+          imageMimeType: {
+            type: "string",
+            enum: ["image/jpeg", "image/png", "image/webp"],
           },
         },
       },
@@ -3993,7 +4072,7 @@ const swaggerDefinition = {
         tags: ["Chat"],
         summary: "Send a chat message",
         description:
-          "Sends a TEXT or VOICE metadata message as an authenticated assignment participant. TEXT messages are trimmed, must be non-empty, and cannot exceed 500 characters. VOICE messages require voiceNoteUrl and voiceNoteDurationSec up to 30 seconds; file storage is not implemented here. clientMessageKey provides offline retry idempotency scoped to sender: the same sender/key/payload returns the existing message, while the same sender/key with different payload returns 409. Sending is allowed while the assignment is ACCEPTED, PICKED_UP, or IN_TRANSIT. COMPLETED or CANCELLED assignments remain readable but reject new sends with 409.",
+          "Sends one TEXT, VOICE, or IMAGE metadata message as an authenticated assignment participant. TEXT messages are trimmed, must be non-empty, and cannot exceed 500 characters. VOICE messages require voiceNoteUrl, voiceNoteDurationSec <= 30, voiceNoteSizeBytes <= 500 KB, and voiceMimeType of audio/webm, audio/ogg, or audio/mp4. IMAGE messages contain exactly one compressed imageUrl, imageSizeBytes <= 300 KB, and imageMimeType of image/jpeg, image/png, or image/webp. Mixed text/media payloads, multiple images, base64, and binary uploads are rejected. Chat media storage is not implemented here: clients must compress and upload media before calling this endpoint and must not send original large camera images. clientMessageKey provides offline retry idempotency scoped to sender: the same sender/key/payload returns the existing message, while the same sender/key with different payload returns 409. Sending is allowed while the assignment is ACCEPTED, PICKED_UP, or IN_TRANSIT. COMPLETED or CANCELLED assignments remain readable but reject new sends with 409.",
         security: [{ bearerAuth: [] }],
         parameters: [
           {
@@ -4014,6 +4093,7 @@ const swaggerDefinition = {
                 oneOf: [
                   { $ref: "#/components/schemas/SendTextMessageRequest" },
                   { $ref: "#/components/schemas/SendVoiceMessageRequest" },
+                  { $ref: "#/components/schemas/SendImageMessageRequest" },
                 ],
                 discriminator: {
                   propertyName: "type",
@@ -4033,6 +4113,17 @@ const swaggerDefinition = {
                     type: "VOICE",
                     voiceNoteUrl: "https://media.example.test/voice/1.ogg",
                     voiceNoteDurationSec: 18,
+                    voiceNoteSizeBytes: 120000,
+                    voiceMimeType: "audio/ogg",
+                  },
+                },
+                image: {
+                  value: {
+                    clientMessageKey: "350e8400-e29b-41d4-a716-446655440000",
+                    type: "IMAGE",
+                    imageUrl: "https://media.example.test/chat/image-1.webp",
+                    imageSizeBytes: 240000,
+                    imageMimeType: "image/webp",
                   },
                 },
               },

@@ -71,6 +71,7 @@ enum AssignmentStatus {
 enum MessageType {
   TEXT
   VOICE
+  IMAGE
 }
 
 enum PaymentModality {
@@ -457,6 +458,11 @@ model ChatMessage {
   contentText      String?     @map("content_text") @db.VarChar(500)
   audioUrl         String?     @map("audio_url")
   audioDurationSec Int?        @map("audio_duration_sec")
+  audioSizeBytes   Int?        @map("audio_size_bytes")
+  audioMimeType    String?     @map("audio_mime_type") @db.VarChar(50)
+  imageUrl         String?     @map("image_url")
+  imageSizeBytes   Int?        @map("image_size_bytes")
+  imageMimeType    String?     @map("image_mime_type") @db.VarChar(50)
   isRead           Boolean     @default(false) @map("is_read")
   sentAt           DateTime    @default(now()) @map("sent_at") @db.Timestamptz(6)
   readAt           DateTime?   @map("read_at") @db.Timestamptz(6)
