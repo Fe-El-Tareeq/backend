@@ -1,5 +1,57 @@
 # Backend
 
+## CI/CD
+
+GitHub Actions validates pull requests targeting `dev` or `main` and pushes to `dev` or `main` with Node.js 22, `npm ci --ignore-scripts`, an isolated PostgreSQL 16 service, Prisma migrations, Prisma validation/generation, JavaScript syntax linting, OpenAPI validation, an application import check, and Jest coverage. This PR temporarily also validates pushes to `chore/backend-ci-cd` so the new workflow can prove itself before manual merge. Prisma generation runs as an explicit CI step after dependency installation. The workflow prints Node/npm versions before dependency installation so package-manager failures are visible in the run log.
+
+CI/CD never merges pull requests. Merging remains a manual repository action.
+
+CI uses one test database for all database-backed suites:
+
+```text
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/wallet_test?schema=public
+DIRECT_URL=postgresql://postgres:postgres@localhost:5432/wallet_test?schema=public
+TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/wallet_test?schema=public
+```
+
+`npx prisma migrate deploy` runs against that same `wallet_test` database before `npm run test:ci`. The Jest command is generic and runs every test discovered under `tests/`, including wallet concurrency and trips repository integration tests.
+
+Local verification uses the same command:
+
+```bash
+npm run verify
+```
+
+The full suite requires PostgreSQL because the wallet concurrency and trips repository integration tests intentionally refuse to run without a safe test database. Configure these values before running the full local gate:
+
+```env
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/wallet_test?schema=public
+DIRECT_URL=postgresql://postgres:postgres@localhost:5432/wallet_test?schema=public
+TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/wallet_test?schema=public
+SHADOW_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/wallet_test_shadow?schema=public
+JWT_ACCESS_SECRET=local_access_secret
+JWT_REFRESH_SECRET=local_refresh_secret
+MOCK_PAYMENT_ENABLED=true
+MOCK_PAYMENT_WEBHOOK_SECRET=local_mock_payment_secret
+```
+
+Then apply migrations:
+
+```bash
+npx prisma migrate deploy
+```
+
+Coverage output and Jest JSON results are written to `coverage/` and uploaded as a CI artifact. CI fails if the wallet concurrency or trips repository suites do not run and pass, or if Jest reports skipped tests. The current module-by-module test audit is tracked in `docs/backend-test-audit.md`.
+
+Render deployment can run through checked-in GitHub deploy-hook workflows or through Render dashboard auto-deploys. To use the checked-in workflow, configure repository/environment secrets:
+
+```text
+RENDER_STAGING_DEPLOY_HOOK_URL
+RENDER_PRODUCTION_DEPLOY_HOOK_URL
+```
+
+Use only one deployment trigger per environment. If Render dashboard auto-deploy is already enabled for `dev` or `main`, leave the matching deploy-hook secret unset; the CD workflow records that dashboard auto-deploy is expected. Render service runtime variables should match `.env.example`.
+
 ## Phase 11 - Payments and QR Token Top-Up
 
 - `GET /api/v1/payments/packages` returns active server-controlled token packages.

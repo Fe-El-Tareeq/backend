@@ -1,0 +1,118 @@
+name: Backend CI
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+  push:
+    branches:
+      - dev
+      - main
+      - chore/backend-ci-cd
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-ci:
+    name: Validate, test, and cover backend
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: wallet_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d wallet_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      PORT: 3000
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wallet_test?schema=public
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/wallet_test?schema=public
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wallet_test?schema=public
+      JWT_ACCESS_SECRET: ci_access_secret_change_me
+      JWT_REFRESH_SECRET: ci_refresh_secret_change_me
+      OTP_FIXED_CODE: "000000"
+      OTP_TEST_PHONES: "0590000000,0599000000"
+      MOCK_PAYMENT_ENABLED: "true"
+      MOCK_PAYMENT_WEBHOOK_SECRET: ci_mock_payment_secret_change_me
+      SUPABASE_URL: https://example.supabase.co
+      SUPABASE_SERVICE_ROLE_KEY: ci_supabase_service_role_key
+      PROFILE_IMAGES_BUCKET: profile-images
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Show tool versions
+        run: |
+          node --version
+          npm --version
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Validate Prisma schema
+        run: npm run prisma:validate
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+
+      - name: Apply database migrations
+        run: npx prisma migrate deploy
+
+      - name: Verify test database target
+        run: |
+          node -e "const { Client } = require('pg'); (async () => { const client = new Client({ connectionString: process.env.TEST_DATABASE_URL }); await client.connect(); const db = await client.query('select current_database() as database, current_schema() as schema'); const migrations = await client.query('select count(*)::int as count from _prisma_migrations'); console.log(db.rows[0]); console.log({ appliedMigrations: migrations.rows[0].count }); if (db.rows[0].database !== 'wallet_test') throw new Error('CI tests are not using wallet_test'); if (migrations.rows[0].count < 1) throw new Error('Prisma migrations were not applied'); await client.end(); })().catch((error) => { console.error(error); process.exit(1); });"
+
+      - name: Lint JavaScript
+        run: npm run lint
+
+      - name: Validate OpenAPI
+        run: npm run swagger:validate
+
+      - name: Build/import check
+        run: npm run build
+
+      - name: Run Jest with coverage
+        run: npm run test:ci
+
+      - name: Verify critical Jest suites
+        run: |
+          node -e 'const results = require("./coverage/jest-results.json"); const normalized = (value) => String(value || "").replace(/\\/g, "/"); const suites = results.testResults.map((suite) => ({ path: normalized(suite.name || suite.testFilePath), suite })); const criticalSuites = ["tests/wallet.concurrency.test.js", "tests/trips.repository.test.js"]; for (const criticalSuite of criticalSuites) { const match = suites.find((entry) => entry.path.endsWith(criticalSuite)); if (!match) throw new Error(criticalSuite + " did not run"); if (match.suite.status !== "passed") throw new Error(criticalSuite + " status was " + match.suite.status); console.log(criticalSuite + ": " + match.suite.status + ", assertions=" + match.suite.assertionResults.length); } if (results.numPendingTestSuites || results.numPendingTests) throw new Error("Skipped tests detected: suites=" + results.numPendingTestSuites + ", tests=" + results.numPendingTests); console.log("Suites: " + results.numPassedTestSuites + "/" + results.numTotalTestSuites + "; Tests: " + results.numPassedTests + "/" + results.numTotalTests + "; Skipped suites=" + results.numPendingTestSuites + "; Skipped tests=" + results.numPendingTests);'
+
+      - name: Record CI metadata
+        run: |
+          {
+            echo "node=$(node --version)"
+            echo "npm=$(npm --version)"
+            echo "install_command=npm ci --ignore-scripts"
+            echo "test_command=npm run test:ci"
+          } > coverage/ci-metadata.txt
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: coverage/
+          if-no-files-found: error
