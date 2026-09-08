@@ -1,17 +1,6 @@
 const ApiResponse = require("../../utils/ApiResponse");
 const service = require("./assignments.service");
 
-const createAssignment = async (req, res, next) => {
-  try {
-    const assignment = await service.createAssignment(req.user.id, req.validatedData.body);
-    return res
-      .status(201)
-      .json(new ApiResponse(201, "Assignment accepted successfully.", { assignment }));
-  } catch (error) {
-    return next(error);
-  }
-};
-
 const listAssignments = async (req, res, next) => {
   try {
     const result = await service.listAssignments(req.user.id, req.validatedData.query);
@@ -83,7 +72,6 @@ const cancelAssignment = async (req, res, next) => {
 };
 
 module.exports = {
-  createAssignment,
   listAssignments,
   getAssignmentById,
   markPickedUp,

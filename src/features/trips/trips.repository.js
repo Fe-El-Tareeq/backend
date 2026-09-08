@@ -280,6 +280,15 @@ const updateTrip = async (tripId, data, client = prisma) => {
   });
 };
 
+const hasAcceptedAssignment = async (tripId, client = prisma) => {
+  const count = await client.errandAssignment.count({
+    where: {
+      tripId,
+    },
+  });
+  return count > 0;
+};
+
 module.exports = {
   runTransaction,
   findTravelerForPosting,
@@ -289,4 +298,5 @@ module.exports = {
   listTrips,
   countTrips,
   updateTrip,
+  hasAcceptedAssignment,
 };

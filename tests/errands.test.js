@@ -112,6 +112,7 @@ const makeErrand = (overrides = {}) => ({
 
 beforeEach(() => {
   jest.clearAllMocks();
+  repository.hasAssignmentHistory.mockResolvedValue(false);
 
   prisma.user.findUnique.mockResolvedValue({
     id: userId,
@@ -155,7 +156,9 @@ describe("Errands create", () => {
       .send(createPayload);
 
     expect(response.statusCode).toBe(201);
-    expect(response.body.data.errand.postTokenTransactionId).toBe(transactionId);
+    expect(response.body.data.errand.postTokenTransactionId).toBe(
+      transactionId,
+    );
     expect(response.body.data.errand.postTokenCost).toBe(1);
     expect(response.body.data.errand.passwordHash).toBeUndefined();
     expect(walletService.debit).toHaveBeenCalledTimes(1);
@@ -182,7 +185,9 @@ describe("Errands create", () => {
   });
 
   test("unauthenticated create is rejected", async () => {
-    const response = await request(app).post("/api/v1/errands").send(createPayload);
+    const response = await request(app)
+      .post("/api/v1/errands")
+      .send(createPayload);
 
     expect(response.statusCode).toBe(401);
     expect(walletService.debit).not.toHaveBeenCalled();
@@ -195,7 +200,9 @@ describe("Errands create", () => {
       errors: [],
     });
 
-    await expect(service.createErrand(userId, createPayload)).rejects.toMatchObject({
+    await expect(
+      service.createErrand(userId, createPayload),
+    ).rejects.toMatchObject({
       statusCode: 400,
       message: "Insufficient token balance",
     });
@@ -221,7 +228,9 @@ describe("Errands create", () => {
       }),
     );
 
-    await expect(service.createErrand(userId, createPayload)).rejects.toMatchObject({
+    await expect(
+      service.createErrand(userId, createPayload),
+    ).rejects.toMatchObject({
       statusCode: 409,
       message:
         "Client request key has already been used with different errand data.",
@@ -231,7 +240,9 @@ describe("Errands create", () => {
   test("invalid or inactive category is rejected", async () => {
     repository.findActiveCategoryById.mockResolvedValue(null);
 
-    await expect(service.createErrand(userId, createPayload)).rejects.toMatchObject({
+    await expect(
+      service.createErrand(userId, createPayload),
+    ).rejects.toMatchObject({
       statusCode: 400,
       message: "Selected category does not exist or is inactive.",
     });
@@ -246,7 +257,9 @@ describe("Errands create", () => {
       profileCompleted: false,
     });
 
-    await expect(service.createErrand(userId, createPayload)).rejects.toMatchObject({
+    await expect(
+      service.createErrand(userId, createPayload),
+    ).rejects.toMatchObject({
       statusCode: 400,
       message:
         "Complete your profile and select a neighborhood before posting errands.",
@@ -351,6 +364,19 @@ describe("Errands list and detail", () => {
     );
   });
 
+  test("mine filter lists only the authenticated requester's errands", async () => {
+    const response = await request(app)
+      .get("/api/v1/errands?mine=true&status=MATCHED")
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    expect(response.statusCode).toBe(200);
+    expect(repository.listErrands).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ requesterId: userId, status: "MATCHED" }),
+      }),
+    );
+  });
+
   test("detail returns a safe errand view", async () => {
     const response = await request(app).get(`/api/v1/errands/${errandId}`);
 
@@ -399,7 +425,9 @@ describe("Errands update and cancel", () => {
   });
 
   test("non-owner update is rejected", async () => {
-    repository.findById.mockResolvedValue(makeErrand({ requesterId: otherUserId }));
+    repository.findById.mockResolvedValue(
+      makeErrand({ requesterId: otherUserId }),
+    );
 
     await expect(
       service.updateErrand(userId, errandId, { title: "Updated" }),
@@ -431,6 +459,19 @@ describe("Errands update and cancel", () => {
     });
   });
 
+  test("an OPEN errand cannot be updated after any proposal was accepted", async () => {
+    repository.hasAssignmentHistory.mockResolvedValue(true);
+
+    await expect(
+      service.updateErrand(userId, errandId, { title: "Updated" }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: "Errand cannot be updated after a proposal has been accepted.",
+    });
+
+    expect(repository.updateErrand).not.toHaveBeenCalled();
+  });
+
   test("owner can cancel an OPEN errand", async () => {
     const response = await request(app)
       .post(`/api/v1/errands/${errandId}/cancel`)
@@ -443,7 +484,9 @@ describe("Errands update and cancel", () => {
   });
 
   test("non-owner cancel is rejected", async () => {
-    repository.findById.mockResolvedValue(makeErrand({ requesterId: otherUserId }));
+    repository.findById.mockResolvedValue(
+      makeErrand({ requesterId: otherUserId }),
+    );
 
     await expect(service.cancelErrand(userId, errandId)).rejects.toMatchObject({
       statusCode: 403,

@@ -106,7 +106,10 @@ const assertEditable = (errand) => {
 
 const assertCancellable = (errand) => {
   if (!CANCELLABLE_STATUSES.includes(errand.status)) {
-    throw new ApiError(400, "Errand cannot be cancelled in its current status.");
+    throw new ApiError(
+      400,
+      "Errand cannot be cancelled in its current status.",
+    );
   }
 };
 
@@ -154,7 +157,10 @@ const createErrand = async (requesterId, payload) => {
     );
 
     if (!category) {
-      throw new ApiError(400, "Selected category does not exist or is inactive.");
+      throw new ApiError(
+        400,
+        "Selected category does not exist or is inactive.",
+      );
     }
 
     const pickupNeighborhood = await repository.findActiveNeighborhoodById(
@@ -163,7 +169,10 @@ const createErrand = async (requesterId, payload) => {
     );
 
     if (!pickupNeighborhood) {
-      throw new ApiError(400, "Selected pickup neighborhood does not exist or is inactive.");
+      throw new ApiError(
+        400,
+        "Selected pickup neighborhood does not exist or is inactive.",
+      );
     }
 
     const derivedFields = buildDerivedFields(normalized, category);
@@ -208,9 +217,18 @@ const createErrand = async (requesterId, payload) => {
 const buildListWhere = async (user, filters) => {
   const where = {};
 
+  if (filters.mine) {
+    if (!user)
+      throw new ApiError(
+        401,
+        "Authentication is required to list your errands.",
+      );
+    where.requesterId = user.id;
+  }
+
   if (filters.neighborhoodId) {
     where.neighborhoodId = filters.neighborhoodId;
-  } else if (user) {
+  } else if (user && !filters.mine) {
     const requester = await repository.findRequesterForPosting(user.id);
     if (requester?.neighborhoodId) {
       where.neighborhoodId = requester.neighborhoodId;
@@ -276,6 +294,13 @@ const updateErrand = async (userId, id, payload) => {
   assertOwner(existingErrand, userId);
   assertEditable(existingErrand);
 
+  if (await repository.hasAssignmentHistory(id)) {
+    throw new ApiError(
+      409,
+      "Errand cannot be updated after a proposal has been accepted.",
+    );
+  }
+
   const merged = normalizePayload({
     categoryId: existingErrand.categoryId,
     pickupNeighborhoodId: existingErrand.destinationNeighborhoodId,
@@ -303,7 +328,10 @@ const updateErrand = async (userId, id, payload) => {
   );
 
   if (!pickupNeighborhood) {
-    throw new ApiError(400, "Selected pickup neighborhood does not exist or is inactive.");
+    throw new ApiError(
+      400,
+      "Selected pickup neighborhood does not exist or is inactive.",
+    );
   }
 
   const derivedFields = buildDerivedFields(merged, category);

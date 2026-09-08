@@ -119,74 +119,82 @@ const assertStatus = (assignment, expected, message) => {
   }
 };
 
+const createAssignmentInTransaction = async (
+  travelerId,
+  { errandId, tripId, acceptanceSource = "TRIP_MATCH" },
+  tx,
+) => {
+  const now = new Date();
+  const errand = await repository.findErrandForAccept(errandId, tx);
+  const trip = await repository.findTripForAccept(tripId, tx);
+  const { requiredCapacityUnits } = assertCompatiblePair({
+    errand,
+    trip,
+    travelerId,
+    now,
+  });
+
+  const existingAssignment = await repository.findActiveAssignmentForErrand(
+    errandId,
+    tx,
+  );
+  if (existingAssignment) {
+    if (
+      existingAssignment.travelerId === travelerId &&
+      existingAssignment.tripId === tripId
+    ) {
+      return existingAssignment;
+    }
+    throw new ApiError(409, "Errand already has an active assignment.");
+  }
+
+  const assignmentId = randomUUID();
+  const debit = await walletService.debit({
+    userId: travelerId,
+    amount: ACCEPT_TOKEN_COST,
+    transactionType: "ERRAND_ACCEPT_DEBIT",
+    referenceType: "ASSIGNMENT",
+    referenceId: assignmentId,
+    idempotencyKey: `assignment-accept:${travelerId}:${errandId}:${tripId}`,
+    description: "Assignment acceptance token debit",
+    client: tx,
+  });
+
+  const assignment = await repository.createAssignment(
+    {
+      id: assignmentId,
+      errandId,
+      travelerId,
+      tripId,
+      acceptanceSource,
+      agreedDeliveryFeeNis: trip.deliveryFeeNis,
+      pricingVersion: trip.pricingVersion,
+      acceptTokenTransactionId: debit.id,
+      status: "ACCEPTED",
+    },
+    tx,
+  );
+
+  await repository.updateTripCapacity(
+    tripId,
+    trip.remainingCapacityUnits - requiredCapacityUnits,
+    tx,
+  );
+  await repository.updateErrandStatus(errandId, "MATCHED", tx);
+  await repository.markMatchAcceptedIfPresent(
+    { errandId, tripId, acceptedAt: now },
+    tx,
+  );
+  await repository.createChatRoom(assignmentId, tx);
+
+  return repository.findAssignmentById(assignmentId, tx);
+};
+
 const createAssignment = async (travelerId, { errandId, tripId }) => {
   try {
-    return await repository.runTransaction(async (tx) => {
-      const now = new Date();
-      const errand = await repository.findErrandForAccept(errandId, tx);
-      const trip = await repository.findTripForAccept(tripId, tx);
-      const { requiredCapacityUnits } = assertCompatiblePair({
-        errand,
-        trip,
-        travelerId,
-        now,
-      });
-
-      const existingAssignment = await repository.findActiveAssignmentForErrand(
-        errandId,
-        tx,
-      );
-      if (existingAssignment) {
-        if (
-          existingAssignment.travelerId === travelerId &&
-          existingAssignment.tripId === tripId
-        ) {
-          return existingAssignment;
-        }
-        throw new ApiError(409, "Errand already has an active assignment.");
-      }
-
-      const assignmentId = randomUUID();
-      const debit = await walletService.debit({
-        userId: travelerId,
-        amount: ACCEPT_TOKEN_COST,
-        transactionType: "ERRAND_ACCEPT_DEBIT",
-        referenceType: "ASSIGNMENT",
-        referenceId: assignmentId,
-        idempotencyKey: `assignment-accept:${travelerId}:${errandId}:${tripId}`,
-        description: "Assignment acceptance token debit",
-        client: tx,
-      });
-
-      const assignment = await repository.createAssignment(
-        {
-          id: assignmentId,
-          errandId,
-          travelerId,
-          tripId,
-          acceptanceSource: "TRIP_MATCH",
-          agreedDeliveryFeeNis: trip.deliveryFeeNis,
-          pricingVersion: trip.pricingVersion,
-          acceptTokenTransactionId: debit.id,
-          status: "ACCEPTED",
-        },
-        tx,
-      );
-
-      await repository.updateTripCapacity(
-        tripId,
-        trip.remainingCapacityUnits - requiredCapacityUnits,
-        tx,
-      );
-      await repository.updateErrandStatus(errandId, "MATCHED", tx);
-      await repository.markMatchAcceptedIfPresent(
-        { errandId, tripId, acceptedAt: now },
-        tx,
-      );
-      await repository.createChatRoom(assignmentId, tx);
-
-      return repository.findAssignmentById(assignmentId, tx);
-    });
+    return await repository.runTransaction((tx) =>
+      createAssignmentInTransaction(travelerId, { errandId, tripId }, tx),
+    );
   } catch (error) {
     if (isUniqueConflict(error)) {
       throw new ApiError(409, "Errand already has an active assignment.");
@@ -366,6 +374,7 @@ const cancelAssignment = async (
 
 module.exports = {
   assertCompatiblePair,
+  createAssignmentInTransaction,
   createAssignment,
   listAssignments,
   getAssignmentById,

@@ -70,6 +70,7 @@ beforeEach(() => {
   repository.findTravelerForPosting.mockResolvedValue(traveler);
 
   repository.createTrip.mockResolvedValue(createdTrip);
+  repository.hasAcceptedAssignment.mockResolvedValue(false);
   deliveryPricingService.quoteByNeighborhoodIds.mockResolvedValue({
     deliveryFeeNis: 5,
     pricingRule: "SAME_ZONE",
@@ -339,6 +340,19 @@ describe("Trips update", () => {
       statusCode: 400,
       message:
         "Maximum capacity cannot be lower than the already used capacity.",
+    });
+
+    expect(repository.updateTrip).not.toHaveBeenCalled();
+  });
+
+  test("cannot update a trip after a proposal has been accepted", async () => {
+    repository.hasAcceptedAssignment.mockResolvedValue(true);
+
+    await expect(
+      service.updateTrip(traveler.id, activeTrip.id, { notes: "Changed" }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: "Trip cannot be updated after a proposal has been accepted.",
     });
 
     expect(repository.updateTrip).not.toHaveBeenCalled();

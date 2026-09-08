@@ -58,6 +58,7 @@ enum MatchStatus {
 enum AcceptanceSource {
   DIRECT
   TRIP_MATCH
+  PROPOSAL
 }
 
 enum AssignmentStatus {
@@ -66,6 +67,25 @@ enum AssignmentStatus {
   IN_TRANSIT
   COMPLETED
   CANCELLED
+}
+
+enum ProposalType {
+  TRAVELER_OFFER
+  REQUESTER_REQUEST
+}
+
+enum ProposalStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+  EXPIRED
+}
+
+enum ProposalRejectionReason {
+  REJECTED_BY_OWNER
+  ANOTHER_PROPOSAL_ACCEPTED
+  TRIP_CAPACITY_FULL
 }
 
 enum MessageType {
@@ -217,6 +237,8 @@ model User {
 
   paymentInvoices PaymentInvoice[]
 
+  initiatedProposals Proposal[] @relation("ProposalInitiator")
+
   @@index([neighborhoodId])
   @@map("users")
 }
@@ -311,6 +333,7 @@ model Errand {
 
   matches       Match[]
   assignments   ErrandAssignment[]
+  proposals     Proposal[]
   notifications Notification[]
 
   @@unique([requesterId, clientRequestKey])
@@ -353,6 +376,7 @@ model Trip {
 
   matches     Match[]
   assignments ErrandAssignment[]
+  proposals   Proposal[]
 
   @@unique([travelerId, clientRequestKey])
   @@index([travelerId])
@@ -394,6 +418,37 @@ model Match {
   @@map("matches")
 }
 
+model Proposal {
+  id               String                   @id @default(uuid()) @db.Uuid
+  errandId         String                   @map("errand_id") @db.Uuid
+  tripId           String                   @map("trip_id") @db.Uuid
+  initiatedById    String                   @map("initiated_by_id") @db.Uuid
+  assignmentId     String?                  @unique @map("assignment_id") @db.Uuid
+  clientRequestKey String                   @map("client_request_key") @db.Uuid
+  type             ProposalType
+  status           ProposalStatus           @default(PENDING)
+  message          String?                  @db.VarChar(500)
+  rejectionReason  ProposalRejectionReason? @map("rejection_reason")
+  acceptedAt       DateTime?                @map("accepted_at") @db.Timestamptz(6)
+  rejectedAt       DateTime?                @map("rejected_at") @db.Timestamptz(6)
+  expiresAt        DateTime                 @map("expires_at") @db.Timestamptz(6)
+  createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  errand      Errand            @relation(fields: [errandId], references: [id], onDelete: Cascade)
+  trip        Trip              @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  initiatedBy User              @relation("ProposalInitiator", fields: [initiatedById], references: [id], onDelete: Cascade)
+  assignment  ErrandAssignment? @relation(fields: [assignmentId], references: [id])
+
+  @@unique([initiatedById, clientRequestKey])
+  @@unique([errandId, tripId, type])
+  @@index([errandId, status, createdAt])
+  @@index([tripId, status, createdAt])
+  @@index([initiatedById])
+  @@index([expiresAt, status])
+  @@map("proposals")
+}
+
 model ErrandAssignment {
   id                       String           @id @default(uuid()) @db.Uuid
   errandId                 String           @map("errand_id") @db.Uuid
@@ -426,6 +481,7 @@ model ErrandAssignment {
   ratings       Rating[]
   disputes      Dispute[]
   notifications Notification[]
+  proposal      Proposal?
 
   @@index([errandId])
   @@index([travelerId])
