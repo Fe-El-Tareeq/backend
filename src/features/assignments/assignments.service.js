@@ -3,6 +3,7 @@ const { randomUUID } = require("crypto");
 const ApiError = require("../../utils/ApiError");
 const walletService = require("../wallet/wallet.service");
 const badgeService = require("../badges/badges.service");
+const notificationService = require("../notifications/notifications.service");
 const { compatibleAreaKeys } = require("../matching/matching.service");
 const { WEIGHT_CLASS_UNITS } = require("../matching/matching.constants");
 const repository = require("./assignments.repository");
@@ -119,6 +120,13 @@ const assertStatus = (assignment, expected, message) => {
   }
 };
 
+const requesterIdFor = (assignment) => assignment.errand.requesterId;
+
+const oppositeParticipantId = (assignment, actorUserId) =>
+  actorUserId === assignment.travelerId
+    ? requesterIdFor(assignment)
+    : assignment.travelerId;
+
 const createAssignmentInTransaction = async (
   travelerId,
   { errandId, tripId, acceptanceSource = "TRIP_MATCH" },
@@ -160,7 +168,7 @@ const createAssignmentInTransaction = async (
     client: tx,
   });
 
-  const assignment = await repository.createAssignment(
+  await repository.createAssignment(
     {
       id: assignmentId,
       errandId,
@@ -186,6 +194,15 @@ const createAssignmentInTransaction = async (
     tx,
   );
   await repository.createChatRoom(assignmentId, tx);
+  await notificationService.templates.assignmentAccepted(
+    {
+      requesterId: errand.requesterId,
+      errandId,
+      assignmentId,
+      tripId,
+    },
+    tx,
+  );
 
   return repository.findAssignmentById(assignmentId, tx);
 };
@@ -268,6 +285,16 @@ const transitionAssignment = async ({
         tx,
       );
       const result = await repository.findAssignmentById(assignmentId, tx);
+      await notificationService.templates.assignmentStatusChanged(
+        {
+          userId: oppositeParticipantId(assignment, userId),
+          errandId: assignment.errandId,
+          assignmentId,
+          status: toStatus,
+          actorUserId: userId,
+        },
+        tx,
+      );
       if (toStatus === "COMPLETED") {
         await badgeService.evaluateAndAward(assignment.travelerId, tx);
         return {
@@ -282,6 +309,17 @@ const transitionAssignment = async ({
       }
       return result;
     }
+
+    await notificationService.templates.assignmentStatusChanged(
+      {
+        userId: oppositeParticipantId(assignment, userId),
+        errandId: assignment.errandId,
+        assignmentId,
+        status: toStatus,
+        actorUserId: userId,
+      },
+      tx,
+    );
 
     return updated;
   });
@@ -367,6 +405,15 @@ const cancelAssignment = async (
       tx,
     );
     await repository.updateErrandStatus(assignment.errandId, "OPEN", tx);
+    await notificationService.templates.assignmentCancelled(
+      {
+        userId: oppositeParticipantId(assignment, userId),
+        errandId: assignment.errandId,
+        assignmentId,
+        actorUserId: userId,
+      },
+      tx,
+    );
 
     return repository.findAssignmentById(assignmentId, tx);
   });
