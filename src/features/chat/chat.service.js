@@ -1,4 +1,5 @@
 const ApiError = require("../../utils/ApiError");
+const notificationService = require("../notifications/notifications.service");
 const {
   ACTIVE_ASSIGNMENT_STATUSES,
   DEFAULT_MESSAGE_LIMIT,
@@ -25,6 +26,11 @@ const serializeUser = (user) => {
 };
 
 const getRequesterId = (room) => room.assignment?.errand?.requesterId;
+
+const getRecipientId = (room, senderId) =>
+  senderId === room.assignment.travelerId
+    ? getRequesterId(room)
+    : room.assignment.travelerId;
 
 const isParticipant = (room, userId) => {
   return (
@@ -61,6 +67,11 @@ const serializeMessage = (message) => ({
   text: message.contentText,
   voiceNoteUrl: message.audioUrl,
   voiceNoteDurationSec: message.audioDurationSec,
+  voiceNoteSizeBytes: message.audioSizeBytes,
+  voiceMimeType: message.audioMimeType,
+  imageUrl: message.imageUrl,
+  imageSizeBytes: message.imageSizeBytes,
+  imageMimeType: message.imageMimeType,
   isRead: message.isRead,
   readAt: message.readAt,
   sentAt: message.sentAt,
@@ -114,15 +125,40 @@ const normalizePayload = (payload) => {
       contentText: payload.text.trim(),
       audioUrl: null,
       audioDurationSec: null,
+      audioSizeBytes: null,
+      audioMimeType: null,
+      imageUrl: null,
+      imageSizeBytes: null,
+      imageMimeType: null,
+    };
+  }
+
+  if (payload.type === MESSAGE_TYPES.VOICE) {
+    return {
+      clientMessageKey: payload.clientMessageKey,
+      messageType: MESSAGE_TYPES.VOICE,
+      contentText: null,
+      audioUrl: payload.voiceNoteUrl.trim(),
+      audioDurationSec: payload.voiceNoteDurationSec,
+      audioSizeBytes: payload.voiceNoteSizeBytes,
+      audioMimeType: payload.voiceMimeType,
+      imageUrl: null,
+      imageSizeBytes: null,
+      imageMimeType: null,
     };
   }
 
   return {
     clientMessageKey: payload.clientMessageKey,
-    messageType: MESSAGE_TYPES.VOICE,
+    messageType: MESSAGE_TYPES.IMAGE,
     contentText: null,
-    audioUrl: payload.voiceNoteUrl.trim(),
-    audioDurationSec: payload.voiceNoteDurationSec,
+    audioUrl: null,
+    audioDurationSec: null,
+    audioSizeBytes: null,
+    audioMimeType: null,
+    imageUrl: payload.imageUrl.trim(),
+    imageSizeBytes: payload.imageSizeBytes,
+    imageMimeType: payload.imageMimeType,
   };
 };
 
@@ -131,6 +167,11 @@ const comparableMessage = (message) => ({
   contentText: message.contentText,
   audioUrl: message.audioUrl,
   audioDurationSec: message.audioDurationSec,
+  audioSizeBytes: message.audioSizeBytes,
+  audioMimeType: message.audioMimeType,
+  imageUrl: message.imageUrl,
+  imageSizeBytes: message.imageSizeBytes,
+  imageMimeType: message.imageMimeType,
 });
 
 const assertSamePayload = (existingMessage, normalized) => {
@@ -141,6 +182,11 @@ const assertSamePayload = (existingMessage, normalized) => {
       contentText: normalized.contentText,
       audioUrl: normalized.audioUrl,
       audioDurationSec: normalized.audioDurationSec,
+      audioSizeBytes: normalized.audioSizeBytes,
+      audioMimeType: normalized.audioMimeType,
+      imageUrl: normalized.imageUrl,
+      imageSizeBytes: normalized.imageSizeBytes,
+      imageMimeType: normalized.imageMimeType,
     })
   ) {
     throw new ApiError(
@@ -244,12 +290,31 @@ const sendMessage = async (userId, roomId, payload) => {
           contentText: normalized.contentText,
           audioUrl: normalized.audioUrl,
           audioDurationSec: normalized.audioDurationSec,
+          audioSizeBytes: normalized.audioSizeBytes,
+          audioMimeType: normalized.audioMimeType,
+          imageUrl: normalized.imageUrl,
+          imageSizeBytes: normalized.imageSizeBytes,
+          imageMimeType: normalized.imageMimeType,
           expiresAt: addDays(sentAt, MESSAGE_RETENTION_DAYS),
         },
         tx,
       );
 
       await repository.updateRoomLastMessageAt(roomId, message.sentAt, tx);
+      const recipientId = getRecipientId(room, userId);
+      if (recipientId && recipientId !== userId) {
+        await notificationService.templates.newChatMessage(
+          {
+            recipientId,
+            senderId: userId,
+            errandId: room.assignment.errandId,
+            assignmentId: room.assignment.id,
+            chatRoomId: room.id,
+            messageId: message.id,
+          },
+          tx,
+        );
+      }
 
       return {
         created: true,

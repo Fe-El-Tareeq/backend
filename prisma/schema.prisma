@@ -91,6 +91,7 @@ enum ProposalRejectionReason {
 enum MessageType {
   TEXT
   VOICE
+  IMAGE
 }
 
 enum PaymentModality {
@@ -513,6 +514,11 @@ model ChatMessage {
   contentText      String?     @map("content_text") @db.VarChar(500)
   audioUrl         String?     @map("audio_url")
   audioDurationSec Int?        @map("audio_duration_sec")
+  audioSizeBytes   Int?        @map("audio_size_bytes")
+  audioMimeType    String?     @map("audio_mime_type") @db.VarChar(50)
+  imageUrl         String?     @map("image_url")
+  imageSizeBytes   Int?        @map("image_size_bytes")
+  imageMimeType    String?     @map("image_mime_type") @db.VarChar(50)
   isRead           Boolean     @default(false) @map("is_read")
   sentAt           DateTime    @default(now()) @map("sent_at") @db.Timestamptz(6)
   readAt           DateTime?   @map("read_at") @db.Timestamptz(6)
@@ -741,6 +747,8 @@ model Notification {
   title             String              @db.VarChar(100)
   message           String              @db.VarChar(500)
   status            NotificationStatus  @default(PENDING)
+  metadata          Json?
+  idempotencyKey    String?             @unique @map("idempotency_key") @db.VarChar(150)
   providerMessageId String?             @map("provider_message_id") @db.VarChar(150)
   createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   sentAt            DateTime?           @map("sent_at") @db.Timestamptz(6)
@@ -758,6 +766,7 @@ model Notification {
   @@index([assignmentId])
   @@index([status])
   @@index([userId, status, createdAt])
+  @@index([userId, notificationType, createdAt])
   @@map("notifications")
 }
 
