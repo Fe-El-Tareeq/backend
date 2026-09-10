@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const prisma = require("../../config/prisma");
 const env = require("../../config/env");
 const ApiError = require("../../utils/ApiError");
+const notificationService = require("../notifications/notifications.service");
 const walletService = require("../wallet/wallet.service");
 const repository = require("./payments.repository");
 const {
@@ -246,6 +247,14 @@ const processMockWebhook = async (payload, signature) => {
         { status: "FAILED", failedAt: new Date() },
         tx,
       );
+      await notificationService.templates.paymentFailure(
+        {
+          userId: invoice.userId,
+          invoiceId: invoice.id,
+          reason: "PAYMENT_FAILED",
+        },
+        tx,
+      );
       return { processed: true, reason: "PAYMENT_FAILED", invoice: failed };
     }
 
@@ -264,6 +273,14 @@ const processMockWebhook = async (payload, signature) => {
       const failed = await repository.updateInvoice(
         invoice.id,
         { status: "FAILED", failedAt: new Date() },
+        tx,
+      );
+      await notificationService.templates.paymentFailure(
+        {
+          userId: invoice.userId,
+          invoiceId: invoice.id,
+          reason: "AMOUNT_MISMATCH",
+        },
         tx,
       );
       return { processed: true, reason: "AMOUNT_MISMATCH", invoice: failed };
@@ -295,9 +312,12 @@ const processMockWebhook = async (payload, signature) => {
       client: tx,
     });
 
-    await repository.createTopUpNotification(
-      invoice.userId,
-      invoice.totalTokens,
+    await notificationService.templates.paymentSuccess(
+      {
+        userId: invoice.userId,
+        invoiceId: invoice.id,
+        totalTokens: invoice.totalTokens,
+      },
       tx,
     );
 

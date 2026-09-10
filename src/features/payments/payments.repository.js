@@ -117,18 +117,6 @@ const updateInvoice = (id, data, client = prisma) =>
     include: invoiceInclude,
   });
 
-const createTopUpNotification = (userId, totalTokens, client = prisma) =>
-  client.notification.create({
-    data: {
-      userId,
-      notificationType: "WALLET_TOP_UP_SUCCESS",
-      channel: "IN_APP",
-      title: "Wallet top-up completed",
-      message: `${totalTokens} tokens were added to your wallet.`,
-      status: "PENDING",
-    },
-  });
-
 module.exports = {
   listActivePackages,
   findActivePackageById,
@@ -144,5 +132,4 @@ module.exports = {
   findPaymentTransactionByProviderId,
   createPaymentTransaction,
   updateInvoice,
-  createTopUpNotification,
 };

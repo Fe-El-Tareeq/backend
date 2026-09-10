@@ -8,11 +8,13 @@ const jwt = require("jsonwebtoken");
 const request = require("supertest");
 
 jest.mock("../src/features/chat/chat.repository");
+jest.mock("../src/features/notifications/notifications.service");
 jest.mock("../src/config/prisma", () => ({ user: { findUnique: jest.fn() } }));
 
 const app = require("../src/app");
 const prisma = require("../src/config/prisma");
 const repository = require("../src/features/chat/chat.repository");
+const notificationService = require("../src/features/notifications/notifications.service");
 const service = require("../src/features/chat/chat.service");
 
 const requesterId = "550e8400-e29b-41d4-a716-446655440000";
@@ -117,6 +119,7 @@ beforeEach(() => {
   repository.listMessages.mockResolvedValue([makeMessage()]);
   repository.listMessagesSince.mockResolvedValue([makeMessage()]);
   repository.markMessagesRead.mockResolvedValue({ count: 2 });
+  notificationService.templates.newChatMessage.mockResolvedValue({});
   repository.listRoomsForUser.mockResolvedValue([
     {
       ...makeRoom(),
@@ -172,6 +175,17 @@ describe("Chat text messages", () => {
         contentText: "I'm on the way",
         audioUrl: null,
         imageUrl: null,
+      }),
+      expect.anything(),
+    );
+    expect(notificationService.templates.newChatMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recipientId: travelerId,
+        senderId: requesterId,
+        errandId,
+        assignmentId,
+        chatRoomId: roomId,
+        messageId,
       }),
       expect.anything(),
     );
@@ -431,6 +445,7 @@ describe("Chat idempotency", () => {
     await service.sendMessage(requesterId, roomId, payload);
 
     expect(repository.createMessage).toHaveBeenCalledTimes(1);
+    expect(notificationService.templates.newChatMessage).toHaveBeenCalledTimes(1);
   });
 
   test("image retry with the same clientMessageKey and payload returns existing message", async () => {
@@ -551,6 +566,7 @@ describe("Chat idempotency", () => {
     expect(result.created).toBe(false);
     expect(result.message.id).toBe(messageId);
     expect(repository.createMessage).not.toHaveBeenCalled();
+    expect(notificationService.templates.newChatMessage).not.toHaveBeenCalled();
   });
 
   test("same key with different payload returns 409", async () => {

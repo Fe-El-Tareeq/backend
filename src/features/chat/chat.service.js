@@ -1,4 +1,5 @@
 const ApiError = require("../../utils/ApiError");
+const notificationService = require("../notifications/notifications.service");
 const {
   ACTIVE_ASSIGNMENT_STATUSES,
   DEFAULT_MESSAGE_LIMIT,
@@ -25,6 +26,11 @@ const serializeUser = (user) => {
 };
 
 const getRequesterId = (room) => room.assignment?.errand?.requesterId;
+
+const getRecipientId = (room, senderId) =>
+  senderId === room.assignment.travelerId
+    ? getRequesterId(room)
+    : room.assignment.travelerId;
 
 const isParticipant = (room, userId) => {
   return (
@@ -295,6 +301,20 @@ const sendMessage = async (userId, roomId, payload) => {
       );
 
       await repository.updateRoomLastMessageAt(roomId, message.sentAt, tx);
+      const recipientId = getRecipientId(room, userId);
+      if (recipientId && recipientId !== userId) {
+        await notificationService.templates.newChatMessage(
+          {
+            recipientId,
+            senderId: userId,
+            errandId: room.assignment.errandId,
+            assignmentId: room.assignment.id,
+            chatRoomId: room.id,
+            messageId: message.id,
+          },
+          tx,
+        );
+      }
 
       return {
         created: true,

@@ -9,10 +9,12 @@ const ApiError = require("../src/utils/ApiError");
 jest.mock("../src/features/assignments/assignments.repository");
 jest.mock("../src/features/wallet/wallet.service");
 jest.mock("../src/features/badges/badges.service");
+jest.mock("../src/features/notifications/notifications.service");
 
 const repository = require("../src/features/assignments/assignments.repository");
 const walletService = require("../src/features/wallet/wallet.service");
 const badgeService = require("../src/features/badges/badges.service");
+const notificationService = require("../src/features/notifications/notifications.service");
 const service = require("../src/features/assignments/assignments.service");
 
 const requesterId = "550e8400-e29b-41d4-a716-446655440000";
@@ -100,6 +102,9 @@ beforeEach(() => {
   repository.lockTrip.mockResolvedValue({ id: tripId });
   walletService.debit.mockResolvedValue({ id: walletTransactionId });
   badgeService.evaluateAndAward.mockResolvedValue([]);
+  notificationService.templates.assignmentAccepted.mockResolvedValue({});
+  notificationService.templates.assignmentStatusChanged.mockResolvedValue({});
+  notificationService.templates.assignmentCancelled.mockResolvedValue({});
 });
 
 describe("Assignment accept flow", () => {
@@ -133,6 +138,15 @@ describe("Assignment accept flow", () => {
     expect(repository.updateTripCapacity).toHaveBeenCalledWith(tripId, 2, tx);
     expect(repository.updateErrandStatus).toHaveBeenCalledWith(errandId, "MATCHED", tx);
     expect(repository.createChatRoom).toHaveBeenCalledWith(debitReferenceId, tx);
+    expect(notificationService.templates.assignmentAccepted).toHaveBeenCalledWith(
+      {
+        requesterId,
+        errandId,
+        assignmentId: debitReferenceId,
+        tripId,
+      },
+      tx,
+    );
   });
 
   test("non-trip-owner cannot accept using another traveler's trip", async () => {
@@ -142,6 +156,7 @@ describe("Assignment accept flow", () => {
 
     expect(walletService.debit).not.toHaveBeenCalled();
     expect(repository.createAssignment).not.toHaveBeenCalled();
+    expect(notificationService.templates.assignmentAccepted).not.toHaveBeenCalled();
   });
 
   test("invalid or nonexistent match pair is rejected", async () => {
@@ -172,6 +187,7 @@ describe("Assignment accept flow", () => {
     expect(result).toBe(existing);
     expect(walletService.debit).not.toHaveBeenCalled();
     expect(repository.createAssignment).not.toHaveBeenCalled();
+    expect(notificationService.templates.assignmentAccepted).not.toHaveBeenCalled();
   });
 
   test("inactive or expired trips are rejected", async () => {
@@ -242,12 +258,23 @@ describe("Assignment lifecycle transitions", () => {
       expect.objectContaining({ status: "PICKED_UP", pickedUpAt: expect.any(Date) }),
       tx,
     );
+    expect(notificationService.templates.assignmentStatusChanged).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: requesterId,
+        errandId,
+        assignmentId,
+        status: "PICKED_UP",
+        actorUserId: travelerId,
+      }),
+      tx,
+    );
   });
 
   test("requester cannot mark picked up", async () => {
     await expect(service.markPickedUp(requesterId, assignmentId)).rejects.toMatchObject({
       statusCode: 403,
     });
+    expect(notificationService.templates.assignmentStatusChanged).not.toHaveBeenCalled();
   });
 
   test("traveler can mark in transit only after picked up", async () => {
@@ -276,6 +303,14 @@ describe("Assignment lifecycle transitions", () => {
     expect(result.ratingPrompt).toMatchObject({ required: true, assignmentId, reviewedRole: "TRAVELER" });
     expect(repository.updateErrandStatus).toHaveBeenCalledWith(errandId, "COMPLETED", tx);
     expect(badgeService.evaluateAndAward).toHaveBeenCalledWith(travelerId, tx);
+    expect(notificationService.templates.assignmentStatusChanged).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: travelerId,
+        status: "COMPLETED",
+        actorUserId: requesterId,
+      }),
+      tx,
+    );
   });
 
   test("traveler cannot complete", async () => {
@@ -309,6 +344,15 @@ describe("Assignment cancellation and reads", () => {
     expect(repository.updateErrandStatus).toHaveBeenCalledWith(errandId, "OPEN", tx);
     expect(walletService.debit).not.toHaveBeenCalled();
     expect(walletService.refund).not.toHaveBeenCalled();
+    expect(notificationService.templates.assignmentCancelled).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: travelerId,
+        errandId,
+        assignmentId,
+        actorUserId: requesterId,
+      }),
+      tx,
+    );
   });
 
   test("traveler can cancel while accepted", async () => {
