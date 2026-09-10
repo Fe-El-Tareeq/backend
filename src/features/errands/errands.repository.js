@@ -152,6 +152,11 @@ const updateErrand = async (id, data, client = prisma) => {
   });
 };
 
+const hasAssignmentHistory = async (errandId, client = prisma) => {
+  const count = await client.errandAssignment.count({ where: { errandId } });
+  return count > 0;
+};
+
 module.exports = {
   runTransaction,
   findRequesterForPosting,
@@ -163,4 +168,5 @@ module.exports = {
   listErrands,
   countErrands,
   updateErrand,
+  hasAssignmentHistory,
 };

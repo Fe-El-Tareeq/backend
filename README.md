@@ -1,5 +1,16 @@
 # Backend
 
+## Bidirectional Offers and Trip Requests
+
+- `POST /api/v1/proposals` creates either a traveler offer (`TRAVELER_OFFER`) or a requester trip request (`REQUESTER_REQUEST`). Creating a proposal does not charge tokens or reserve capacity.
+- `GET /api/v1/errands/:id/proposals` is the errand owner's incoming-offers page; `GET /api/v1/trips/:id/proposals` is the trip owner's incoming-requests page.
+- Both inboxes support `PENDING`, `ACCEPTED`, and `REJECTED` filters, pagination, and server-calculated totals for the All, New, Accepted, and Rejected tabs.
+- `POST /api/v1/proposals/:id/accept` can only be called by the receiver. Acceptance atomically creates the assignment, charges the traveler, reserves trip capacity, marks the errand matched, creates chat, and rejects other pending proposals for that errand.
+- `POST /api/v1/proposals/:id/reject` records a manual rejection. Automatic rejection after another offer wins uses `ANOTHER_PROPOSAL_ACCEPTED` and affects only that errand; the traveler remains eligible for other matches.
+- Trips and errands remain editable while proposals are pending. An accepted assignment locks further edits; the errand is already protected by its `MATCHED` status, and the trip now checks accepted assignment history.
+- Direct assignment creation is no longer exposed publicly. Assignment lifecycle endpoints remain available after proposal acceptance.
+- Chat is created only after acceptance. Proposal creation is idempotent through `clientRequestKey`.
+- `GET /api/v1/errands?mine=true` lists the authenticated requester's own errands for the design's “My Requests” page.
 ## CI/CD
 
 GitHub Actions validates pull requests targeting `dev` or `main` and pushes to `dev` or `main` with Node.js 22, `npm ci --ignore-scripts`, an isolated PostgreSQL 16 service, Prisma migrations, Prisma validation/generation, JavaScript syntax linting, OpenAPI validation, an application import check, and Jest coverage. This PR temporarily also validates pushes to `chore/backend-ci-cd` so the new workflow can prove itself before manual merge. Prisma generation runs as an explicit CI step after dependency installation. The workflow prints Node/npm versions before dependency installation so package-manager failures are visible in the run log.

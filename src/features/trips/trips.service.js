@@ -67,12 +67,14 @@ const isSameCreateRequest = (trip, data) => {
   return (
     trip.originType === data.originType &&
     trip.destinationNeighborhoodId === data.destinationNeighborhoodId &&
-    (data.originType !== "CUSTOM_KEYWORD" || trip.neighborhoodId === data.originNeighborhoodId) &&
+    (data.originType !== "CUSTOM_KEYWORD" ||
+      trip.neighborhoodId === data.originNeighborhoodId) &&
     normalizeOptionalText(trip.customOriginKeyword) ===
       normalizeOptionalText(data.customOriginKeyword) &&
     trip.destinationKeyword.trim() === data.destinationKeyword.trim() &&
     existingDepartureTime === requestedDepartureTime &&
-    new Date(trip.expectedReturnTime).getTime() === new Date(data.expectedReturnTime).getTime() &&
+    new Date(trip.expectedReturnTime).getTime() ===
+      new Date(data.expectedReturnTime).getTime() &&
     trip.maxCapacityClass === data.maxCapacityClass &&
     trip.maxCapacityUnits === data.maxCapacityUnits &&
     normalizeOptionalText(trip.notes) === normalizeOptionalText(data.notes)
@@ -105,9 +107,10 @@ const createTrip = async (travelerId, data) => {
 
     validateTravelerForPosting(traveler);
 
-    const originNeighborhoodId = data.originType === "CUSTOM_KEYWORD"
-      ? data.originNeighborhoodId
-      : traveler.neighborhoodId;
+    const originNeighborhoodId =
+      data.originType === "CUSTOM_KEYWORD"
+        ? data.originNeighborhoodId
+        : traveler.neighborhoodId;
 
     const quote = await deliveryPricingService.quoteByNeighborhoodIds(
       originNeighborhoodId,
@@ -237,6 +240,13 @@ const updateTrip = async (travelerId, tripId, data) => {
 
     validateTripForManagement(trip, travelerId);
 
+    if (await repository.hasAcceptedAssignment(tripId, tx)) {
+      throw new ApiError(
+        409,
+        "Trip cannot be updated after a proposal has been accepted.",
+      );
+    }
+
     const updateData = {};
 
     if (data.departureTime !== undefined) {
@@ -249,9 +259,13 @@ const updateTrip = async (travelerId, tripId, data) => {
     }
 
     const effectiveDeparture = updateData.departureTime || trip.departureTime;
-    const effectiveReturn = updateData.expectedReturnTime || trip.expectedReturnTime;
+    const effectiveReturn =
+      updateData.expectedReturnTime || trip.expectedReturnTime;
     if (!effectiveReturn || effectiveReturn <= effectiveDeparture) {
-      throw new ApiError(400, "Expected return time must be after departure time.");
+      throw new ApiError(
+        400,
+        "Expected return time must be after departure time.",
+      );
     }
 
     if (data.maxCapacityClass !== undefined) {

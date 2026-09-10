@@ -8,15 +8,6 @@ const assignmentIdSchema = z.object({
   query: z.object({}).optional(),
 });
 
-const createAssignmentSchema = z.object({
-  body: z.object({
-    errandId: z.string().uuid("Errand ID must be a valid UUID."),
-    tripId: z.string().uuid("Trip ID must be a valid UUID."),
-  }),
-  params: z.object({}).optional(),
-  query: z.object({}).optional(),
-});
-
 const listAssignmentsSchema = z.object({
   body: z.object({}).optional(),
   params: z.object({}).optional(),
@@ -38,7 +29,6 @@ const cancelAssignmentSchema = z.object({
 
 module.exports = {
   assignmentIdSchema,
-  createAssignmentSchema,
   listAssignmentsSchema,
   cancelAssignmentSchema,
 };

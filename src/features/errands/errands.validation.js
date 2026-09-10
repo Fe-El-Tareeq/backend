@@ -103,10 +103,7 @@ const listErrandsSchema = z.object({
       .string()
       .uuid("Neighborhood ID must be a valid UUID.")
       .optional(),
-    categoryId: z
-      .string()
-      .uuid("Category ID must be a valid UUID.")
-      .optional(),
+    categoryId: z.string().uuid("Category ID must be a valid UUID.").optional(),
     status: z
       .enum(["OPEN", "MATCHED", "CANCELLED", "EXPIRED", "COMPLETED"])
       .optional(),
@@ -114,6 +111,7 @@ const listErrandsSchema = z.object({
       .enum(["true", "false"])
       .transform((value) => value === "true")
       .optional(),
+    mine: z.coerce.boolean().default(false),
     skip: z.coerce
       .number()
       .int("Skip must be an integer.")
