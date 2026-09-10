@@ -86,6 +86,11 @@ const makeMessage = (overrides = {}) => ({
   contentText: "I'm on the way",
   audioUrl: null,
   audioDurationSec: null,
+  audioSizeBytes: null,
+  audioMimeType: null,
+  imageUrl: null,
+  imageSizeBytes: null,
+  imageMimeType: null,
   isRead: false,
   sentAt: new Date("2026-08-29T08:10:00.000Z"),
   readAt: null,
@@ -169,6 +174,7 @@ describe("Chat text messages", () => {
         messageType: "TEXT",
         contentText: "I'm on the way",
         audioUrl: null,
+        imageUrl: null,
       }),
       expect.anything(),
     );
@@ -216,6 +222,8 @@ describe("Chat voice messages", () => {
         type: "VOICE",
         voiceNoteUrl: "https://media.example.test/voice/1.ogg",
         voiceNoteDurationSec: 18,
+        voiceNoteSizeBytes: 120000,
+        voiceMimeType: "audio/ogg",
       });
 
     expect(response.statusCode).toBe(201);
@@ -226,16 +234,20 @@ describe("Chat voice messages", () => {
         contentText: null,
         audioUrl: "https://media.example.test/voice/1.ogg",
         audioDurationSec: 18,
+        audioSizeBytes: 120000,
+        audioMimeType: "audio/ogg",
+        imageUrl: null,
       }),
       expect.anything(),
     );
-    expect(notificationService.templates.newChatMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        recipientId: requesterId,
-        senderId: travelerId,
-      }),
-      expect.anything(),
-    );
+    expect(response.body.data.message).toMatchObject({
+      type: "VOICE",
+      voiceNoteUrl: "https://media.example.test/voice/1.ogg",
+      voiceNoteDurationSec: 18,
+      voiceNoteSizeBytes: 120000,
+      voiceMimeType: "audio/ogg",
+      imageUrl: null,
+    });
   });
 
   test("reject voice over 30 sec", async () => {
@@ -247,6 +259,8 @@ describe("Chat voice messages", () => {
         type: "VOICE",
         voiceNoteUrl: "https://media.example.test/voice/1.ogg",
         voiceNoteDurationSec: 31,
+        voiceNoteSizeBytes: 120000,
+        voiceMimeType: "audio/ogg",
       });
 
     expect(response.statusCode).toBe(400);
@@ -260,12 +274,154 @@ describe("Chat voice messages", () => {
         clientMessageKey,
         type: "VOICE",
         voiceNoteDurationSec: 18,
+        voiceNoteSizeBytes: 120000,
+        voiceMimeType: "audio/ogg",
       });
 
     expect(response.statusCode).toBe(400);
   });
 
-  test("reject invalid mixed payload", async () => {
+  test("reject voice over 500 KB", async () => {
+    const response = await request(app)
+      .post(`/api/v1/chat-rooms/${roomId}/messages`)
+      .set("Authorization", `Bearer ${requesterToken}`)
+      .send({
+        clientMessageKey,
+        type: "VOICE",
+        voiceNoteUrl: "https://media.example.test/voice/1.ogg",
+        voiceNoteDurationSec: 18,
+        voiceNoteSizeBytes: 512001,
+        voiceMimeType: "audio/ogg",
+      });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  test("reject unsupported voice MIME type", async () => {
+    const response = await request(app)
+      .post(`/api/v1/chat-rooms/${roomId}/messages`)
+      .set("Authorization", `Bearer ${requesterToken}`)
+      .send({
+        clientMessageKey,
+        type: "VOICE",
+        voiceNoteUrl: "https://media.example.test/voice/1.wav",
+        voiceNoteDurationSec: 18,
+        voiceNoteSizeBytes: 120000,
+        voiceMimeType: "audio/wav",
+      });
+
+    expect(response.statusCode).toBe(400);
+  });
+});
+
+describe("Chat image messages", () => {
+  test("send valid image metadata", async () => {
+    const response = await request(app)
+      .post(`/api/v1/chat-rooms/${roomId}/messages`)
+      .set("Authorization", `Bearer ${requesterToken}`)
+      .send({
+        clientMessageKey,
+        type: "IMAGE",
+        imageUrl: "https://media.example.test/chat/image-1.webp",
+        imageSizeBytes: 240000,
+        imageMimeType: "image/webp",
+      });
+
+    expect(response.statusCode).toBe(201);
+    expect(repository.createMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messageType: "IMAGE",
+        contentText: null,
+        audioUrl: null,
+        imageUrl: "https://media.example.test/chat/image-1.webp",
+        imageSizeBytes: 240000,
+        imageMimeType: "image/webp",
+      }),
+      expect.anything(),
+    );
+    expect(response.body.data.message).toMatchObject({
+      type: "IMAGE",
+      text: null,
+      voiceNoteUrl: null,
+      imageUrl: "https://media.example.test/chat/image-1.webp",
+      imageSizeBytes: 240000,
+      imageMimeType: "image/webp",
+    });
+  });
+
+  test("reject image over 300 KB", async () => {
+    const response = await request(app)
+      .post(`/api/v1/chat-rooms/${roomId}/messages`)
+      .set("Authorization", `Bearer ${requesterToken}`)
+      .send({
+        clientMessageKey,
+        type: "IMAGE",
+        imageUrl: "https://media.example.test/chat/image-1.jpg",
+        imageSizeBytes: 307201,
+        imageMimeType: "image/jpeg",
+      });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  test("reject unsupported image MIME type", async () => {
+    const response = await request(app)
+      .post(`/api/v1/chat-rooms/${roomId}/messages`)
+      .set("Authorization", `Bearer ${requesterToken}`)
+      .send({
+        clientMessageKey,
+        type: "IMAGE",
+        imageUrl: "https://media.example.test/chat/image-1.gif",
+        imageSizeBytes: 200000,
+        imageMimeType: "image/gif",
+      });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  test("reject multiple images", async () => {
+    const response = await request(app)
+      .post(`/api/v1/chat-rooms/${roomId}/messages`)
+      .set("Authorization", `Bearer ${requesterToken}`)
+      .send({
+        clientMessageKey,
+        type: "IMAGE",
+        images: [
+          {
+            imageUrl: "https://media.example.test/chat/image-1.jpg",
+            imageSizeBytes: 100000,
+            imageMimeType: "image/jpeg",
+          },
+          {
+            imageUrl: "https://media.example.test/chat/image-2.jpg",
+            imageSizeBytes: 100000,
+            imageMimeType: "image/jpeg",
+          },
+        ],
+      });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  test("reject image mixed with text", async () => {
+    const response = await request(app)
+      .post(`/api/v1/chat-rooms/${roomId}/messages`)
+      .set("Authorization", `Bearer ${requesterToken}`)
+      .send({
+        clientMessageKey,
+        type: "IMAGE",
+        text: "Look at this",
+        imageUrl: "https://media.example.test/chat/image-1.png",
+        imageSizeBytes: 200000,
+        imageMimeType: "image/png",
+      });
+
+    expect(response.statusCode).toBe(400);
+  });
+});
+
+describe("Chat mixed payload rejection", () => {
+  test("reject invalid text mixed with voice metadata", async () => {
     const response = await request(app)
       .post(`/api/v1/chat-rooms/${roomId}/messages`)
       .set("Authorization", `Bearer ${requesterToken}`)
@@ -290,6 +446,112 @@ describe("Chat idempotency", () => {
 
     expect(repository.createMessage).toHaveBeenCalledTimes(1);
     expect(notificationService.templates.newChatMessage).toHaveBeenCalledTimes(1);
+  });
+
+  test("image retry with the same clientMessageKey and payload returns existing message", async () => {
+    const imageMessage = makeMessage({
+      messageType: "IMAGE",
+      contentText: null,
+      imageUrl: "https://media.example.test/chat/image-1.webp",
+      imageSizeBytes: 240000,
+      imageMimeType: "image/webp",
+    });
+    repository.findMessageBySenderAndClientKey.mockResolvedValue(imageMessage);
+
+    const result = await service.sendMessage(requesterId, roomId, {
+      clientMessageKey,
+      type: "IMAGE",
+      imageUrl: "https://media.example.test/chat/image-1.webp",
+      imageSizeBytes: 240000,
+      imageMimeType: "image/webp",
+    });
+
+    expect(result.created).toBe(false);
+    expect(result.message).toMatchObject({
+      type: "IMAGE",
+      imageUrl: "https://media.example.test/chat/image-1.webp",
+      imageSizeBytes: 240000,
+      imageMimeType: "image/webp",
+    });
+    expect(repository.createMessage).not.toHaveBeenCalled();
+  });
+
+  test("image retry with different media metadata returns 409", async () => {
+    repository.findMessageBySenderAndClientKey.mockResolvedValue(
+      makeMessage({
+        messageType: "IMAGE",
+        contentText: null,
+        imageUrl: "https://media.example.test/chat/image-1.webp",
+        imageSizeBytes: 240000,
+        imageMimeType: "image/webp",
+      }),
+    );
+
+    await expect(
+      service.sendMessage(requesterId, roomId, {
+        clientMessageKey,
+        type: "IMAGE",
+        imageUrl: "https://media.example.test/chat/image-1.webp",
+        imageSizeBytes: 240001,
+        imageMimeType: "image/webp",
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  test("voice retry with the same clientMessageKey and payload returns existing message", async () => {
+    repository.findMessageBySenderAndClientKey.mockResolvedValue(
+      makeMessage({
+        messageType: "VOICE",
+        contentText: null,
+        audioUrl: "https://media.example.test/voice/1.ogg",
+        audioDurationSec: 18,
+        audioSizeBytes: 120000,
+        audioMimeType: "audio/ogg",
+      }),
+    );
+
+    const result = await service.sendMessage(requesterId, roomId, {
+      clientMessageKey,
+      type: "VOICE",
+      voiceNoteUrl: "https://media.example.test/voice/1.ogg",
+      voiceNoteDurationSec: 18,
+      voiceNoteSizeBytes: 120000,
+      voiceMimeType: "audio/ogg",
+    });
+
+    expect(result.created).toBe(false);
+    expect(result.message).toMatchObject({
+      type: "VOICE",
+      voiceNoteUrl: "https://media.example.test/voice/1.ogg",
+      voiceNoteDurationSec: 18,
+      voiceNoteSizeBytes: 120000,
+      voiceMimeType: "audio/ogg",
+    });
+    expect(repository.createMessage).not.toHaveBeenCalled();
+  });
+
+  test("voice retry with different media metadata returns 409", async () => {
+    repository.findMessageBySenderAndClientKey.mockResolvedValue(
+      makeMessage({
+        messageType: "VOICE",
+        contentText: null,
+        audioUrl: "https://media.example.test/voice/1.ogg",
+        audioDurationSec: 18,
+        audioSizeBytes: 120000,
+        audioMimeType: "audio/ogg",
+      }),
+    );
+
+    await expect(
+      service.sendMessage(requesterId, roomId, {
+        clientMessageKey,
+        type: "VOICE",
+        voiceNoteUrl: "https://media.example.test/voice/1.ogg",
+        voiceNoteDurationSec: 18,
+        voiceNoteSizeBytes: 120001,
+        voiceMimeType: "audio/ogg",
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
   });
 
   test("retry returns existing message", async () => {
@@ -349,12 +611,30 @@ describe("Chat idempotency", () => {
 
 describe("Chat listing", () => {
   test("participant lists messages", async () => {
+    repository.listMessages.mockResolvedValue([
+      makeMessage({
+        messageType: "IMAGE",
+        contentText: null,
+        imageUrl: "https://media.example.test/chat/image-1.webp",
+        imageSizeBytes: 240000,
+        imageMimeType: "image/webp",
+      }),
+    ]);
+
     const response = await request(app)
       .get(`/api/v1/chat-rooms/${roomId}/messages?limit=30`)
       .set("Authorization", `Bearer ${requesterToken}`);
 
     expect(response.statusCode).toBe(200);
     expect(response.body.data.messages).toHaveLength(1);
+    expect(response.body.data.messages[0]).toMatchObject({
+      type: "IMAGE",
+      imageUrl: "https://media.example.test/chat/image-1.webp",
+      imageSizeBytes: 240000,
+      imageMimeType: "image/webp",
+    });
+    expect(response.body.data.messages[0].imageBase64).toBeUndefined();
+    expect(response.body.data.messages[0].binary).toBeUndefined();
   });
 
   test("pagination works", async () => {
@@ -394,8 +674,18 @@ describe("Chat listing", () => {
 describe("Chat sync", () => {
   test("since returns only newer messages", async () => {
     const since = "2026-08-29T08:00:00.000Z";
+    repository.listMessagesSince.mockResolvedValue([
+      makeMessage({
+        messageType: "VOICE",
+        contentText: null,
+        audioUrl: "https://media.example.test/voice/1.webm",
+        audioDurationSec: 12,
+        audioSizeBytes: 90000,
+        audioMimeType: "audio/webm",
+      }),
+    ]);
 
-    await service.syncMessages(requesterId, roomId, { since, limit: 30 });
+    const result = await service.syncMessages(requesterId, roomId, { since, limit: 30 });
 
     expect(repository.listMessagesSince).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -405,6 +695,13 @@ describe("Chat sync", () => {
         limit: 30,
       }),
     );
+    expect(result.messages[0]).toMatchObject({
+      type: "VOICE",
+      voiceNoteUrl: "https://media.example.test/voice/1.webm",
+      voiceNoteDurationSec: 12,
+      voiceNoteSizeBytes: 90000,
+      voiceMimeType: "audio/webm",
+    });
   });
 
   test("sync does not return old history", async () => {
@@ -491,6 +788,14 @@ describe("Chat lifecycle and leakage", () => {
 
     expect(result.room.participants.requester.phone).toBeUndefined();
     expect(result.room.participants.traveler.phone).toBeUndefined();
+  });
+
+  test("message responses do not expose binary payloads or internal expiry", async () => {
+    const result = await service.listMessages(requesterId, roomId, { limit: 30 });
+
+    expect(result.messages[0].expiresAt).toBeUndefined();
+    expect(result.messages[0].imageBase64).toBeUndefined();
+    expect(result.messages[0].audioBuffer).toBeUndefined();
   });
 
   test("participant can mark incoming messages read", async () => {

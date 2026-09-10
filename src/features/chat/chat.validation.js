@@ -1,8 +1,13 @@
 const { z } = require("zod");
 
 const {
+  ALLOWED_IMAGE_MIME_TYPES,
+  ALLOWED_VOICE_MIME_TYPES,
   DEFAULT_MESSAGE_LIMIT,
+  MAX_IMAGE_SIZE_BYTES,
   MAX_MESSAGE_LIMIT,
+  MAX_VOICE_DURATION_SEC,
+  MAX_VOICE_SIZE_BYTES,
   MESSAGE_TYPES,
 } = require("./chat.constants");
 
@@ -67,7 +72,42 @@ const voiceMessageSchema = z
       .number()
       .int("Voice note duration must be an integer.")
       .min(0, "Voice note duration cannot be negative.")
-      .max(30, "Voice note duration must not exceed 30 seconds."),
+      .max(
+        MAX_VOICE_DURATION_SEC,
+        `Voice note duration must not exceed ${MAX_VOICE_DURATION_SEC} seconds.`,
+      ),
+    voiceNoteSizeBytes: z
+      .number()
+      .int("Voice note size must be an integer.")
+      .min(1, "Voice note size is required.")
+      .max(
+        MAX_VOICE_SIZE_BYTES,
+        `Voice note size must not exceed ${MAX_VOICE_SIZE_BYTES} bytes.`,
+      ),
+    voiceMimeType: z.enum(ALLOWED_VOICE_MIME_TYPES, {
+      message: "Voice MIME type is not supported.",
+    }),
+  })
+  .strict();
+
+const imageMessageSchema = z
+  .object({
+    clientMessageKey: z
+      .string()
+      .uuid("Client message key must be a valid UUID."),
+    type: z.literal(MESSAGE_TYPES.IMAGE),
+    imageUrl: z.string().trim().min(1, "Image URL is required."),
+    imageSizeBytes: z
+      .number()
+      .int("Image size must be an integer.")
+      .min(1, "Image size is required.")
+      .max(
+        MAX_IMAGE_SIZE_BYTES,
+        `Image size must not exceed ${MAX_IMAGE_SIZE_BYTES} bytes.`,
+      ),
+    imageMimeType: z.enum(ALLOWED_IMAGE_MIME_TYPES, {
+      message: "Image MIME type is not supported.",
+    }),
   })
   .strict();
 
@@ -75,6 +115,7 @@ const sendMessageSchema = z.object({
   body: z.discriminatedUnion("type", [
     textMessageSchema,
     voiceMessageSchema,
+    imageMessageSchema,
   ]),
   params: roomParamsSchema,
   query: z.object({}).optional(),

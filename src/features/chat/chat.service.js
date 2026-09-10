@@ -67,6 +67,11 @@ const serializeMessage = (message) => ({
   text: message.contentText,
   voiceNoteUrl: message.audioUrl,
   voiceNoteDurationSec: message.audioDurationSec,
+  voiceNoteSizeBytes: message.audioSizeBytes,
+  voiceMimeType: message.audioMimeType,
+  imageUrl: message.imageUrl,
+  imageSizeBytes: message.imageSizeBytes,
+  imageMimeType: message.imageMimeType,
   isRead: message.isRead,
   readAt: message.readAt,
   sentAt: message.sentAt,
@@ -120,15 +125,40 @@ const normalizePayload = (payload) => {
       contentText: payload.text.trim(),
       audioUrl: null,
       audioDurationSec: null,
+      audioSizeBytes: null,
+      audioMimeType: null,
+      imageUrl: null,
+      imageSizeBytes: null,
+      imageMimeType: null,
+    };
+  }
+
+  if (payload.type === MESSAGE_TYPES.VOICE) {
+    return {
+      clientMessageKey: payload.clientMessageKey,
+      messageType: MESSAGE_TYPES.VOICE,
+      contentText: null,
+      audioUrl: payload.voiceNoteUrl.trim(),
+      audioDurationSec: payload.voiceNoteDurationSec,
+      audioSizeBytes: payload.voiceNoteSizeBytes,
+      audioMimeType: payload.voiceMimeType,
+      imageUrl: null,
+      imageSizeBytes: null,
+      imageMimeType: null,
     };
   }
 
   return {
     clientMessageKey: payload.clientMessageKey,
-    messageType: MESSAGE_TYPES.VOICE,
+    messageType: MESSAGE_TYPES.IMAGE,
     contentText: null,
-    audioUrl: payload.voiceNoteUrl.trim(),
-    audioDurationSec: payload.voiceNoteDurationSec,
+    audioUrl: null,
+    audioDurationSec: null,
+    audioSizeBytes: null,
+    audioMimeType: null,
+    imageUrl: payload.imageUrl.trim(),
+    imageSizeBytes: payload.imageSizeBytes,
+    imageMimeType: payload.imageMimeType,
   };
 };
 
@@ -137,6 +167,11 @@ const comparableMessage = (message) => ({
   contentText: message.contentText,
   audioUrl: message.audioUrl,
   audioDurationSec: message.audioDurationSec,
+  audioSizeBytes: message.audioSizeBytes,
+  audioMimeType: message.audioMimeType,
+  imageUrl: message.imageUrl,
+  imageSizeBytes: message.imageSizeBytes,
+  imageMimeType: message.imageMimeType,
 });
 
 const assertSamePayload = (existingMessage, normalized) => {
@@ -147,6 +182,11 @@ const assertSamePayload = (existingMessage, normalized) => {
       contentText: normalized.contentText,
       audioUrl: normalized.audioUrl,
       audioDurationSec: normalized.audioDurationSec,
+      audioSizeBytes: normalized.audioSizeBytes,
+      audioMimeType: normalized.audioMimeType,
+      imageUrl: normalized.imageUrl,
+      imageSizeBytes: normalized.imageSizeBytes,
+      imageMimeType: normalized.imageMimeType,
     })
   ) {
     throw new ApiError(
@@ -250,6 +290,11 @@ const sendMessage = async (userId, roomId, payload) => {
           contentText: normalized.contentText,
           audioUrl: normalized.audioUrl,
           audioDurationSec: normalized.audioDurationSec,
+          audioSizeBytes: normalized.audioSizeBytes,
+          audioMimeType: normalized.audioMimeType,
+          imageUrl: normalized.imageUrl,
+          imageSizeBytes: normalized.imageSizeBytes,
+          imageMimeType: normalized.imageMimeType,
           expiresAt: addDays(sentAt, MESSAGE_RETENTION_DAYS),
         },
         tx,
