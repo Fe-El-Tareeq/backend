@@ -8,9 +8,16 @@
     "node": "22.x"
   },
   "scripts": {
+    "build": "node scripts/check-build.js",
     "dev": "nodemon src/server.js",
+    "lint": "node scripts/lint-js.js",
+    "prisma:generate": "prisma generate",
+    "prisma:validate": "prisma validate",
     "start": "node src/server.js",
     "test": "jest",
+    "test:ci": "jest --runInBand --coverage --json --outputFile=coverage/jest-results.json",
+    "swagger:validate": "node scripts/validate-openapi.js",
+    "verify": "npm run lint && npm run prisma:validate && npm run prisma:generate && npm run swagger:validate && npm run build && npm run test:ci",
     "import:delivery-areas": "node scripts/import-delivery-areas.js"
   },
   "dependencies": {
@@ -52,5 +59,18 @@
     "nodemon": "^3.1.14",
     "prisma": "^7.9.1",
     "supertest": "^7.2.2"
+  },
+  "jest": {
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "!src/server.js",
+      "!src/config/prisma.js"
+    ],
+    "coverageDirectory": "coverage",
+    "coverageReporters": [
+      "text",
+      "json-summary",
+      "lcov"
+    ]
   }
 }
