@@ -85,9 +85,69 @@ const updateUserProfile = async (userId, data) => {
 const updateProfileImage = async (userId, profileImageUrl, profileImagePath) =>
   updateUserProfile(userId, { profileImageUrl, profileImagePath });
 
+const findNotificationPreference = (userId) =>
+  prisma.userNotificationPreference.findUnique({ where: { userId } });
+
+const upsertNotificationPreference = (userId, data) =>
+  prisma.userNotificationPreference.upsert({
+    where: { userId },
+    create: { userId, ...data },
+    update: data,
+  });
+
+const runTransaction = (callback) => prisma.$transaction(callback);
+const findCredentials = (userId, client = prisma) =>
+  client.user.findUnique({
+    where: { id: userId },
+    select: { id: true, passwordHash: true, status: true },
+  });
+const accountDeletionBlockers = async (userId, client = prisma) => {
+  const [assignments, errands, trips] = await Promise.all([
+    client.errandAssignment.count({
+      where: {
+        status: { in: ["ACCEPTED", "PICKED_UP", "IN_TRANSIT"] },
+        OR: [{ travelerId: userId }, { errand: { requesterId: userId } }],
+      },
+    }),
+    client.errand.count({
+      where: { requesterId: userId, status: { in: ["OPEN", "MATCHED"] } },
+    }),
+    client.trip.count({ where: { travelerId: userId, status: "ACTIVE" } }),
+  ]);
+  return { assignments, errands, trips };
+};
+const deactivateAccount = (userId, requestedAt, scheduledAt, client = prisma) =>
+  client.user.update({
+    where: { id: userId },
+    data: {
+      status: "DEACTIVATED",
+      deletionRequestedAt: requestedAt,
+      deletionScheduledAt: scheduledAt,
+    },
+    select: {
+      id: true,
+      status: true,
+      deletionRequestedAt: true,
+      deletionScheduledAt: true,
+      updatedAt: true,
+    },
+  });
+const revokeSessions = (userId, client = prisma) =>
+  client.refreshToken.updateMany({
+    where: { userId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+
 module.exports = {
   findUserById,
   findActiveNeighborhoodById,
   updateUserProfile,
   updateProfileImage,
+  findNotificationPreference,
+  upsertNotificationPreference,
+  runTransaction,
+  findCredentials,
+  accountDeletionBlockers,
+  deactivateAccount,
+  revokeSessions,
 };

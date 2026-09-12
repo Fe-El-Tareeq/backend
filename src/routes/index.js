@@ -16,6 +16,9 @@ const walletRoutes = require("../features/wallet/wallet.route");
 const deliveryPricingRoutes = require("../features/deliveryPricing/deliveryPricing.route");
 const proposalsRoutes = require("../features/proposals/proposals.route");
 const proposalInboxRoutes = require("../features/proposals/proposals.inbox.route");
+const supportRoutes = require("../features/support/support.route");
+const reportsRoutes = require("../features/reports/reports.route");
+const legalRoutes = require("../features/legal/legal.route");
 
 const router = express.Router();
 
@@ -35,5 +38,8 @@ router.use("/users", usersRoutes);
 router.use("/wallet", walletRoutes);
 router.use("/delivery-pricing", deliveryPricingRoutes);
 router.use("/proposals", proposalsRoutes);
+router.use("/support", supportRoutes);
+router.use("/support/reports", reportsRoutes);
+router.use("/legal", legalRoutes);
 
 module.exports = router;

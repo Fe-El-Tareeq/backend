@@ -1,5 +1,12 @@
 # Backend
 
+## Pending OTP Registration
+
+- Registration is a multi-step flow. `POST /api/v1/auth/register` stores an expiring `pending_registrations` row and a hashed OTP, but does not create a row in `users`.
+- `POST /api/v1/auth/verify-otp` atomically claims a valid OTP, creates the verified user and signup wallet, deletes the pending registration, and issues tokens.
+- Expired pending registrations and OTP records are removed by a background cleanup job. `REGISTRATION_CLEANUP_INTERVAL_MS` controls its polling interval.
+- `000000` is available only to the allowlisted test phone configured in `OTP_TEST_PHONES`; all other phones get randomly generated codes. A real SMS/WhatsApp provider is still required for production delivery.
+
 ## Bidirectional Offers and Trip Requests
 
 - `POST /api/v1/proposals` creates either a traveler offer (`TRAVELER_OFFER`) or a requester trip request (`REQUESTER_REQUEST`). Creating a proposal does not charge tokens or reserve capacity.
@@ -11,6 +18,35 @@
 - Direct assignment creation is no longer exposed publicly. Assignment lifecycle endpoints remain available after proposal acceptance.
 - Chat is created only after acceptance. Proposal creation is idempotent through `clientRequestKey`.
 - `GET /api/v1/errands?mine=true` lists the authenticated requester's own errands for the design's “My Requests” page.
+
+## User Settings and Notification Preferences
+
+- `GET /api/v1/users/me/settings` returns the authenticated user's notification settings. Existing users without a preference row receive enabled defaults.
+- `PATCH /api/v1/users/me/settings/notifications` partially updates new-trip, chat-message, and request-update preferences.
+- Chat and assignment notifications respect the saved preference before a notification record is created. Payment and security-related notifications remain essential and are not disabled by optional preferences.
+- Dark mode and app-version display remain frontend concerns for the MVP.
+
+## Support Tickets
+
+- Authenticated users can read support contact configuration and create idempotent support tickets with an initial message.
+- Ticket categories cover payment issues, open requests, cancellation requests, and general inquiries. Each ticket receives a `TKT-...` tracking code.
+- Users can list, open, and message only their own tickets. Closed or resolved tickets reject new messages.
+- Super administrators can list all tickets, reply, assign themselves, and update ticket status.
+
+## Support Reports
+
+- Users can submit duplicate-safe reports under `/api/v1/support/reports` and receive an `RPT-...` tracking code.
+- Fraud, dangerous-item, abuse, and fake-account reports receive high priority; fulfillment and damaged-item reports receive medium priority; technical and other reports receive normal priority.
+- Reports may reference a user, assignment, errand, or trip. Users can read only their own reports, while super administrators can review and resolve all reports.
+- Every newly created report is also sent to `REPORT_NOTIFICATION_EMAIL` through Resend when `RESEND_API_KEY` and `EMAIL_FROM` are configured. Database creation remains successful if email delivery fails.
+
+## Legal Acceptance and Safe Account Deactivation
+
+- The API publishes current terms/privacy versions and records an authenticated user's acceptance idempotently.
+- Account deletion requires the current password and `DELETE` confirmation and is blocked by active operations. It immediately changes status to `DEACTIVATED`, revokes every active refresh token, and records a deletion date 30 days later.
+- A background cleanup starts with the API process and permanently deletes due users and all related records. `ACCOUNT_DELETION_RETENTION_DAYS` and `ACCOUNT_DELETION_CLEANUP_INTERVAL_MS` configure retention and polling.
+- During the retention window, a deactivated user can request an `ACCOUNT_REACTIVATION` OTP and confirm it with the current password to cancel deletion, restore `ACTIVE` status, clear the deletion dates, and receive fresh tokens.
+
 ## CI/CD
 
 GitHub Actions validates pull requests targeting `dev` or `main` and pushes to `dev` or `main` with Node.js 22, `npm ci --ignore-scripts`, an isolated PostgreSQL 16 service, Prisma migrations, Prisma validation/generation, JavaScript syntax linting, OpenAPI validation, an application import check, and Jest coverage. This PR temporarily also validates pushes to `chore/backend-ci-cd` so the new workflow can prove itself before manual merge. Prisma generation runs as an explicit CI step after dependency installation. The workflow prints Node/npm versions before dependency installation so package-manager failures are visible in the run log.
@@ -208,8 +244,7 @@ Core middleware was tested for:
 
 ### Result
 
-Backend foundation ready for feature development.
----
+## Backend foundation ready for feature development.
 
 ## Phase 3 - Authentication & User Management
 
@@ -242,6 +277,7 @@ Profile-image storage setup:
 1. Create a public Supabase Storage bucket named `profile-images`.
 2. Set `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and optionally `PROFILE_IMAGES_BUCKET` on the backend/Render environment.
 3. Never expose `SUPABASE_SERVICE_ROLE_KEY` to the frontend. The frontend only sends the image with the authenticated API request.
+
 - Added authentication and user management tests
 
 ### Authentication Flow
@@ -359,15 +395,15 @@ Different wallets can safely use the same idempotency key, while duplicate opera
 
 ### Signup Bonus
 
-New wallets start with `3` tokens.
+New wallets start with `10` tokens.
 
 The initial balance is now recorded in the wallet ledger using:
 
 ```text
 Transaction Type: SIGNUP_BONUS
-Token Amount:     3
+Token Amount:     10
 Balance Before:   0
-Balance After:    3
+Balance After:    10
 ```
 
 User creation, wallet creation, and signup bonus ledger creation are executed within the authentication database transaction.

@@ -1,5 +1,8 @@
 const ApiError = require("../../utils/ApiError");
-const { NOTIFICATION_TYPES } = require("./notifications.constants");
+const {
+  NOTIFICATION_TYPES,
+  PREFERENCE_FIELD_BY_TYPE,
+} = require("./notifications.constants");
 const repository = require("./notifications.repository");
 
 const VALID_LIST_STATUSES = new Set([
@@ -42,6 +45,14 @@ const createInAppNotification = async (
   },
   client,
 ) => {
+  const preferenceField = PREFERENCE_FIELD_BY_TYPE[type];
+  if (preferenceField) {
+    const preference = await repository.findUserPreference(userId, client);
+    if (preference?.[preferenceField] === false) {
+      return null;
+    }
+  }
+
   const data = {
     userId,
     notificationType: type,

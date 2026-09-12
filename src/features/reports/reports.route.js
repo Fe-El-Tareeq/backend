@@ -1,0 +1,13 @@
+const express = require("express");
+const { requireAuth } = require("../../middleware/auth.middleware");
+const validate = require("../../middleware/validate.middleware");
+const c = require("./reports.controller");
+const v = require("./reports.validation");
+const router = express.Router();
+router.use(requireAuth);
+router.post("/", validate(v.create), c.create);
+router.get("/", validate(v.list), c.listMine);
+router.get("/admin", validate(v.list), c.listAdmin);
+router.patch("/admin/:id", validate(v.update), c.update);
+router.get("/:id", validate(v.get), c.get);
+module.exports = router;

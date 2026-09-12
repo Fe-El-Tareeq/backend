@@ -85,12 +85,16 @@ const markAllReadForUser = (userId, readAt, client = prisma) =>
     data: { status: "READ", readAt },
   });
 
+const findUserPreference = (userId, client = prisma) =>
+  client.userNotificationPreference.findUnique({ where: { userId } });
+
 module.exports = {
   countForUser,
   countUnreadForUser,
   create,
   findByIdForUser,
   findByIdempotencyKey,
+  findUserPreference,
   listForUser,
   markAllReadForUser,
   markReadForUser,

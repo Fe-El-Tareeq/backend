@@ -38,10 +38,13 @@ const updateCurrentUserProfile = async (req, res, next) => {
 const updateCurrentUserProfileImage = async (req, res, next) => {
   try {
     if (!req.file) throw new ApiError(400, "Profile image is required.");
-    const user = await service.updateCurrentUserProfileImage(req.user.id, req.file);
-    return res.status(200).json(
-      new ApiResponse(200, "Profile image updated successfully.", user),
+    const user = await service.updateCurrentUserProfileImage(
+      req.user.id,
+      req.file,
     );
+    return res
+      .status(200)
+      .json(new ApiResponse(200, "Profile image updated successfully.", user));
   } catch (error) {
     next(error);
   }
@@ -50,11 +53,64 @@ const updateCurrentUserProfileImage = async (req, res, next) => {
 const deleteCurrentUserProfileImage = async (req, res, next) => {
   try {
     const user = await service.deleteCurrentUserProfileImage(req.user.id);
-    return res.status(200).json(
-      new ApiResponse(200, "Profile image deleted successfully.", user),
-    );
+    return res
+      .status(200)
+      .json(new ApiResponse(200, "Profile image deleted successfully.", user));
   } catch (error) {
     next(error);
+  }
+};
+
+const getCurrentUserSettings = async (req, res, next) => {
+  try {
+    const settings = await service.getCurrentUserSettings(req.user.id);
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(200, "User settings retrieved successfully.", settings),
+      );
+  } catch (error) {
+    next(error);
+  }
+};
+
+const updateCurrentUserNotificationSettings = async (req, res, next) => {
+  try {
+    const settings = await service.updateCurrentUserNotificationSettings(
+      req.user.id,
+      req.validatedData.body,
+    );
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          "Notification settings updated successfully.",
+          settings,
+        ),
+      );
+  } catch (error) {
+    next(error);
+  }
+};
+
+const deactivateCurrentUserAccount = async (req, res, next) => {
+  try {
+    const account = await service.deactivateCurrentUserAccount(
+      req.user.id,
+      req.validatedData.body,
+    );
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          "Account deactivated and scheduled for permanent deletion.",
+          { account },
+        ),
+      );
+  } catch (error) {
+    return next(error);
   }
 };
 
@@ -63,4 +119,7 @@ module.exports = {
   updateCurrentUserProfile,
   updateCurrentUserProfileImage,
   deleteCurrentUserProfileImage,
+  getCurrentUserSettings,
+  updateCurrentUserNotificationSettings,
+  deactivateCurrentUserAccount,
 };

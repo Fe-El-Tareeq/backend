@@ -11,6 +11,8 @@ const {
   refreshTokenSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  cancelDeletionRequestSchema,
+  cancelDeletionConfirmSchema,
 } = require("./auth.validation");
 
 const router = express.Router();
@@ -61,6 +63,18 @@ router.post(
   "/reset-password",
   validate(resetPasswordSchema),
   authController.resetPassword,
+);
+
+router.post(
+  "/cancel-deletion/request-otp",
+  validate(cancelDeletionRequestSchema),
+  authController.requestAccountReactivationOtp,
+);
+
+router.post(
+  "/cancel-deletion/confirm",
+  validate(cancelDeletionConfirmSchema),
+  authController.confirmAccountReactivation,
 );
 
 module.exports = router;
