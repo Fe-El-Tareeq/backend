@@ -40,7 +40,15 @@ describe("Signup Bonus Wallet Tests", () => {
     const wallet = {
       id: "wallet-1",
       userId: "user-1",
-      tokenBalance: 3,
+      tokenBalance: 10,
+    };
+
+    const pending = {
+      phone: user.phone,
+      fullName: "Test User",
+      passwordHash: "$2b$10$hashed",
+      neighborhoodId: "650e8400-e29b-41d4-a716-446655440000",
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
     };
 
     authRepository.findLatestOtpByPhone.mockResolvedValue(otpRecord);
@@ -50,21 +58,18 @@ describe("Signup Bonus Wallet Tests", () => {
 
     authRepository.claimOtpVerification.mockResolvedValue({ count: 1 });
 
-    authRepository.findUserByPhone.mockResolvedValue({
-      ...user,
-      phoneVerifiedAt: null,
-      wallet: null,
-    });
-    authRepository.updateUserPhoneVerifiedAt.mockResolvedValue(user);
+    authRepository.findPendingRegistrationByPhone.mockResolvedValue(pending);
+    authRepository.findUserByPhone.mockResolvedValue(null);
+    authRepository.createVerifiedUserFromPending.mockResolvedValue(user);
     authRepository.createWallet.mockResolvedValue(wallet);
 
     walletRepository.createLedgerEntry.mockResolvedValue({
       id: "ledger-1",
       walletId: wallet.id,
       transactionType: "SIGNUP_BONUS",
-      tokenAmount: 3,
+      tokenAmount: 10,
       balanceBefore: 0,
-      balanceAfter: 3,
+      balanceAfter: 10,
     });
 
     authRepository.createRefreshToken.mockResolvedValue({
@@ -73,9 +78,8 @@ describe("Signup Bonus Wallet Tests", () => {
 
     await authService.verifyOtp("+970599000000", "123456");
 
-    expect(authRepository.createUser).not.toHaveBeenCalled();
-    expect(authRepository.updateUserPhoneVerifiedAt).toHaveBeenCalledWith(
-      "user-1",
+    expect(authRepository.createVerifiedUserFromPending).toHaveBeenCalledWith(
+      pending,
       expect.anything(),
     );
 
@@ -88,9 +92,9 @@ describe("Signup Bonus Wallet Tests", () => {
       expect.objectContaining({
         walletId: "wallet-1",
         transactionType: "SIGNUP_BONUS",
-        tokenAmount: 3,
+        tokenAmount: 10,
         balanceBefore: 0,
-        balanceAfter: 3,
+        balanceAfter: 10,
         referenceType: "USER",
         referenceId: "user-1",
         idempotencyKey: "signup-bonus:user-1",

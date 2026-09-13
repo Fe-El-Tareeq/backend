@@ -1,7 +1,9 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL || "postgresql://test";
 process.env.DIRECT_URL = process.env.DIRECT_URL || "postgresql://test";
-process.env.JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || "test-access-secret";
-process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || "test-refresh-secret";
+process.env.JWT_ACCESS_SECRET =
+  process.env.JWT_ACCESS_SECRET || "test-access-secret";
+process.env.JWT_REFRESH_SECRET =
+  process.env.JWT_REFRESH_SECRET || "test-refresh-secret";
 process.env.NODE_ENV = "test";
 
 const jwt = require("jsonwebtoken");
@@ -65,6 +67,7 @@ beforeEach(() => {
   repository.findByIdForUser.mockResolvedValue(makeNotification());
   repository.markReadForUser.mockResolvedValue({ count: 1 });
   repository.markAllReadForUser.mockResolvedValue({ count: 3 });
+  repository.findUserPreference.mockResolvedValue(null);
 });
 
 describe("Notification listing", () => {
@@ -186,7 +189,9 @@ describe("Notification unread count and read state", () => {
   test("user cannot mark another user's notification", async () => {
     repository.findByIdForUser.mockResolvedValue(null);
 
-    await expect(service.markRead(userId, otherNotificationId)).rejects.toMatchObject({
+    await expect(
+      service.markRead(userId, otherNotificationId),
+    ).rejects.toMatchObject({
       statusCode: 404,
     });
     expect(repository.markReadForUser).not.toHaveBeenCalled();
@@ -208,6 +213,41 @@ describe("Notification unread count and read state", () => {
 });
 
 describe("Notification creation idempotency", () => {
+  test("does not create a chat notification when chat notifications are disabled", async () => {
+    repository.findUserPreference.mockResolvedValue({
+      chatMessagesEnabled: false,
+    });
+
+    const result = await service.createInAppNotification({
+      userId,
+      type: "NEW_CHAT_MESSAGE",
+      title: "New chat message",
+      message: "You have a new message.",
+    });
+
+    expect(result).toBeNull();
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  test("payment notifications bypass optional notification preferences", async () => {
+    repository.findUserPreference.mockResolvedValue({
+      newTripsEnabled: false,
+      chatMessagesEnabled: false,
+      requestUpdatesEnabled: false,
+    });
+    repository.create.mockResolvedValue(makeNotification());
+
+    await service.createInAppNotification({
+      userId,
+      type: "PAYMENT_SUCCESS",
+      title: "Wallet top-up completed",
+      message: "Tokens were added.",
+    });
+
+    expect(repository.findUserPreference).not.toHaveBeenCalled();
+    expect(repository.create).toHaveBeenCalledTimes(1);
+  });
+
   test("creates an in-app notification with a duplicate-safe idempotency key", async () => {
     repository.create.mockResolvedValue(makeNotification());
 

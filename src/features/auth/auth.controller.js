@@ -143,6 +143,37 @@ const resetPassword = async (req, res, next) => {
   }
 };
 
+const requestAccountReactivationOtp = async (req, res, next) => {
+  try {
+    const { phone, channel } = req.validatedData.body;
+    const result = await authService.requestAccountReactivationOtp(
+      phone,
+      channel,
+    );
+    return res.status(200).json(
+      new ApiResponse(200, result.message, {
+        expiresInMinutes: result.expiresInMinutes,
+      }),
+    );
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const confirmAccountReactivation = async (req, res, next) => {
+  try {
+    const { phone, otp, password } = req.validatedData.body;
+    const result = await authService.confirmAccountReactivation(
+      phone,
+      otp,
+      password,
+    );
+    return res.status(200).json(new ApiResponse(200, result.message, result));
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -152,4 +183,6 @@ module.exports = {
   logout,
   forgotPassword,
   resetPassword,
+  requestAccountReactivationOtp,
+  confirmAccountReactivation,
 };

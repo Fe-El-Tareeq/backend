@@ -1,0 +1,14 @@
+const CATEGORIES = [
+  "PAYMENT_ISSUE",
+  "OPEN_REQUEST",
+  "CANCEL_REQUEST",
+  "GENERAL_INQUIRY",
+];
+const STATUSES = [
+  "OPEN",
+  "IN_PROGRESS",
+  "WAITING_FOR_USER",
+  "RESOLVED",
+  "CLOSED",
+];
+module.exports = { CATEGORIES, STATUSES };

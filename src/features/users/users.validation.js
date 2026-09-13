@@ -28,6 +28,31 @@ const updateProfileSchema = z.object({
   query: z.object({}),
 });
 
+const updateNotificationSettingsSchema = z.object({
+  body: z
+    .object({
+      newTripsEnabled: z.boolean().optional(),
+      chatMessagesEnabled: z.boolean().optional(),
+      requestUpdatesEnabled: z.boolean().optional(),
+    })
+    .strict()
+    .refine((value) => Object.keys(value).length > 0, {
+      message: "At least one notification setting must be provided.",
+    }),
+  params: z.object({}).strict(),
+  query: z.object({}).strict(),
+});
+
+const deactivateAccountSchema = z.object({
+  body: z
+    .object({ password: z.string().min(1), confirmation: z.literal("DELETE") })
+    .strict(),
+  params: z.object({}).strict(),
+  query: z.object({}).strict(),
+});
+
 module.exports = {
   updateProfileSchema,
+  updateNotificationSettingsSchema,
+  deactivateAccountSchema,
 };

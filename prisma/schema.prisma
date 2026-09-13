@@ -15,6 +15,7 @@ enum UserStatus {
   ACTIVE
   SUSPENDED
   BANNED
+  DEACTIVATED
 }
 
 enum OtpChannel {
@@ -25,6 +26,7 @@ enum OtpChannel {
 enum OtpPurpose {
   PHONE_VERIFICATION
   PASSWORD_RESET
+  ACCOUNT_REACTIVATION
 }
 
 enum WeightClass {
@@ -156,6 +158,50 @@ enum DisputeResolutionAction {
   BAN_USER
 }
 
+enum SupportTicketCategory {
+  PAYMENT_ISSUE
+  OPEN_REQUEST
+  CANCEL_REQUEST
+  GENERAL_INQUIRY
+}
+
+enum SupportTicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_FOR_USER
+  RESOLVED
+  CLOSED
+}
+
+enum SupportTicketPriority {
+  NORMAL
+  HIGH
+}
+
+enum SupportReportType {
+  FRAUD_OR_SCAM
+  PROHIBITED_OR_DANGEROUS_ITEM
+  ABUSE_OR_THREAT
+  FAKE_ACCOUNT
+  FAILURE_TO_FULFILL
+  DAMAGED_OR_MISSING_ITEM
+  TECHNICAL_ISSUE
+  OTHER
+}
+
+enum SupportReportStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  RESOLVED
+  REJECTED
+}
+
+enum SupportReportPriority {
+  NORMAL
+  MEDIUM
+  HIGH
+}
+
 enum OriginType {
   DEFAULT_NEIGHBORHOOD
   CUSTOM_KEYWORD
@@ -186,7 +232,8 @@ model Neighborhood {
   originErrands      Errand[] @relation("ErrandOriginNeighborhood")
   destinationErrands Errand[] @relation("ErrandDestinationNeighborhood")
   originTrips        Trip[]   @relation("TripOriginNeighborhood")
-  destinationTrips   Trip[]   @relation("TripDestinationNeighborhood")
+  destinationTrips     Trip[]                @relation("TripDestinationNeighborhood")
+  pendingRegistrations PendingRegistration[]
 
   @@unique([name, governorate])
   @@map("neighborhoods")
@@ -205,6 +252,8 @@ model User {
   profileCompleted Boolean    @default(false) @map("profile_completed")
   phoneVerifiedAt  DateTime?  @map("phone_verified_at") @db.Timestamptz(6)
   status           UserStatus @default(ACTIVE)
+  deletionRequestedAt DateTime? @map("deletion_requested_at") @db.Timestamptz(6)
+  deletionScheduledAt DateTime? @map("deletion_scheduled_at") @db.Timestamptz(6)
   createdAt        DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -230,8 +279,15 @@ model User {
   reportedDisputes Dispute[] @relation("DisputeReportedUser")
   adminDisputes    Dispute[] @relation("DisputeAdmin")
 
-  notifications Notification[]
-  rateLimitLogs RateLimitLog[]
+  notifications           Notification[]
+  notificationPreference  UserNotificationPreference?
+  supportTickets          SupportTicket[]             @relation("SupportTicketOwner")
+  assignedSupportTickets  SupportTicket[]             @relation("SupportTicketAssignee")
+  supportMessages         SupportMessage[]
+  submittedSupportReports SupportReport[]             @relation("SupportReportReporter")
+  reportedSupportReports  SupportReport[]             @relation("SupportReportReportedUser")
+  legalAcceptances        LegalAcceptance[]
+  rateLimitLogs           RateLimitLog[]
 
   adminAuditLogs    AdminAuditLog[] @relation("AuditAdmin")
   targetedAuditLogs AdminAuditLog[] @relation("AuditTargetUser")
@@ -241,7 +297,109 @@ model User {
   initiatedProposals Proposal[] @relation("ProposalInitiator")
 
   @@index([neighborhoodId])
+  @@index([status, deletionScheduledAt])
   @@map("users")
+}
+
+model UserNotificationPreference {
+  userId                String   @id @map("user_id") @db.Uuid
+  newTripsEnabled       Boolean  @default(true) @map("new_trips_enabled")
+  chatMessagesEnabled   Boolean  @default(true) @map("chat_messages_enabled")
+  requestUpdatesEnabled Boolean  @default(true) @map("request_updates_enabled")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_notification_preferences")
+}
+
+model SupportTicket {
+  id               String                @id @default(uuid()) @db.Uuid
+  ticketCode       String                @unique @map("ticket_code") @db.VarChar(20)
+  userId           String                @map("user_id") @db.Uuid
+  assignedAdminId  String?               @map("assigned_admin_id") @db.Uuid
+  clientRequestKey String                @map("client_request_key") @db.Uuid
+  category         SupportTicketCategory
+  status           SupportTicketStatus   @default(OPEN)
+  priority         SupportTicketPriority @default(NORMAL)
+  createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  resolvedAt       DateTime?             @map("resolved_at") @db.Timestamptz(6)
+  closedAt         DateTime?             @map("closed_at") @db.Timestamptz(6)
+
+  user          User             @relation("SupportTicketOwner", fields: [userId], references: [id], onDelete: Cascade)
+  assignedAdmin User?            @relation("SupportTicketAssignee", fields: [assignedAdminId], references: [id], onDelete: SetNull)
+  messages      SupportMessage[]
+
+  @@unique([userId, clientRequestKey])
+  @@index([userId, status, updatedAt])
+  @@index([assignedAdminId, status])
+  @@index([status, priority, createdAt])
+  @@map("support_tickets")
+}
+
+model SupportMessage {
+  id               String   @id @default(uuid()) @db.Uuid
+  ticketId         String   @map("ticket_id") @db.Uuid
+  senderId         String   @map("sender_id") @db.Uuid
+  clientMessageKey String   @map("client_message_key") @db.Uuid
+  content          String   @db.VarChar(1000)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  sender User          @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@unique([senderId, clientMessageKey])
+  @@index([ticketId, createdAt])
+  @@map("support_messages")
+}
+
+model SupportReport {
+  id               String                @id @default(uuid()) @db.Uuid
+  reportCode       String                @unique @map("report_code") @db.VarChar(20)
+  reporterId       String                @map("reporter_id") @db.Uuid
+  reportedUserId   String?               @map("reported_user_id") @db.Uuid
+  assignmentId     String?               @map("assignment_id") @db.Uuid
+  errandId         String?               @map("errand_id") @db.Uuid
+  tripId           String?               @map("trip_id") @db.Uuid
+  clientRequestKey String                @map("client_request_key") @db.Uuid
+  type             SupportReportType
+  description      String                @db.VarChar(1500)
+  priority         SupportReportPriority
+  status           SupportReportStatus   @default(SUBMITTED)
+  adminNotes       String?               @map("admin_notes") @db.VarChar(1500)
+  createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  resolvedAt       DateTime?             @map("resolved_at") @db.Timestamptz(6)
+
+  reporter     User              @relation("SupportReportReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  reportedUser User?             @relation("SupportReportReportedUser", fields: [reportedUserId], references: [id], onDelete: SetNull)
+  assignment   ErrandAssignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  errand       Errand?           @relation(fields: [errandId], references: [id], onDelete: SetNull)
+  trip         Trip?             @relation(fields: [tripId], references: [id], onDelete: SetNull)
+
+  @@unique([reporterId, clientRequestKey])
+  @@index([reporterId, status, createdAt])
+  @@index([reportedUserId])
+  @@index([assignmentId])
+  @@index([errandId])
+  @@index([tripId])
+  @@index([status, priority, createdAt])
+  @@map("support_reports")
+}
+
+model LegalAcceptance {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  termsVersion   String   @map("terms_version") @db.VarChar(30)
+  privacyVersion String   @map("privacy_version") @db.VarChar(30)
+  acceptedAt     DateTime @default(now()) @map("accepted_at") @db.Timestamptz(6)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, termsVersion, privacyVersion])
+  @@index([userId, acceptedAt])
+  @@map("legal_acceptances")
 }
 
 model OtpVerification {
@@ -258,6 +416,22 @@ model OtpVerification {
 
   @@index([phone, purpose, createdAt])
   @@map("otp_verifications")
+}
+
+model PendingRegistration {
+  id             String   @id @default(uuid()) @db.Uuid
+  phone          String   @unique @db.VarChar(20)
+  fullName       String   @map("full_name") @db.VarChar(100)
+  passwordHash   String   @map("password_hash") @db.VarChar(255)
+  neighborhoodId String   @map("neighborhood_id") @db.Uuid
+  expiresAt      DateTime @map("expires_at") @db.Timestamptz(6)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  neighborhood Neighborhood @relation(fields: [neighborhoodId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("pending_registrations")
 }
 
 model RefreshToken {
@@ -290,7 +464,7 @@ model Category {
 model Wallet {
   id           String   @id @default(uuid()) @db.Uuid
   userId       String   @unique @map("user_id") @db.Uuid
-  tokenBalance Int      @default(3) @map("token_balance")
+  tokenBalance Int      @default(10) @map("token_balance")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -325,17 +499,18 @@ model Errand {
   createdAt                 DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                 DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  requester               User          @relation("RequesterErrands", fields: [requesterId], references: [id])
+  requester               User          @relation("RequesterErrands", fields: [requesterId], references: [id], onDelete: Cascade)
   category                Category?     @relation(fields: [categoryId], references: [id])
   neighborhood            Neighborhood  @relation("ErrandOriginNeighborhood", fields: [neighborhoodId], references: [id])
   destinationNeighborhood Neighborhood? @relation("ErrandDestinationNeighborhood", fields: [destinationNeighborhoodId], references: [id])
 
   postTokenTransaction WalletTransaction? @relation("ErrandPostTokenTransaction", fields: [postTokenTransactionId], references: [id])
 
-  matches       Match[]
-  assignments   ErrandAssignment[]
-  proposals     Proposal[]
-  notifications Notification[]
+  matches        Match[]
+  assignments    ErrandAssignment[]
+  proposals      Proposal[]
+  notifications  Notification[]
+  supportReports SupportReport[]
 
   @@unique([requesterId, clientRequestKey])
   @@index([requesterId])
@@ -371,13 +546,14 @@ model Trip {
   createdAt                 DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                 DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  traveler                User          @relation("TravelerTrips", fields: [travelerId], references: [id])
+  traveler                User          @relation("TravelerTrips", fields: [travelerId], references: [id], onDelete: Cascade)
   neighborhood            Neighborhood  @relation("TripOriginNeighborhood", fields: [neighborhoodId], references: [id])
   destinationNeighborhood Neighborhood? @relation("TripDestinationNeighborhood", fields: [destinationNeighborhoodId], references: [id])
 
-  matches     Match[]
-  assignments ErrandAssignment[]
-  proposals   Proposal[]
+  matches        Match[]
+  assignments    ErrandAssignment[]
+  supportReports SupportReport[]
+  proposals      Proposal[]
 
   @@unique([travelerId, clientRequestKey])
   @@index([travelerId])
@@ -472,17 +648,18 @@ model ErrandAssignment {
   cancellationReason String? @map("cancellation_reason") @db.VarChar(255)
 
   errand      Errand @relation(fields: [errandId], references: [id], onDelete: Cascade)
-  traveler    User   @relation("AssignmentTraveler", fields: [travelerId], references: [id])
+  traveler    User   @relation("AssignmentTraveler", fields: [travelerId], references: [id], onDelete: Cascade)
   trip        Trip?  @relation(fields: [tripId], references: [id])
   cancelledBy User?  @relation("AssignmentCancelledBy", fields: [cancelledByUserId], references: [id])
 
   acceptTokenTransaction WalletTransaction @relation("AcceptTokenTransaction", fields: [acceptTokenTransactionId], references: [id])
 
-  chatRoom      ChatRoom?
-  ratings       Rating[]
-  disputes      Dispute[]
-  notifications Notification[]
-  proposal      Proposal?
+  chatRoom       ChatRoom?
+  ratings        Rating[]
+  disputes       Dispute[]
+  notifications  Notification[]
+  supportReports SupportReport[]
+  proposal       Proposal?
 
   @@index([errandId])
   @@index([travelerId])
@@ -637,7 +814,7 @@ model PaymentInvoice {
   paidAt            DateTime?          @map("paid_at") @db.Timestamptz(6)
   failedAt          DateTime?          @map("failed_at") @db.Timestamptz(6)
   walletTransaction WalletTransaction?
-  user              User               @relation(fields: [userId], references: [id])
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   tokenPackage TokenPackage @relation(fields: [tokenPackageId], references: [id])
 
@@ -720,9 +897,9 @@ model Dispute {
 
   assignment ErrandAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
 
-  openedBy User @relation("DisputeOpenedBy", fields: [openedByUserId], references: [id])
+  openedBy User @relation("DisputeOpenedBy", fields: [openedByUserId], references: [id], onDelete: Cascade)
 
-  reportedUser User @relation("DisputeReportedUser", fields: [reportedUserId], references: [id])
+  reportedUser User @relation("DisputeReportedUser", fields: [reportedUserId], references: [id], onDelete: Cascade)
 
   admin User? @relation("DisputeAdmin", fields: [adminId], references: [id], onDelete: SetNull)
 
@@ -801,7 +978,7 @@ model AdminAuditLog {
   notes        String?
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  admin User @relation("AuditAdmin", fields: [adminId], references: [id])
+  admin User @relation("AuditAdmin", fields: [adminId], references: [id], onDelete: Cascade)
 
   targetUser User? @relation("AuditTargetUser", fields: [targetUserId], references: [id], onDelete: SetNull)
 

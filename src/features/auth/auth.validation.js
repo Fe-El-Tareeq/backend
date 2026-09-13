@@ -113,6 +113,18 @@ const resetPasswordSchema = z.object({
   query: z.object({}),
 });
 
+const cancelDeletionRequestSchema = phoneSchema;
+
+const cancelDeletionConfirmSchema = z.object({
+  body: z
+    .object({
+      phone: z.string().trim().min(8).max(20),
+      otp: z.string().length(6).regex(/^\d{6}$/),
+      password: z.string().min(1, "Password is required"),
+    })
+    .strict(),
+});
+
 module.exports = {
   registerSchema,
   loginSchema,
@@ -121,4 +133,6 @@ module.exports = {
   refreshTokenSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  cancelDeletionRequestSchema,
+  cancelDeletionConfirmSchema,
 };

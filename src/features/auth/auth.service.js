@@ -15,7 +15,7 @@ const authRepository = require("./auth.repository");
 const walletRepository = require("../wallet/wallet.repository");
 
 // Signup bonus granted when a wallet is created.
-const SIGNUP_BONUS_TOKENS = 3;
+const SIGNUP_BONUS_TOKENS = 10;
 
 const generateOtp = () => {
   return crypto.randomInt(100000, 1000000).toString();
@@ -130,6 +130,10 @@ const deliverOtp = async ({ phone, channel, otp }) => {
 };
 
 const requestOtp = async (phone, channel = "SMS") => {
+  const pending = await authRepository.findPendingRegistrationByPhone(phone);
+  if (!pending || pending.expiresAt <= new Date()) {
+    throw new ApiError(404, "Pending registration not found or expired.");
+  }
   const otp = generateOtpForPhone(phone);
   const otpHash = await bcrypt.hash(otp, 10);
   const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
@@ -244,6 +248,7 @@ const register = async ({
 
   const passwordHash = await bcrypt.hash(password, 10);
   const trimmedFullName = fullName.trim();
+  const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
 
   return authRepository.runTransaction(async (tx) => {
     const existingUser = await authRepository.findUserWithPasswordByPhone(
@@ -251,31 +256,20 @@ const register = async ({
       tx,
     );
 
-    if (existingUser?.passwordHash && existingUser.phoneVerifiedAt) {
+    if (existingUser) {
       throw new ApiError(409, "A user with this phone already exists.");
     }
 
-    if (existingUser) {
-      await authRepository.updatePreparedUserRegistration(
-        existingUser.id,
-        {
-          fullName: trimmedFullName,
-          passwordHash,
-          neighborhoodId: neighborhood.id,
-        },
-        tx,
-      );
-    } else {
-      await authRepository.createUserWithPassword(
-        {
-          fullName: trimmedFullName,
-          phone,
-          passwordHash,
-          neighborhoodId: neighborhood.id,
-        },
-        tx,
-      );
-    }
+    await authRepository.upsertPendingRegistration(
+      {
+        fullName: trimmedFullName,
+        phone,
+        passwordHash,
+        neighborhoodId: neighborhood.id,
+        expiresAt,
+      },
+      tx,
+    );
 
     await createOtpVerification(phone, "SMS", tx, "PHONE_VERIFICATION");
 
@@ -315,30 +309,6 @@ const login = async (phone, password) => {
   };
 };
 
-const getOrCreateVerifiedUser = async (phone, client) => {
-  const existingUser = await authRepository.findUserByPhone(phone, client);
-
-  if (!existingUser) {
-    throw new ApiError(404, "User not found.");
-  }
-
-  let user = existingUser;
-
-  if (!user.phoneVerifiedAt) {
-    user = await authRepository.updateUserPhoneVerifiedAt(user.id, client);
-  }
-
-  if (!user.wallet) {
-    const wallet = await createWalletWithSignupBonus(user.id, client);
-    return {
-      ...user,
-      wallet,
-    };
-  }
-
-  return user;
-};
-
 const validateOtpRecord = (otpRecord, now, invalidMessage = "Invalid OTP.") => {
   if (!otpRecord) {
     throw new ApiError(404, invalidMessage);
@@ -376,6 +346,16 @@ const verifyOtp = async (phone, otp) => {
   }
 
   return authRepository.runTransaction(async (tx) => {
+    const pending = await authRepository.findPendingRegistrationByPhone(
+      phone,
+      tx,
+    );
+    if (!pending || pending.expiresAt <= now) {
+      throw new ApiError(400, "Pending registration has expired.");
+    }
+    if (await authRepository.findUserByPhone(phone, tx)) {
+      throw new ApiError(409, "A user with this phone already exists.");
+    }
     const claim = await authRepository.claimOtpVerification(
       otpRecord.id,
       now,
@@ -387,7 +367,10 @@ const verifyOtp = async (phone, otp) => {
       throw new ApiError(409, "OTP is no longer available.");
     }
 
-    const user = await getOrCreateVerifiedUser(phone, tx);
+    let user = await authRepository.createVerifiedUserFromPending(pending, tx);
+    const wallet = await createWalletWithSignupBonus(user.id, tx);
+    user = { ...user, wallet };
+    await authRepository.deletePendingRegistration(phone, tx);
     const auth = await buildAuthResponse(user, tx);
 
     return {
@@ -456,6 +439,83 @@ const resetPassword = async (phone, otp, newPassword) => {
 
     return {
       message: "Password reset successfully. Please log in again.",
+    };
+  });
+};
+
+const requestAccountReactivationOtp = async (phone, channel = "SMS") => {
+  const user = await authRepository.findUserWithPasswordByPhone(phone);
+  if (
+    user?.status === "DEACTIVATED" &&
+    user.deletionScheduledAt &&
+    user.deletionScheduledAt > new Date()
+  ) {
+    await createOtpVerification(
+      phone,
+      channel,
+      undefined,
+      "ACCOUNT_REACTIVATION",
+    );
+  }
+
+  return {
+    message: "If account recovery is available, a verification code has been sent.",
+    expiresInMinutes: OTP_EXPIRY_MINUTES,
+  };
+};
+
+const confirmAccountReactivation = async (phone, otp, password) => {
+  const now = new Date();
+  const [user, otpRecord] = await Promise.all([
+    authRepository.findUserWithPasswordByPhone(phone),
+    authRepository.findLatestOtpByPhone(phone, "ACCOUNT_REACTIVATION"),
+  ]);
+
+  if (
+    !user?.passwordHash ||
+    user.status !== "DEACTIVATED" ||
+    !user.deletionScheduledAt ||
+    user.deletionScheduledAt <= now ||
+    !otpRecord
+  ) {
+    throw new ApiError(400, "Account recovery request is invalid or expired.");
+  }
+
+  validateOtpRecord(
+    otpRecord,
+    now,
+    "Account recovery request is invalid or expired.",
+  );
+  const [validOtp, validPassword] = await Promise.all([
+    bcrypt.compare(otp, otpRecord.otpHash),
+    bcrypt.compare(password, user.passwordHash),
+  ]);
+  if (!validOtp) {
+    await authRepository.incrementOtpAttempts(
+      otpRecord.id,
+      otpRecord.maxAttempts,
+    );
+    throw new ApiError(401, "Invalid verification code.");
+  }
+  if (!validPassword) {
+    throw new ApiError(401, "Invalid phone or password.");
+  }
+
+  return authRepository.runTransaction(async (tx) => {
+    const claim = await authRepository.claimOtpVerification(
+      otpRecord.id,
+      now,
+      otpRecord.maxAttempts,
+      tx,
+    );
+    if (claim.count !== 1) {
+      throw new ApiError(409, "Verification code is no longer available.");
+    }
+    const reactivatedUser = await authRepository.reactivateUser(user.id, tx);
+    const auth = await buildAuthResponse(reactivatedUser, tx);
+    return {
+      message: "Account deletion cancelled and account reactivated successfully.",
+      ...auth,
     };
   });
 };
@@ -535,5 +595,7 @@ module.exports = {
   logout,
   forgotPassword,
   resetPassword,
+  requestAccountReactivationOtp,
+  confirmAccountReactivation,
   hashRefreshToken,
 };

@@ -46,6 +46,14 @@ const activeNeighborhood = {
   name: "Al-Bireh",
   governorate: "Ramallah and Al-Bireh",
 };
+const pendingRegistration = {
+  id: "650e8400-e29b-41d4-a716-446655440000",
+  phone: activeUser.phone,
+  fullName: "Leenah Alborsh",
+  passwordHash: "$2a$10$hashed",
+  neighborhoodId: activeNeighborhood.id,
+  expiresAt: new Date(Date.now() + 60 * 1000),
+};
 
 const runMiddleware = (middleware, req) => {
   return new Promise((resolve) => {
@@ -60,6 +68,16 @@ beforeEach(() => {
     return callback(mockTx);
   });
   authRepository.claimOtpVerification.mockResolvedValue({ count: 1 });
+  authRepository.findPendingRegistrationByPhone.mockResolvedValue(
+    pendingRegistration,
+  );
+  authRepository.findUserByPhone.mockResolvedValue(null);
+  authRepository.createVerifiedUserFromPending.mockResolvedValue({
+    ...activeUser,
+    wallet: null,
+  });
+  authRepository.createWallet.mockResolvedValue(activeUser.wallet);
+  authRepository.createRefreshToken.mockResolvedValue({});
   env.otpFixedCode = null;
   env.otpTestPhones = [];
 
@@ -67,9 +85,9 @@ beforeEach(() => {
     id: "signup-bonus-transaction",
     walletId: "wallet-1",
     transactionType: "SIGNUP_BONUS",
-    tokenAmount: 3,
+    tokenAmount: 10,
     balanceBefore: 0,
-    balanceAfter: 3,
+    balanceAfter: 10,
   });
 
   walletRepository.findByIdempotencyKey.mockResolvedValue(null);
@@ -212,13 +230,8 @@ describe("Auth register and login", () => {
     expect(authRepository.createOtpVerification).not.toHaveBeenCalled();
   });
 
-  test("register creates unverified user, stores hashed password, creates OTP, and returns no tokens", async () => {
+  test("register stores only a temporary registration and returns no tokens", async () => {
     authRepository.findUserWithPasswordByPhone.mockResolvedValue(null);
-    authRepository.createUserWithPassword.mockResolvedValue({
-      ...activeUser,
-      passwordHash: "$2a$10$hashed",
-      wallet: null,
-    });
     authRepository.createOtpVerification.mockResolvedValue({});
 
     const response = await request(app).post("/api/v1/auth/register").send({
@@ -234,8 +247,7 @@ describe("Auth register and login", () => {
     expect(response.body.data.refreshToken).toBeUndefined();
     expect(JSON.stringify(response.body)).not.toContain("passwordHash");
 
-    const [payload] =
-      authRepository.createUserWithPassword.mock.calls[0];
+    const [payload] = authRepository.upsertPendingRegistration.mock.calls[0];
 
     expect(payload).toEqual(
       expect.objectContaining({
@@ -246,23 +258,15 @@ describe("Auth register and login", () => {
     );
     expect(payload.passwordHash).toMatch(/^\$2/);
     expect(payload.passwordHash).not.toBe("Strong1!");
+    expect(authRepository.createUserWithPassword).not.toHaveBeenCalled();
     expect(authRepository.createOtpVerification).toHaveBeenCalled();
     expect(authRepository.createWallet).not.toHaveBeenCalled();
     expect(walletRepository.createLedgerEntry).not.toHaveBeenCalled();
     expect(authRepository.createRefreshToken).not.toHaveBeenCalled();
   });
 
-  test("duplicate registration for unverified user does not duplicate user wallet or bonus", async () => {
-    authRepository.findUserWithPasswordByPhone.mockResolvedValue({
-      ...activeUser,
-      phoneVerifiedAt: null,
-      passwordHash: "$2a$10$oldhash",
-    });
-    authRepository.updatePreparedUserRegistration.mockResolvedValue({
-      ...activeUser,
-      phoneVerifiedAt: null,
-      passwordHash: "$2a$10$newhash",
-    });
+  test("duplicate pending registration refreshes temporary data without creating a user", async () => {
+    authRepository.findUserWithPasswordByPhone.mockResolvedValue(null);
     authRepository.createOtpVerification.mockResolvedValue({});
 
     const result = await authService.register({
@@ -274,8 +278,7 @@ describe("Auth register and login", () => {
 
     expect(result.message).toBe("Registration OTP sent successfully");
     expect(authRepository.createUserWithPassword).not.toHaveBeenCalled();
-    expect(authRepository.updatePreparedUserRegistration).toHaveBeenCalledWith(
-      activeUser.id,
+    expect(authRepository.upsertPendingRegistration).toHaveBeenCalledWith(
       expect.objectContaining({
         fullName: "Leenah Alborsh",
         neighborhoodId: activeNeighborhood.id,
@@ -427,7 +430,7 @@ describe("Locations neighborhoods", () => {
 });
 
 describe("Auth verify OTP", () => {
-  test("valid OTP activates prepared user, creates wallet, and issues tokens", async () => {
+  test("valid OTP creates the user, creates wallet, removes pending data, and issues tokens", async () => {
     const otpHash = await bcrypt.hash("123456", 10);
 
     authRepository.findLatestOtpByPhone.mockResolvedValue({
@@ -439,20 +442,6 @@ describe("Auth verify OTP", () => {
       expiresAt: new Date(Date.now() + 60 * 1000),
       verifiedAt: null,
     });
-
-    authRepository.findUserByPhone.mockResolvedValue({
-      ...activeUser,
-      phoneVerifiedAt: null,
-      passwordHash: "$2a$10$hashed",
-      wallet: null,
-    });
-    authRepository.updateUserPhoneVerifiedAt.mockResolvedValue({
-      ...activeUser,
-      passwordHash: "$2a$10$hashed",
-      wallet: null,
-    });
-    authRepository.createWallet.mockResolvedValue(activeUser.wallet);
-    authRepository.createRefreshToken.mockResolvedValue({});
 
     const response = await request(app).post("/api/v1/auth/verify-otp").send({
       phone: "+970599000000",
@@ -468,11 +457,14 @@ describe("Auth verify OTP", () => {
       5,
       mockTx,
     );
-    expect(authRepository.updateUserPhoneVerifiedAt).toHaveBeenCalledWith(
-      activeUser.id,
+    expect(authRepository.createVerifiedUserFromPending).toHaveBeenCalledWith(
+      pendingRegistration,
       mockTx,
     );
-    expect(authRepository.createUser).not.toHaveBeenCalled();
+    expect(authRepository.deletePendingRegistration).toHaveBeenCalledWith(
+      activeUser.phone,
+      mockTx,
+    );
     expect(authRepository.createWallet).toHaveBeenCalledWith(
       activeUser.id,
       mockTx,
@@ -494,7 +486,7 @@ describe("Auth verify OTP", () => {
     );
   });
 
-  test("valid OTP without a prepared user is rejected", async () => {
+  test("valid OTP without a pending registration is rejected", async () => {
     const otpHash = await bcrypt.hash("123456", 10);
 
     authRepository.findLatestOtpByPhone.mockResolvedValue({
@@ -507,13 +499,13 @@ describe("Auth verify OTP", () => {
       verifiedAt: null,
     });
 
-    authRepository.findUserByPhone.mockResolvedValue(null);
+    authRepository.findPendingRegistrationByPhone.mockResolvedValue(null);
 
     await expect(
       authService.verifyOtp("+970599000003", "123456"),
     ).rejects.toMatchObject({
-      statusCode: 404,
-      message: "User not found.",
+      statusCode: 400,
+      message: "Pending registration has expired.",
     });
 
     expect(authRepository.createUser).not.toHaveBeenCalled();
@@ -521,7 +513,7 @@ describe("Auth verify OTP", () => {
     expect(authRepository.createRefreshToken).not.toHaveBeenCalled();
   });
 
-  test("second verification for existing user does not duplicate wallet", async () => {
+  test("verification cannot create a duplicate existing user", async () => {
     const otpHash = await bcrypt.hash("123456", 10);
 
     authRepository.findLatestOtpByPhone.mockResolvedValue({
@@ -535,19 +527,16 @@ describe("Auth verify OTP", () => {
     });
 
     authRepository.findUserByPhone.mockResolvedValue(activeUser);
-    walletRepository.findByIdempotencyKey.mockResolvedValue({
-      id: "existing-signup-bonus",
-    });
-    authRepository.createRefreshToken.mockResolvedValue({});
+    await expect(
+      authService.verifyOtp("+970599000000", "123456"),
+    ).rejects.toMatchObject({ statusCode: 409 });
 
-    await authService.verifyOtp("+970599000000", "123456");
-
-    expect(authRepository.createUser).not.toHaveBeenCalled();
+    expect(authRepository.createVerifiedUserFromPending).not.toHaveBeenCalled();
     expect(authRepository.createWallet).not.toHaveBeenCalled();
     expect(walletRepository.createLedgerEntry).not.toHaveBeenCalled();
   });
 
-  test("verify OTP activates registered unverified user and then issues tokens", async () => {
+  test("verify OTP creates a registered user only after confirmation", async () => {
     const otpHash = await bcrypt.hash("123456", 10);
 
     authRepository.findLatestOtpByPhone.mockResolvedValue({
@@ -560,18 +549,14 @@ describe("Auth verify OTP", () => {
       verifiedAt: null,
     });
 
-    authRepository.findUserByPhone.mockResolvedValue({
+    const pending = {
+      ...pendingRegistration,
+      phone: "+970599000002",
+    };
+    authRepository.findPendingRegistrationByPhone.mockResolvedValue(pending);
+    authRepository.createVerifiedUserFromPending.mockResolvedValue({
       ...activeUser,
       phone: "+970599000002",
-      phoneVerifiedAt: null,
-      passwordHash: "$2a$10$hashed",
-      wallet: null,
-    });
-
-    authRepository.updateUserPhoneVerifiedAt.mockResolvedValue({
-      ...activeUser,
-      phone: "+970599000002",
-      passwordHash: "$2a$10$hashed",
       wallet: null,
     });
     authRepository.createWallet.mockResolvedValue(activeUser.wallet);
@@ -586,8 +571,8 @@ describe("Auth verify OTP", () => {
     expect(response.body.data.accessToken).toBeTruthy();
     expect(response.body.data.refreshToken).toBeTruthy();
     expect(response.body.data.user.passwordHash).toBeUndefined();
-    expect(authRepository.updateUserPhoneVerifiedAt).toHaveBeenCalledWith(
-      activeUser.id,
+    expect(authRepository.createVerifiedUserFromPending).toHaveBeenCalledWith(
+      pending,
       mockTx,
     );
     expect(authRepository.createWallet).toHaveBeenCalledWith(
@@ -775,6 +760,64 @@ describe("Auth forgot and reset password", () => {
       3,
     );
     expect(authRepository.runTransaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("Account deletion cancellation", () => {
+  const deactivatedUser = {
+    ...activeUser,
+    status: "DEACTIVATED",
+    passwordHash: "$2b$10$hash",
+    deletionScheduledAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+  };
+
+  test("requests a purpose-scoped OTP during the 30-day recovery window", async () => {
+    env.otpFixedCode = "000000";
+    env.otpTestPhones = [deactivatedUser.phone];
+    authRepository.findUserWithPasswordByPhone.mockResolvedValue(
+      deactivatedUser,
+    );
+
+    await authService.requestAccountReactivationOtp(deactivatedUser.phone);
+
+    expect(authRepository.createOtpVerification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phone: deactivatedUser.phone,
+        purpose: "ACCOUNT_REACTIVATION",
+      }),
+      undefined,
+    );
+  });
+
+  test("valid OTP and password reactivate the account and clear deletion schedule", async () => {
+    const otpHash = await bcrypt.hash("000000", 4);
+    const passwordHash = await bcrypt.hash("Strong1!", 4);
+    authRepository.findUserWithPasswordByPhone.mockResolvedValue({
+      ...deactivatedUser,
+      passwordHash,
+    });
+    authRepository.findLatestOtpByPhone.mockResolvedValue({
+      id: "recovery-otp",
+      otpHash,
+      attemptCount: 0,
+      maxAttempts: 3,
+      expiresAt: new Date(Date.now() + 60000),
+      verifiedAt: null,
+    });
+    authRepository.reactivateUser.mockResolvedValue(activeUser);
+
+    const result = await authService.confirmAccountReactivation(
+      deactivatedUser.phone,
+      "000000",
+      "Strong1!",
+    );
+
+    expect(authRepository.reactivateUser).toHaveBeenCalledWith(
+      activeUser.id,
+      mockTx,
+    );
+    expect(result.user.status).toBe("ACTIVE");
+    expect(result.accessToken).toBeTruthy();
   });
 });
 

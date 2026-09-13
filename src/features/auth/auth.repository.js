@@ -91,6 +91,37 @@ const findUserWithPasswordByPhone = async (phone, client = prisma) => {
   });
 };
 
+const findPendingRegistrationByPhone = (phone, client = prisma) =>
+  client.pendingRegistration.findUnique({ where: { phone } });
+
+const upsertPendingRegistration = (data, client = prisma) =>
+  client.pendingRegistration.upsert({
+    where: { phone: data.phone },
+    create: data,
+    update: {
+      fullName: data.fullName,
+      passwordHash: data.passwordHash,
+      neighborhoodId: data.neighborhoodId,
+      expiresAt: data.expiresAt,
+    },
+  });
+
+const deletePendingRegistration = (phone, client = prisma) =>
+  client.pendingRegistration.delete({ where: { phone } });
+
+const createVerifiedUserFromPending = (pending, client = prisma) =>
+  client.user.create({
+    data: {
+      fullName: pending.fullName,
+      phone: pending.phone,
+      passwordHash: pending.passwordHash,
+      neighborhoodId: pending.neighborhoodId,
+      profileCompleted: true,
+      phoneVerifiedAt: new Date(),
+    },
+    include: { wallet: true },
+  });
+
 const findUserById = async (userId, client = prisma) => {
   return client.user.findUnique({
     where: { id: userId },
@@ -249,6 +280,17 @@ const revokeAllRefreshTokensForUser = async (userId, client = prisma) => {
   });
 };
 
+const reactivateUser = (userId, client = prisma) =>
+  client.user.update({
+    where: { id: userId },
+    data: {
+      status: "ACTIVE",
+      deletionRequestedAt: null,
+      deletionScheduledAt: null,
+    },
+    include: { wallet: true },
+  });
+
 module.exports = {
   runTransaction,
   findLatestOtpByPhone,
@@ -257,6 +299,10 @@ module.exports = {
   claimOtpVerification,
   findUserByPhone,
   findUserWithPasswordByPhone,
+  findPendingRegistrationByPhone,
+  upsertPendingRegistration,
+  deletePendingRegistration,
+  createVerifiedUserFromPending,
   findUserById,
   findActiveNeighborhoodById,
   createUser,
@@ -269,4 +315,5 @@ module.exports = {
   revokeRefreshToken,
   updateUserPassword,
   revokeAllRefreshTokensForUser,
+  reactivateUser,
 };
