@@ -4069,8 +4069,16 @@ const swaggerDefinition = {
             },
           },
           { name: "unread", in: "query", schema: { type: "boolean" } },
-          { name: "skip", in: "query", schema: { type: "integer", minimum: 0, default: 0 } },
-          { name: "take", in: "query", schema: { type: "integer", minimum: 1, maximum: 50, default: 20 } },
+          {
+            name: "skip",
+            in: "query",
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
         ],
         responses: {
           200: { description: "Proposal inbox retrieved successfully." },
@@ -4092,8 +4100,16 @@ const swaggerDefinition = {
               enum: ["PENDING", "ACCEPTED", "REJECTED", "WITHDRAWN", "EXPIRED"],
             },
           },
-          { name: "skip", in: "query", schema: { type: "integer", minimum: 0, default: 0 } },
-          { name: "take", in: "query", schema: { type: "integer", minimum: 1, maximum: 50, default: 20 } },
+          {
+            name: "skip",
+            in: "query",
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
         ],
         responses: {
           200: { description: "Sent proposals retrieved successfully." },
@@ -4246,7 +4262,11 @@ const swaggerDefinition = {
               schema: {
                 type: "object",
                 properties: {
-                  rejectionNote: { type: "string", minLength: 3, maxLength: 255 },
+                  rejectionNote: {
+                    type: "string",
+                    minLength: 3,
+                    maxLength: 255,
+                  },
                 },
                 additionalProperties: false,
               },
@@ -4267,7 +4287,14 @@ const swaggerDefinition = {
         tags: ["Proposals"],
         summary: "Mark an incoming proposal as read",
         security: [{ bearerAuth: [] }],
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
         responses: {
           200: { description: "Proposal marked as read." },
           403: errorResponse("Only the proposal receiver can mark it read."),
@@ -4280,7 +4307,14 @@ const swaggerDefinition = {
         tags: ["Proposals"],
         summary: "Withdraw a pending proposal",
         security: [{ bearerAuth: [] }],
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
         responses: {
           200: { description: "Proposal withdrawn successfully." },
           403: errorResponse("Only the proposal sender can withdraw it."),
