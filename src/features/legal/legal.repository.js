@@ -1,6 +1,6 @@
 const prisma = require("../../config/prisma");
-const find = (userId, termsVersion, privacyVersion) =>
-  prisma.legalAcceptance.findUnique({
+const find = (userId, termsVersion, privacyVersion, client = prisma) =>
+  client.legalAcceptance.findUnique({
     where: {
       userId_termsVersion_privacyVersion: {
         userId,
@@ -9,5 +9,6 @@ const find = (userId, termsVersion, privacyVersion) =>
       },
     },
   });
-const create = (data) => prisma.legalAcceptance.create({ data });
+const create = (data, client = prisma) =>
+  client.legalAcceptance.create({ data });
 module.exports = { find, create };

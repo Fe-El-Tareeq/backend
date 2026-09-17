@@ -5,7 +5,7 @@ const current = () => ({
   termsUrl: process.env.TERMS_URL || null,
   privacyUrl: process.env.PRIVACY_URL || null,
 });
-const accept = async (userId, payload) => {
+const accept = async (userId, payload, client) => {
   const versions = current();
   if (
     payload.termsVersion !== versions.termsVersion ||
@@ -21,10 +21,12 @@ const accept = async (userId, payload) => {
     userId,
     payload.termsVersion,
     payload.privacyVersion,
+    client,
   );
   return {
     created: !existing,
-    acceptance: existing || (await repository.create({ userId, ...payload })),
+    acceptance:
+      existing || (await repository.create({ userId, ...payload }, client)),
   };
 };
 module.exports = { current, accept };

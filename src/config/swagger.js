@@ -306,7 +306,13 @@ const swaggerDefinition = {
       },
       RegisterRequest: {
         type: "object",
-        required: ["fullName", "phone", "password", "neighborhoodId"],
+        required: [
+          "fullName",
+          "phone",
+          "password",
+          "neighborhoodId",
+          "termsAccepted",
+        ],
         properties: {
           fullName: {
             type: "string",
@@ -338,6 +344,13 @@ const swaggerDefinition = {
             description:
               "Must be selected from an existing active neighborhood returned by GET /api/v1/locations/neighborhoods.",
             example: "60a32850-bd3f-444a-84b4-c750abf6ecb6",
+          },
+          termsAccepted: {
+            type: "boolean",
+            enum: [true],
+            description:
+              "Required consent checkbox. Must be true. The backend snapshots the current terms and privacy versions and records the acceptance automatically after successful OTP verification.",
+            example: true,
           },
         },
       },
@@ -2687,7 +2700,7 @@ const swaggerDefinition = {
         tags: ["Authentication"],
         summary: "Register and request phone verification",
         description:
-          "Stores an expiring pending registration and sends a phone verification OTP; it does not create a users row or issue tokens. The user and wallet are created only after successful OTP verification. For frontend testing, the dedicated phone 0599000000 uses OTP 000000 only when OTP_FIXED_CODE and OTP_TEST_PHONES are configured on the running server. neighborhoodId must be selected from an existing active neighborhood returned by GET /api/v1/locations/neighborhoods. Passwords must be at least 8 characters and include one uppercase letter, one number, and one special character.",
+          "Requires termsAccepted=true, snapshots the current terms and privacy versions, stores an expiring pending registration, and sends a phone verification OTP; it does not create a users row or issue tokens. The user, wallet, and legal acceptance are created atomically only after successful OTP verification. For frontend testing, the dedicated phone 0599000000 uses OTP 000000 only when OTP_FIXED_CODE and OTP_TEST_PHONES are configured on the running server. neighborhoodId must be selected from an existing active neighborhood returned by GET /api/v1/locations/neighborhoods. Passwords must be at least 8 characters and include one uppercase letter, one number, and one special character.",
         requestBody: {
           required: true,
           content: {
@@ -2701,7 +2714,7 @@ const swaggerDefinition = {
         responses: {
           201: {
             description:
-              "Registration prepared and verification OTP created. No tokens are issued until OTP verification succeeds.",
+              "Registration and current legal-version consent prepared, and verification OTP created. No user, legal acceptance, or tokens are created until OTP verification succeeds.",
             content: {
               "application/json": {
                 schema: {
@@ -2864,7 +2877,7 @@ const swaggerDefinition = {
         tags: ["Authentication"],
         summary: "Verify phone OTP and receive tokens",
         description:
-          "Verifies the latest PHONE_VERIFICATION OTP for initial account activation. For the allowlisted frontend test phone 0599000000, use 000000. On success, the backend marks the OTP used, sets phoneVerifiedAt, ensures a wallet exists with exactly one signup bonus ledger entry for new wallets, and returns access and refresh tokens. Later logins use phone and password without OTP.",
+          "Verifies the latest PHONE_VERIFICATION OTP for initial account activation. For the allowlisted frontend test phone 0599000000, use 000000. On success, the backend atomically creates the user and wallet, records the legal acceptance for the terms and privacy versions captured during registration, marks the OTP used, and returns access and refresh tokens. If legal-version consent is missing or stale, verification is rejected and the transaction is rolled back. Later logins use phone and password without OTP.",
         requestBody: {
           required: true,
           content: {
@@ -3124,16 +3137,25 @@ const swaggerDefinition = {
       post: {
         tags: ["Authentication"],
         summary: "Request an OTP to cancel scheduled account deletion",
-        description: "Returns a generic response. A purpose-scoped OTP is sent only when the account is deactivated and still inside its recovery window.",
-        responses: { 200: { description: "Generic account recovery response." }, 400: { $ref: "#/components/responses/ValidationFailed" } },
+        description:
+          "Returns a generic response. A purpose-scoped OTP is sent only when the account is deactivated and still inside its recovery window.",
+        responses: {
+          200: { description: "Generic account recovery response." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+        },
       },
     },
     "/api/v1/auth/cancel-deletion/confirm": {
       post: {
         tags: ["Authentication"],
         summary: "Cancel account deletion and reactivate the account",
-        description: "Requires the phone, current password, and a valid ACCOUNT_REACTIVATION OTP. It clears the deletion dates, restores ACTIVE status, and issues fresh tokens.",
-        responses: { 200: { description: "Account reactivated and fresh tokens issued." }, 400: errorResponse("Account recovery request is invalid or expired."), 401: errorResponse("Invalid verification code or password.") },
+        description:
+          "Requires the phone, current password, and a valid ACCOUNT_REACTIVATION OTP. It clears the deletion dates, restores ACTIVE status, and issues fresh tokens.",
+        responses: {
+          200: { description: "Account reactivated and fresh tokens issued." },
+          400: errorResponse("Account recovery request is invalid or expired."),
+          401: errorResponse("Invalid verification code or password."),
+        },
       },
     },
     "/api/v1/locations/neighborhoods": {

@@ -11,6 +11,7 @@ const request = require("supertest");
 
 jest.mock("../src/features/auth/auth.repository");
 jest.mock("../src/features/wallet/wallet.repository");
+jest.mock("../src/features/legal/legal.repository");
 jest.mock("../src/config/prisma", () => ({
   user: {
     findUnique: jest.fn(),
@@ -23,6 +24,7 @@ jest.mock("../src/config/prisma", () => ({
 const app = require("../src/app");
 const authRepository = require("../src/features/auth/auth.repository");
 const walletRepository = require("../src/features/wallet/wallet.repository");
+const legalRepository = require("../src/features/legal/legal.repository");
 const authService = require("../src/features/auth/auth.service");
 const env = require("../src/config/env");
 const prisma = require("../src/config/prisma");
@@ -52,6 +54,8 @@ const pendingRegistration = {
   fullName: "Leenah Alborsh",
   passwordHash: "$2a$10$hashed",
   neighborhoodId: activeNeighborhood.id,
+  termsVersion: "1.0.0",
+  privacyVersion: "1.0.0",
   expiresAt: new Date(Date.now() + 60 * 1000),
 };
 
@@ -91,6 +95,13 @@ beforeEach(() => {
   });
 
   walletRepository.findByIdempotencyKey.mockResolvedValue(null);
+  legalRepository.find.mockResolvedValue(null);
+  legalRepository.create.mockResolvedValue({
+    id: "legal-acceptance-1",
+    userId: activeUser.id,
+    termsVersion: "1.0.0",
+    privacyVersion: "1.0.0",
+  });
   authRepository.findActiveNeighborhoodById.mockResolvedValue(
     activeNeighborhood,
   );
@@ -153,6 +164,7 @@ describe("Auth register and login", () => {
       phone: "+970599000000",
       password: "weakpass",
       neighborhoodId: activeNeighborhood.id,
+      termsAccepted: true,
     });
 
     expect(response.statusCode).toBe(400);
@@ -165,6 +177,7 @@ describe("Auth register and login", () => {
       phone: "+970599000001",
       password: "Strong1!",
       neighborhoodId: activeNeighborhood.id,
+      termsAccepted: true,
     });
 
     expect(response.statusCode).toBe(400);
@@ -178,6 +191,7 @@ describe("Auth register and login", () => {
       phone: "+970599000001",
       password: "Strong1!",
       neighborhoodId: activeNeighborhood.id,
+      termsAccepted: true,
     });
 
     expect(response.statusCode).toBe(400);
@@ -190,6 +204,7 @@ describe("Auth register and login", () => {
       fullName: "Leenah Alborsh",
       phone: "+970599000001",
       password: "Strong1!",
+      termsAccepted: true,
     });
 
     expect(response.statusCode).toBe(400);
@@ -203,6 +218,7 @@ describe("Auth register and login", () => {
       phone: "+970599000001",
       password: "Strong1!",
       neighborhoodId: "not-a-uuid",
+      termsAccepted: true,
     });
 
     expect(response.statusCode).toBe(400);
@@ -220,6 +236,7 @@ describe("Auth register and login", () => {
         phone: "+970599000001",
         password: "Strong1!",
         neighborhoodId: activeNeighborhood.id,
+        termsAccepted: true,
       }),
     ).rejects.toMatchObject({
       statusCode: 400,
@@ -239,6 +256,7 @@ describe("Auth register and login", () => {
       phone: "+970599000001",
       password: "Strong1!",
       neighborhoodId: activeNeighborhood.id,
+      termsAccepted: true,
     });
 
     expect(response.statusCode).toBe(201);
@@ -254,6 +272,8 @@ describe("Auth register and login", () => {
         fullName: "Leenah Alborsh",
         phone: "+970599000001",
         neighborhoodId: activeNeighborhood.id,
+        termsVersion: "1.0.0",
+        privacyVersion: "1.0.0",
       }),
     );
     expect(payload.passwordHash).toMatch(/^\$2/);
@@ -274,6 +294,7 @@ describe("Auth register and login", () => {
       phone: "+970599000000",
       password: "Strong1!",
       neighborhoodId: activeNeighborhood.id,
+      termsAccepted: true,
     });
 
     expect(result.message).toBe("Registration OTP sent successfully");
@@ -302,6 +323,7 @@ describe("Auth register and login", () => {
         phone: "+970599000000",
         password: "Strong1!",
         neighborhoodId: activeNeighborhood.id,
+        termsAccepted: true,
       }),
     ).rejects.toMatchObject({
       statusCode: 409,
@@ -476,6 +498,14 @@ describe("Auth verify OTP", () => {
       }),
       mockTx,
     );
+    expect(legalRepository.create).toHaveBeenCalledWith(
+      {
+        userId: activeUser.id,
+        termsVersion: "1.0.0",
+        privacyVersion: "1.0.0",
+      },
+      mockTx,
+    );
 
     const storedRefreshToken =
       authRepository.createRefreshToken.mock.calls[0][0];
@@ -511,6 +541,55 @@ describe("Auth verify OTP", () => {
     expect(authRepository.createUser).not.toHaveBeenCalled();
     expect(authRepository.createWallet).not.toHaveBeenCalled();
     expect(authRepository.createRefreshToken).not.toHaveBeenCalled();
+  });
+
+  test("OTP verification rejects legacy pending data without legal versions", async () => {
+    const otpHash = await bcrypt.hash("123456", 10);
+    authRepository.findLatestOtpByPhone.mockResolvedValue({
+      id: "otp-without-consent",
+      phone: "+970599000004",
+      otpHash,
+      attemptCount: 0,
+      maxAttempts: 5,
+      expiresAt: new Date(Date.now() + 60 * 1000),
+      verifiedAt: null,
+    });
+    authRepository.findPendingRegistrationByPhone.mockResolvedValue({
+      ...pendingRegistration,
+      phone: "+970599000004",
+      termsVersion: null,
+      privacyVersion: null,
+    });
+
+    await expect(
+      authService.verifyOtp("+970599000004", "123456"),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: "Legal acceptance is missing. Please restart registration.",
+    });
+    expect(authRepository.claimOtpVerification).not.toHaveBeenCalled();
+    expect(authRepository.createVerifiedUserFromPending).not.toHaveBeenCalled();
+    expect(legalRepository.create).not.toHaveBeenCalled();
+  });
+
+  test("register requires explicit legal consent", async () => {
+    const missing = await request(app).post("/api/v1/auth/register").send({
+      fullName: "Leenah Alborsh",
+      phone: "+970599000001",
+      password: "Strong1!",
+      neighborhoodId: activeNeighborhood.id,
+    });
+    const declined = await request(app).post("/api/v1/auth/register").send({
+      fullName: "Leenah Alborsh",
+      phone: "+970599000001",
+      password: "Strong1!",
+      neighborhoodId: activeNeighborhood.id,
+      termsAccepted: false,
+    });
+
+    expect(missing.statusCode).toBe(400);
+    expect(declined.statusCode).toBe(400);
+    expect(authRepository.upsertPendingRegistration).not.toHaveBeenCalled();
   });
 
   test("verification cannot create a duplicate existing user", async () => {
@@ -712,7 +791,9 @@ describe("Auth forgot and reset password", () => {
       verifiedAt: null,
     });
     authRepository.updateUserPassword.mockResolvedValue({});
-    authRepository.revokeAllRefreshTokensForUser.mockResolvedValue({ count: 2 });
+    authRepository.revokeAllRefreshTokensForUser.mockResolvedValue({
+      count: 2,
+    });
 
     const response = await request(app)
       .post("/api/v1/auth/reset-password")

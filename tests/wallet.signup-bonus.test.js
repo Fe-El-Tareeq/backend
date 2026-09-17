@@ -2,9 +2,11 @@ process.env.NODE_ENV = "test";
 
 jest.mock("../src/features/auth/auth.repository");
 jest.mock("../src/features/wallet/wallet.repository");
+jest.mock("../src/features/legal/legal.repository");
 
 const authRepository = require("../src/features/auth/auth.repository");
 const walletRepository = require("../src/features/wallet/wallet.repository");
+const legalRepository = require("../src/features/legal/legal.repository");
 const authService = require("../src/features/auth/auth.service");
 
 describe("Signup Bonus Wallet Tests", () => {
@@ -48,6 +50,8 @@ describe("Signup Bonus Wallet Tests", () => {
       fullName: "Test User",
       passwordHash: "$2b$10$hashed",
       neighborhoodId: "650e8400-e29b-41d4-a716-446655440000",
+      termsVersion: "1.0.0",
+      privacyVersion: "1.0.0",
       expiresAt: new Date(Date.now() + 5 * 60 * 1000),
     };
 
@@ -75,6 +79,13 @@ describe("Signup Bonus Wallet Tests", () => {
     authRepository.createRefreshToken.mockResolvedValue({
       id: "refresh-1",
     });
+    legalRepository.find.mockResolvedValue(null);
+    legalRepository.create.mockResolvedValue({
+      id: "legal-acceptance-1",
+      userId: user.id,
+      termsVersion: pending.termsVersion,
+      privacyVersion: pending.privacyVersion,
+    });
 
     await authService.verifyOtp("+970599000000", "123456");
 
@@ -100,6 +111,14 @@ describe("Signup Bonus Wallet Tests", () => {
         idempotencyKey: "signup-bonus:user-1",
         description: "Initial signup bonus",
       }),
+      expect.anything(),
+    );
+    expect(legalRepository.create).toHaveBeenCalledWith(
+      {
+        userId: user.id,
+        termsVersion: "1.0.0",
+        privacyVersion: "1.0.0",
+      },
       expect.anything(),
     );
   });

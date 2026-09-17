@@ -3,24 +3,21 @@ const ApiResponse = require("../../utils/ApiResponse");
 
 const register = async (req, res, next) => {
   try {
-    const {
-      fullName,
-      phone,
-      password,
-      neighborhoodId,
-    } = req.validatedData.body;
+    const { fullName, phone, password, neighborhoodId, termsAccepted } =
+      req.validatedData.body;
 
     const result = await authService.register({
       fullName,
       phone,
       password,
       neighborhoodId,
+      termsAccepted,
     });
 
     return res.status(201).json(
       new ApiResponse(201, result.message, {
         expiresInMinutes: result.expiresInMinutes,
-      })
+      }),
     );
   } catch (error) {
     next(error);
@@ -41,7 +38,7 @@ const login = async (req, res, next) => {
         tokenType: result.tokenType,
         accessTokenExpiresIn: result.accessTokenExpiresIn,
         refreshTokenExpiresIn: result.refreshTokenExpiresIn,
-      })
+      }),
     );
   } catch (error) {
     next(error);
@@ -57,7 +54,7 @@ const requestOtp = async (req, res, next) => {
     return res.status(200).json(
       new ApiResponse(200, result.message, {
         expiresInMinutes: result.expiresInMinutes,
-      })
+      }),
     );
   } catch (error) {
     next(error);
@@ -78,7 +75,7 @@ const verifyOtp = async (req, res, next) => {
         tokenType: result.tokenType,
         accessTokenExpiresIn: result.accessTokenExpiresIn,
         refreshTokenExpiresIn: result.refreshTokenExpiresIn,
-      })
+      }),
     );
   } catch (error) {
     next(error);
@@ -98,7 +95,7 @@ const refresh = async (req, res, next) => {
         tokenType: result.tokenType,
         accessTokenExpiresIn: result.accessTokenExpiresIn,
         refreshTokenExpiresIn: result.refreshTokenExpiresIn,
-      })
+      }),
     );
   } catch (error) {
     next(error);

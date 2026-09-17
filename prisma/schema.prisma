@@ -228,10 +228,10 @@ model Neighborhood {
   isActive    Boolean  @default(true) @map("is_active")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  users              User[]
-  originErrands      Errand[] @relation("ErrandOriginNeighborhood")
-  destinationErrands Errand[] @relation("ErrandDestinationNeighborhood")
-  originTrips        Trip[]   @relation("TripOriginNeighborhood")
+  users                User[]
+  originErrands        Errand[]              @relation("ErrandOriginNeighborhood")
+  destinationErrands   Errand[]              @relation("ErrandDestinationNeighborhood")
+  originTrips          Trip[]                @relation("TripOriginNeighborhood")
   destinationTrips     Trip[]                @relation("TripDestinationNeighborhood")
   pendingRegistrations PendingRegistration[]
 
@@ -240,22 +240,22 @@ model Neighborhood {
 }
 
 model User {
-  id               String     @id @default(uuid()) @db.Uuid
-  phone            String     @unique @db.VarChar(20)
-  passwordHash     String?    @map("password_hash") @db.VarChar(255)
-  fullName         String?    @map("full_name") @db.VarChar(100)
-  profileImageUrl  String?    @map("profile_image_url") @db.VarChar(500)
-  profileImagePath String?    @map("profile_image_path") @db.VarChar(255)
-  role             UserRole   @default(USER)
-  trustScore       Decimal    @default(70.00) @map("trust_score") @db.Decimal(5, 2)
-  neighborhoodId   String?    @map("neighborhood_id") @db.Uuid
-  profileCompleted Boolean    @default(false) @map("profile_completed")
-  phoneVerifiedAt  DateTime?  @map("phone_verified_at") @db.Timestamptz(6)
-  status           UserStatus @default(ACTIVE)
-  deletionRequestedAt DateTime? @map("deletion_requested_at") @db.Timestamptz(6)
-  deletionScheduledAt DateTime? @map("deletion_scheduled_at") @db.Timestamptz(6)
-  createdAt        DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                  String     @id @default(uuid()) @db.Uuid
+  phone               String     @unique @db.VarChar(20)
+  passwordHash        String?    @map("password_hash") @db.VarChar(255)
+  fullName            String?    @map("full_name") @db.VarChar(100)
+  profileImageUrl     String?    @map("profile_image_url") @db.VarChar(500)
+  profileImagePath    String?    @map("profile_image_path") @db.VarChar(255)
+  role                UserRole   @default(USER)
+  trustScore          Decimal    @default(70.00) @map("trust_score") @db.Decimal(5, 2)
+  neighborhoodId      String?    @map("neighborhood_id") @db.Uuid
+  profileCompleted    Boolean    @default(false) @map("profile_completed")
+  phoneVerifiedAt     DateTime?  @map("phone_verified_at") @db.Timestamptz(6)
+  status              UserStatus @default(ACTIVE)
+  deletionRequestedAt DateTime?  @map("deletion_requested_at") @db.Timestamptz(6)
+  deletionScheduledAt DateTime?  @map("deletion_scheduled_at") @db.Timestamptz(6)
+  createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   neighborhood Neighborhood? @relation(fields: [neighborhoodId], references: [id])
 
@@ -424,6 +424,8 @@ model PendingRegistration {
   fullName       String   @map("full_name") @db.VarChar(100)
   passwordHash   String   @map("password_hash") @db.VarChar(255)
   neighborhoodId String   @map("neighborhood_id") @db.Uuid
+  termsVersion   String?  @map("terms_version") @db.VarChar(30)
+  privacyVersion String?  @map("privacy_version") @db.VarChar(30)
   expiresAt      DateTime @map("expires_at") @db.Timestamptz(6)
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
