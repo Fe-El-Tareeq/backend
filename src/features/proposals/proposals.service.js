@@ -1,5 +1,6 @@
 const ApiError = require("../../utils/ApiError");
 const assignmentService = require("../assignments/assignments.service");
+const notificationService = require("../notifications/notifications.service");
 const repository = require("./proposals.repository");
 
 const displayUser = (user) => {
@@ -100,6 +101,16 @@ const createProposal = async (userId, payload) => {
         },
         tx,
       );
+      await notificationService.templates.newProposal(
+        {
+          recipientId: receiverIdFor(proposal),
+          proposalId: proposal.id,
+          errandId: proposal.errandId,
+          tripId: proposal.tripId,
+          proposalType: proposal.type,
+        },
+        tx,
+      );
       return { created: true, proposal: serialize(proposal) };
     });
   } catch (error) {
@@ -114,15 +125,23 @@ const createProposal = async (userId, payload) => {
 };
 
 const buildSummary = (rows) => {
-  const counts = { PENDING: 0, ACCEPTED: 0, REJECTED: 0 };
+  const counts = {
+    PENDING: 0,
+    ACCEPTED: 0,
+    REJECTED: 0,
+    WITHDRAWN: 0,
+    EXPIRED: 0,
+  };
   rows.forEach((row) => {
     if (counts[row.status] !== undefined) counts[row.status] = row._count._all;
   });
   return {
-    total: counts.PENDING + counts.ACCEPTED + counts.REJECTED,
+    total: Object.values(counts).reduce((sum, count) => sum + count, 0),
     pending: counts.PENDING,
     accepted: counts.ACCEPTED,
     rejected: counts.REJECTED,
+    withdrawn: counts.WITHDRAWN,
+    expired: counts.EXPIRED,
   };
 };
 
@@ -158,10 +177,7 @@ const listForResource = async ({
       ? { errandId: resourceId, type: "TRAVELER_OFFER" }
       : { tripId: resourceId, type: "REQUESTER_REQUEST" };
   await repository.expirePending(resourceWhere, new Date());
-  const visibleWhere = {
-    ...resourceWhere,
-    status: { in: ["PENDING", "ACCEPTED", "REJECTED"] },
-  };
+  const visibleWhere = resourceWhere;
   const listWhere = status ? { ...resourceWhere, status } : visibleWhere;
   const [proposals, total, statusRows] = await Promise.all([
     repository.list({ where: listWhere, skip, take }),
@@ -185,6 +201,83 @@ const listErrandProposals = (userId, errandId, filters) =>
 const listTripProposals = (userId, tripId, filters) =>
   listForResource({ userId, resource: "trip", resourceId: tripId, ...filters });
 
+const listUserProposals = async (userId, filters, direction) => {
+  const baseWhere =
+    direction === "sent"
+      ? { initiatedById: userId }
+      : {
+          OR: [
+            { type: "TRAVELER_OFFER", errand: { requesterId: userId } },
+            { type: "REQUESTER_REQUEST", trip: { travelerId: userId } },
+          ],
+        };
+  await repository.expirePending(baseWhere, new Date());
+  const listWhere = {
+    ...baseWhere,
+    ...(filters.status ? { status: filters.status } : {}),
+    ...(filters.unread === true ? { readAt: null } : {}),
+    ...(filters.unread === false ? { readAt: { not: null } } : {}),
+  };
+  const [proposals, total, statusRows] = await Promise.all([
+    repository.list({
+      where: listWhere,
+      skip: filters.skip,
+      take: filters.take,
+    }),
+    repository.count(listWhere),
+    repository.countByStatus(baseWhere),
+  ]);
+  return {
+    proposals: proposals.map(serialize),
+    summary: buildSummary(statusRows),
+    pagination: { skip: filters.skip, take: filters.take, total },
+  };
+};
+
+const listInbox = (userId, filters) =>
+  listUserProposals(userId, filters, "inbox");
+const listSent = (userId, filters) =>
+  listUserProposals(userId, filters, "sent");
+
+const markProposalRead = (userId, proposalId) =>
+  repository.runTransaction(async (tx) => {
+    const proposal = await repository.lockById(proposalId, tx);
+    if (!proposal) throw new ApiError(404, "Proposal not found.");
+    if (receiverIdFor(proposal) !== userId) {
+      throw new ApiError(403, "Only the proposal receiver can mark it read.");
+    }
+    if (proposal.readAt) return serialize(proposal);
+    return serialize(await repository.markRead(proposalId, new Date(), tx));
+  });
+
+const withdrawProposal = async (userId, proposalId) => {
+  const result = await repository.runTransaction(async (tx) => {
+    const proposal = await repository.lockById(proposalId, tx);
+    if (!proposal) throw new ApiError(404, "Proposal not found.");
+    if (proposal.initiatedById !== userId) {
+      throw new ApiError(403, "Only the proposal sender can withdraw it.");
+    }
+    if (proposal.status === "WITHDRAWN") return serialize(proposal);
+    if (proposal.status !== "PENDING") {
+      throw new ApiError(409, "Only pending proposals can be withdrawn.");
+    }
+    const now = new Date();
+    if (proposal.expiresAt <= now) {
+      await repository.update(proposalId, { status: "EXPIRED" }, tx);
+      return { expired: true };
+    }
+    return serialize(
+      await repository.update(
+        proposalId,
+        { status: "WITHDRAWN", withdrawnAt: now },
+        tx,
+      ),
+    );
+  });
+  if (result.expired) throw new ApiError(409, "Proposal has expired.");
+  return result;
+};
+
 const acceptProposal = async (userId, proposalId) => {
   try {
     const result = await repository.runTransaction(async (tx) => {
@@ -194,7 +287,10 @@ const acceptProposal = async (userId, proposalId) => {
         throw new ApiError(403, "Only the proposal receiver can accept it.");
       }
       if (proposal.status === "ACCEPTED") {
-        return { proposal: serialize(proposal), assignment: proposal.assignment };
+        return {
+          proposal: serialize(proposal),
+          assignment: proposal.assignment,
+        };
       }
       if (proposal.status !== "PENDING")
         throw new ApiError(409, "Only pending proposals can be accepted.");
@@ -217,9 +313,11 @@ const acceptProposal = async (userId, proposalId) => {
         proposalId,
         {
           status: "ACCEPTED",
-        acceptedAt: now,
-        assignmentId: assignment.id,
+          acceptedAt: now,
+          assignmentId: assignment.id,
           rejectionReason: null,
+          rejectionNote: null,
+          readAt: proposal.readAt || now,
         },
         tx,
       );
@@ -244,7 +342,7 @@ const acceptProposal = async (userId, proposalId) => {
   }
 };
 
-const rejectProposal = async (userId, proposalId) =>
+const rejectProposal = async (userId, proposalId, rejectionNote) =>
   repository.runTransaction(async (tx) => {
     const proposal = await repository.lockById(proposalId, tx);
     if (!proposal) throw new ApiError(404, "Proposal not found.");
@@ -265,7 +363,9 @@ const rejectProposal = async (userId, proposalId) =>
         {
           status: "REJECTED",
           rejectionReason: "REJECTED_BY_OWNER",
+          rejectionNote: rejectionNote?.trim() || null,
           rejectedAt: new Date(),
+          readAt: proposal.readAt || new Date(),
         },
         tx,
       ),
@@ -276,6 +376,10 @@ module.exports = {
   createProposal,
   listErrandProposals,
   listTripProposals,
+  listInbox,
+  listSent,
+  markProposalRead,
+  withdrawProposal,
   acceptProposal,
   rejectProposal,
 };

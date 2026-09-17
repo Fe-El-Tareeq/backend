@@ -35,6 +35,13 @@ enum WeightClass {
   HEAVY
 }
 
+enum ItemSize {
+  ENVELOPE
+  SMALL
+  MEDIUM
+  LARGE
+}
+
 enum ErrandStatus {
   OPEN
   MATCHED
@@ -458,7 +465,8 @@ model Category {
   isActive       Boolean  @default(true) @map("is_active")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  errands Errand[]
+  errands     Errand[]
+  errandItems ErrandItem[]
 
   @@map("categories")
 }
@@ -496,6 +504,7 @@ model Errand {
   voiceNoteUrl              String?      @map("voice_note_url")
   voiceNoteDurationSec      Int?         @map("voice_note_duration_sec")
   status                    ErrandStatus @default(OPEN)
+  cancellationReason        String?      @map("cancellation_reason") @db.VarChar(255)
   neededByTime              DateTime?    @map("needed_by_time") @db.Timestamptz(6)
   expiresAt                 DateTime     @map("expires_at") @db.Timestamptz(6)
   createdAt                 DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -513,6 +522,8 @@ model Errand {
   proposals      Proposal[]
   notifications  Notification[]
   supportReports SupportReport[]
+  items          ErrandItem[]
+  images         ErrandImage[]
 
   @@unique([requesterId, clientRequestKey])
   @@index([requesterId])
@@ -523,6 +534,41 @@ model Errand {
   @@index([neighborhoodId, destinationNeighborhoodId, status, expiresAt])
   @@index([neighborhoodId, status, isUrgent, createdAt])
   @@map("errands")
+}
+
+model ErrandItem {
+  id          String   @id @default(uuid()) @db.Uuid
+  errandId    String   @map("errand_id") @db.Uuid
+  categoryId  String   @map("category_id") @db.Uuid
+  name        String   @db.VarChar(120)
+  description String?
+  quantity    Int
+  size        ItemSize
+  isUrgent    Boolean  @default(false) @map("is_urgent")
+  itemNote    String?  @map("item_note") @db.VarChar(500)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  errand   Errand   @relation(fields: [errandId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id])
+
+  @@index([errandId])
+  @@index([categoryId])
+  @@map("errand_items")
+}
+
+model ErrandImage {
+  id        String   @id @default(uuid()) @db.Uuid
+  errandId  String   @map("errand_id") @db.Uuid
+  imageUrl  String   @map("image_url")
+  position  Int
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  errand Errand @relation(fields: [errandId], references: [id], onDelete: Cascade)
+
+  @@unique([errandId, position])
+  @@index([errandId])
+  @@map("errand_images")
 }
 
 model Trip {
@@ -608,8 +654,11 @@ model Proposal {
   status           ProposalStatus           @default(PENDING)
   message          String?                  @db.VarChar(500)
   rejectionReason  ProposalRejectionReason? @map("rejection_reason")
+  rejectionNote    String?                  @map("rejection_note") @db.VarChar(255)
+  readAt           DateTime?                @map("read_at") @db.Timestamptz(6)
   acceptedAt       DateTime?                @map("accepted_at") @db.Timestamptz(6)
   rejectedAt       DateTime?                @map("rejected_at") @db.Timestamptz(6)
+  withdrawnAt      DateTime?                @map("withdrawn_at") @db.Timestamptz(6)
   expiresAt        DateTime                 @map("expires_at") @db.Timestamptz(6)
   createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -624,7 +673,9 @@ model Proposal {
   @@index([errandId, status, createdAt])
   @@index([tripId, status, createdAt])
   @@index([initiatedById])
+  @@index([initiatedById, status, createdAt])
   @@index([expiresAt, status])
+  @@index([readAt, status])
   @@map("proposals")
 }
 

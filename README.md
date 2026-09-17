@@ -1,5 +1,15 @@
 # Backend
 
+## Multi-Item Errands
+
+- `POST /api/v1/errands` accepts 1-20 entries in `items`. Each item stores its category, name, optional description, quantity, size, urgency, and optional item note in `errand_items`.
+- A request may also include up to 5 optional ordered `imageUrls`. Images belong to the overall errand, are stored in `errand_images`, and are returned in display order. File upload remains the responsibility of the configured storage service; the API stores validated URLs.
+- The errand and all items are created atomically with the existing one-token posting debit. `clientRequestKey` still makes retries idempotent and prevents duplicate charges.
+- Existing aggregate errand fields remain as compatibility snapshots for matching and assignment capacity. The largest item determines the aggregate weight class, and any urgent item makes the errand urgent.
+- `GET /api/v1/errands` supports `originCity`, `originNeighborhoodId`, `destinationCity`, and `destinationNeighborhoodId`. The old `neighborhoodId` query remains as a deprecated origin alias.
+- `POST /api/v1/errands/:id/cancel` requires `cancellationReason` and stores it with the cancelled errand.
+- The migration backfills each legacy errand that has a category into one `errand_items` row; it does not delete existing errand data.
+
 ## Pending OTP Registration
 
 - Registration is a multi-step flow. `POST /api/v1/auth/register` requires `termsAccepted: true`, snapshots the current terms/privacy versions in an expiring `pending_registrations` row, and stores a hashed OTP without creating a row in `users`.
@@ -11,9 +21,11 @@
 
 - `POST /api/v1/proposals` creates either a traveler offer (`TRAVELER_OFFER`) or a requester trip request (`REQUESTER_REQUEST`). Creating a proposal does not charge tokens or reserve capacity.
 - `GET /api/v1/errands/:id/proposals` is the errand owner's incoming-offers page; `GET /api/v1/trips/:id/proposals` is the trip owner's incoming-requests page.
+- `GET /api/v1/proposals/inbox` combines all received offers and requests, while `GET /api/v1/proposals/sent` lists proposals sent by the current user. Both support status filtering and include related errand items and images.
+- New proposals create an in-app notification. Receivers can mark proposals read with `POST /api/v1/proposals/:id/read`; senders can withdraw pending proposals with `POST /api/v1/proposals/:id/withdraw`.
 - Both inboxes support `PENDING`, `ACCEPTED`, and `REJECTED` filters, pagination, and server-calculated totals for the All, New, Accepted, and Rejected tabs.
 - `POST /api/v1/proposals/:id/accept` can only be called by the receiver. Acceptance atomically creates the assignment, charges the traveler, reserves trip capacity, marks the errand matched, creates chat, and rejects other pending proposals for that errand.
-- `POST /api/v1/proposals/:id/reject` records a manual rejection. Automatic rejection after another offer wins uses `ANOTHER_PROPOSAL_ACCEPTED` and affects only that errand; the traveler remains eligible for other matches.
+- `POST /api/v1/proposals/:id/reject` records a manual rejection and accepts an optional `rejectionNote`. Automatic rejection after another offer wins uses `ANOTHER_PROPOSAL_ACCEPTED` and affects only that errand; the traveler remains eligible for other matches.
 - Trips and errands remain editable while proposals are pending. An accepted assignment locks further edits; the errand is already protected by its `MATCHED` status, and the trip now checks accepted assignment history.
 - Direct assignment creation is no longer exposed publicly. Assignment lifecycle endpoints remain available after proposal acceptance.
 - Chat is created only after acceptance. Proposal creation is idempotent through `clientRequestKey`.

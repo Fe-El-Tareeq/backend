@@ -16,6 +16,11 @@ const proposalInclude = {
       requester: { select: userSelect },
       neighborhood: { select: areaSelect },
       destinationNeighborhood: { select: areaSelect },
+      items: {
+        include: { category: true },
+        orderBy: { createdAt: "asc" },
+      },
+      images: { orderBy: { position: "asc" } },
     },
   },
   trip: {
@@ -107,6 +112,13 @@ const rejectOtherPendingForErrand = (
     },
   });
 
+const markRead = (id, readAt, client = prisma) =>
+  client.proposal.update({
+    where: { id },
+    data: { readAt },
+    include: proposalInclude,
+  });
+
 module.exports = {
   runTransaction,
   findErrand,
@@ -120,4 +132,5 @@ module.exports = {
   lockById,
   update,
   rejectOtherPendingForErrand,
+  markRead,
 };

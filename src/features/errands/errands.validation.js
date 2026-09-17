@@ -1,8 +1,10 @@
 const { z } = require("zod");
 
 const { MAX_VOICE_NOTE_DURATION_SEC } = require("./errands.rules");
+const { cityKeys } = require("../locations/locations.catalog");
 
 const weightClassSchema = z.enum(["LIGHT", "MEDIUM", "HEAVY"]);
+const itemSizeSchema = z.enum(["ENVELOPE", "SMALL", "MEDIUM", "LARGE"]);
 
 const isoFutureDateSchema = z
   .string()
@@ -58,13 +60,65 @@ const baseWriteFields = {
   voiceNoteDurationSec: voiceNoteDurationSchema,
 };
 
+const errandItemSchema = z
+  .object({
+    categoryId: z.string().uuid("Category ID must be a valid UUID."),
+    name: z
+      .string()
+      .trim()
+      .min(2, "Item name must be at least 2 characters.")
+      .max(120, "Item name must not exceed 120 characters."),
+    description: z
+      .string()
+      .trim()
+      .min(2, "Item description must be at least 2 characters.")
+      .max(1000, "Item description must not exceed 1000 characters.")
+      .nullable()
+      .optional(),
+    quantity: z
+      .number()
+      .int("Item quantity must be an integer.")
+      .min(1, "Item quantity must be at least 1."),
+    size: itemSizeSchema,
+    isUrgent: z.boolean().optional(),
+    itemNote: z
+      .string()
+      .trim()
+      .min(1, "Item note must not be empty.")
+      .max(500, "Item note must not exceed 500 characters.")
+      .nullable()
+      .optional(),
+  })
+  .strict();
+
 const createErrandSchema = z.object({
   body: z
     .object({
       clientRequestKey: z
         .string()
         .uuid("Client request key must be a valid UUID."),
-      ...baseWriteFields,
+      pickupNeighborhoodId: baseWriteFields.pickupNeighborhoodId,
+      destinationKeyword: baseWriteFields.destinationKeyword,
+      title: baseWriteFields.title.optional(),
+      itemsDescription: baseWriteFields.itemsDescription.optional(),
+      items: z
+        .array(errandItemSchema)
+        .min(1, "At least one item is required.")
+        .max(20, "An errand cannot contain more than 20 items."),
+      isInterZone: baseWriteFields.isInterZone,
+      neededByTime: baseWriteFields.neededByTime,
+      voiceNoteUrl: baseWriteFields.voiceNoteUrl,
+      voiceNoteDurationSec: baseWriteFields.voiceNoteDurationSec,
+      imageUrls: z
+        .array(
+          z
+            .string()
+            .trim()
+            .url("Each image URL must be a valid URL.")
+            .max(2048, "Each image URL must not exceed 2048 characters."),
+        )
+        .max(5, "An errand cannot contain more than 5 images.")
+        .optional(),
     })
     .strict(),
   params: z.object({}),
@@ -95,10 +149,36 @@ const errandIdSchema = z.object({
   query: z.object({}),
 });
 
+const cancelErrandSchema = z.object({
+  body: z
+    .object({
+      cancellationReason: z
+        .string()
+        .trim()
+        .min(3, "Cancellation reason must be at least 3 characters.")
+        .max(255, "Cancellation reason must not exceed 255 characters."),
+    })
+    .strict(),
+  params: z.object({
+    id: z.string().uuid("Errand ID must be a valid UUID."),
+  }),
+  query: z.object({}),
+});
+
 const listErrandsSchema = z.object({
   body: z.object({}).optional(),
   params: z.object({}),
   query: z.object({
+    originCity: z.enum(cityKeys).optional(),
+    originNeighborhoodId: z
+      .string()
+      .uuid("Origin neighborhood ID must be a valid UUID.")
+      .optional(),
+    destinationCity: z.enum(cityKeys).optional(),
+    destinationNeighborhoodId: z
+      .string()
+      .uuid("Destination neighborhood ID must be a valid UUID.")
+      .optional(),
     neighborhoodId: z
       .string()
       .uuid("Neighborhood ID must be a valid UUID.")
@@ -130,5 +210,6 @@ module.exports = {
   createErrandSchema,
   updateErrandSchema,
   errandIdSchema,
+  cancelErrandSchema,
   listErrandsSchema,
 };

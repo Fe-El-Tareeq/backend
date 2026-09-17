@@ -20,6 +20,7 @@ const errandSelect = {
   voiceNoteUrl: true,
   voiceNoteDurationSec: true,
   status: true,
+  cancellationReason: true,
   neededByTime: true,
   expiresAt: true,
   createdAt: true,
@@ -31,6 +32,35 @@ const errandSelect = {
       priorityWeight: true,
       icon: true,
     },
+  },
+  items: {
+    select: {
+      id: true,
+      categoryId: true,
+      name: true,
+      description: true,
+      quantity: true,
+      size: true,
+      isUrgent: true,
+      itemNote: true,
+      category: {
+        select: {
+          id: true,
+          name: true,
+          priorityWeight: true,
+          icon: true,
+        },
+      },
+    },
+    orderBy: { createdAt: "asc" },
+  },
+  images: {
+    select: {
+      id: true,
+      imageUrl: true,
+      position: true,
+    },
+    orderBy: { position: "asc" },
   },
   neighborhood: {
     select: {
@@ -78,6 +108,21 @@ const findActiveCategoryById = async (categoryId, client = prisma) => {
   return client.category.findFirst({
     where: {
       id: categoryId,
+      isActive: true,
+    },
+    select: {
+      id: true,
+      name: true,
+      priorityWeight: true,
+      icon: true,
+    },
+  });
+};
+
+const findActiveCategoriesByIds = async (categoryIds, client = prisma) => {
+  return client.category.findMany({
+    where: {
+      id: { in: categoryIds },
       isActive: true,
     },
     select: {
@@ -161,6 +206,7 @@ module.exports = {
   runTransaction,
   findRequesterForPosting,
   findActiveCategoryById,
+  findActiveCategoriesByIds,
   findActiveNeighborhoodById,
   findByRequesterAndClientKey,
   createErrand,

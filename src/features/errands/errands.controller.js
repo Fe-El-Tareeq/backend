@@ -3,7 +3,10 @@ const service = require("./errands.service");
 
 const createErrand = async (req, res, next) => {
   try {
-    const errand = await service.createErrand(req.user.id, req.validatedData.body);
+    const errand = await service.createErrand(
+      req.user.id,
+      req.validatedData.body,
+    );
 
     return res
       .status(201)
@@ -58,6 +61,7 @@ const cancelErrand = async (req, res, next) => {
     const errand = await service.cancelErrand(
       req.user.id,
       req.validatedData.params.id,
+      req.validatedData.body.cancellationReason,
     );
 
     return res

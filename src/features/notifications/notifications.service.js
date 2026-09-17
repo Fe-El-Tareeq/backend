@@ -191,6 +191,26 @@ const newChatMessage = (
     client,
   );
 
+const newProposal = (
+  { recipientId, proposalId, errandId, tripId, proposalType },
+  client,
+) =>
+  createInAppNotification(
+    {
+      userId: recipientId,
+      type: NOTIFICATION_TYPES.NEW_PROPOSAL,
+      title: "New proposal",
+      message:
+        proposalType === "TRAVELER_OFFER"
+          ? "A traveler sent an offer for your errand."
+          : "A requester sent a request for your trip.",
+      errandId,
+      metadata: { proposalId, tripId, proposalType },
+      idempotencyKey: `new-proposal:${proposalId}`,
+    },
+    client,
+  );
+
 const paymentSuccess = ({ userId, invoiceId, totalTokens }, client) =>
   createInAppNotification(
     {
@@ -228,6 +248,7 @@ module.exports = {
     assignmentCancelled,
     assignmentStatusChanged,
     newChatMessage,
+    newProposal,
     paymentFailure,
     paymentSuccess,
   },
