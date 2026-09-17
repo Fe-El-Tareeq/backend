@@ -1,16 +1,17 @@
-const { createRepository } = require('../../utils/featureScaffold');
-const prisma = require('../../config/prisma');
-const { FEATURE_NAME } = require('./locations.constants');
+const { createRepository } = require("../../utils/featureScaffold");
+const prisma = require("../../config/prisma");
+const { FEATURE_NAME } = require("./locations.constants");
 
 const scaffoldRepository = createRepository(FEATURE_NAME);
 
-const findActiveNeighborhoods = async () => {
+const findActiveNeighborhoods = async ({ governorate } = {}) => {
   return prisma.neighborhood.findMany({
     where: {
       isActive: true,
       key: {
         not: null,
       },
+      ...(governorate ? { governorate } : {}),
     },
     select: {
       id: true,
@@ -20,10 +21,10 @@ const findActiveNeighborhoods = async () => {
     },
     orderBy: [
       {
-        governorate: 'asc',
+        governorate: "asc",
       },
       {
-        name: 'asc',
+        name: "asc",
       },
     ],
   });

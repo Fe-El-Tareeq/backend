@@ -24,8 +24,8 @@ describe("Delivery pricing rules", () => {
   });
 
   test("uses configured cross-zone prices symmetrically", () => {
-    expect(service.calculateByAreaKeys("AN_NASER", "DEIR_AL_BALAH")).toMatchObject({ deliveryFeeNis: 10, pricingRule: "ZONE_RATE" });
-    expect(service.calculateByAreaKeys("DEIR_AL_BALAH", "AN_NASER")).toMatchObject({ deliveryFeeNis: 10, pricingRule: "ZONE_RATE" });
+    expect(service.calculateByAreaKeys("AN_NASER", "AL_ZAHRA")).toMatchObject({ deliveryFeeNis: 10, pricingRule: "ZONE_RATE" });
+    expect(service.calculateByAreaKeys("AL_ZAHRA", "AN_NASER")).toMatchObject({ deliveryFeeNis: 10, pricingRule: "ZONE_RATE" });
   });
 
   test("rejects unknown areas", () => {

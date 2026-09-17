@@ -400,6 +400,27 @@ describe("Auth register and login", () => {
 });
 
 describe("Locations neighborhoods", () => {
+  test("returns the supported cities without authentication", async () => {
+    const response = await request(app).get("/api/v1/locations/cities");
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.cities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "GAZA_CITY",
+          nameAr: "مدينة غزة",
+          nameEn: "Gaza City",
+        }),
+        expect.objectContaining({
+          key: "RAFAH",
+          nameAr: "رفح",
+          nameEn: "Rafah",
+        }),
+      ]),
+    );
+  });
+
   test("returns active neighborhoods without authentication", async () => {
     const response = await request(app).get("/api/v1/locations/neighborhoods");
 
@@ -422,6 +443,33 @@ describe("Locations neighborhoods", () => {
         },
       }),
     );
+  });
+
+  test("filters active neighborhoods by city", async () => {
+    const response = await request(app).get(
+      "/api/v1/locations/neighborhoods?city=GAZA_CITY",
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(prisma.neighborhood.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          isActive: true,
+          key: { not: null },
+          governorate: "مدينة غزة",
+        },
+      }),
+    );
+  });
+
+  test("rejects an unsupported city", async () => {
+    const response = await request(app).get(
+      "/api/v1/locations/neighborhoods?city=UNKNOWN_CITY",
+    );
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.success).toBe(false);
+    expect(prisma.neighborhood.findMany).not.toHaveBeenCalled();
   });
 
   test("does not expose inactive neighborhoods", async () => {

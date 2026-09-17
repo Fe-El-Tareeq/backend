@@ -6,9 +6,89 @@
   },
   "notes": {
     "pricingIncluded": false,
-    "nearbyAreasMeaning": "Project-curated adjacent/immediately-near areas; review against GIS polygons before production."
+    "nearbyAreasMeaning": "Project-curated adjacent/immediately-near areas; review against GIS polygons before production.",
+    "northGazaSourceNote": "North Gaza base communities follow OCHA mapping. Al Saftawi and Al Tawam are included as requested local areas with corroborating geolocation evidence. Beit Hanoun is intentionally excluded.",
+    "zoneModelNote": "Application-facing zones: Deir al Balah is separated from MIDDLE_AREA for product/UI purposes.",
+    "deirAlBalahDetailNote": "Deir al-Balah city is subdivided into locally named neighborhoods/areas for application matching. Area names are based on published locality lists and OCHA mapping; nearbyAreas are project-curated and should be validated against GIS polygons before production."
   },
   "zones": [
+    {
+      "key": "NORTH_GAZA",
+      "nameAr": "شمال غزة",
+      "nameEn": "North Gaza",
+      "areas": [
+        {
+          "key": "BEIT_LAHIA",
+          "nameAr": "بيت لاهيا",
+          "nameEn": "Beit Lahia",
+          "nearbyAreas": [
+            "AS_SIAFA",
+            "JABALIA",
+            "JABALIA_CAMP",
+            "AL_TAWAM",
+            "AL_QARAYA_AL_BADAWIYA"
+          ]
+        },
+        {
+          "key": "JABALIA",
+          "nameAr": "جباليا",
+          "nameEn": "Jabalia",
+          "nearbyAreas": [
+            "BEIT_LAHIA",
+            "JABALIA_CAMP",
+            "MADINAT_AL_AWDA",
+            "AL_TAWAM",
+            "AL_SAFTAWI"
+          ]
+        },
+        {
+          "key": "JABALIA_CAMP",
+          "nameAr": "مخيم جباليا",
+          "nameEn": "Jabalia Camp",
+          "nearbyAreas": [
+            "BEIT_LAHIA",
+            "JABALIA",
+            "MADINAT_AL_AWDA",
+            "AL_SAFTAWI"
+          ]
+        },
+        {
+          "key": "AL_SAFTAWI",
+          "nameAr": "الصفطاوي",
+          "nameEn": "Al Saftawi",
+          "nearbyAreas": [
+            "JABALIA",
+            "JABALIA_CAMP",
+            "AL_TAWAM",
+            "ASH_SHEIKH_RADWAN"
+          ]
+        },
+        {
+          "key": "AL_TAWAM",
+          "nameAr": "التوام",
+          "nameEn": "Al Tawam",
+          "nearbyAreas": ["BEIT_LAHIA", "JABALIA", "AL_SAFTAWI"]
+        },
+        {
+          "key": "AS_SIAFA",
+          "nameAr": "السيفا",
+          "nameEn": "As Siafa",
+          "nearbyAreas": ["BEIT_LAHIA"]
+        },
+        {
+          "key": "MADINAT_AL_AWDA",
+          "nameAr": "مدينة العودة",
+          "nameEn": "Madinat al Awda",
+          "nearbyAreas": ["JABALIA", "JABALIA_CAMP"]
+        },
+        {
+          "key": "AL_QARAYA_AL_BADAWIYA",
+          "nameAr": "القرية البدوية أم النصر",
+          "nameEn": "Al Qaraya al Badawiya (Umm an Naser)",
+          "nearbyAreas": ["BEIT_LAHIA"]
+        }
+      ]
+    },
     {
       "key": "GAZA_CITY",
       "nameAr": "مدينة غزة",
@@ -28,21 +108,13 @@
           "key": "ASH_SHEIKH_RADWAN",
           "nameAr": "الشيخ رضوان",
           "nameEn": "Ash Sheikh Radwan",
-          "nearbyAreas": [
-            "AN_NASER",
-            "AT_TUFFAH",
-            "AD_DARRAJ"
-          ]
+          "nearbyAreas": ["AN_NASER", "AT_TUFFAH", "AD_DARRAJ", "AL_SAFTAWI"]
         },
         {
           "key": "ASH_SHATI_CAMP",
           "nameAr": "مخيم الشاطئ",
           "nameEn": "Ash Shati' Camp",
-          "nearbyAreas": [
-            "AN_NASER",
-            "NORTHERN_RIMAL",
-            "GAZA_HARBOR"
-          ]
+          "nearbyAreas": ["AN_NASER", "NORTHERN_RIMAL", "GAZA_HARBOR"]
         },
         {
           "key": "NORTHERN_RIMAL",
@@ -72,10 +144,7 @@
           "key": "GAZA_HARBOR",
           "nameAr": "ميناء غزة",
           "nameEn": "Gaza Harbor",
-          "nearbyAreas": [
-            "ASH_SHATI_CAMP",
-            "NORTHERN_RIMAL"
-          ]
+          "nearbyAreas": ["ASH_SHATI_CAMP", "NORTHERN_RIMAL"]
         },
         {
           "key": "AD_DARRAJ",
@@ -85,18 +154,15 @@
             "NORTHERN_RIMAL",
             "ASH_SHEIKH_RADWAN",
             "AT_TUFFAH",
-            "OLD_CITY"
+            "OLD_CITY",
+            "ASH_SHUJAIYEH"
           ]
         },
         {
           "key": "AT_TUFFAH",
           "nameAr": "التفاح",
           "nameEn": "At Tuffah",
-          "nearbyAreas": [
-            "ASH_SHEIKH_RADWAN",
-            "AD_DARRAJ",
-            "ASH_SHUJAIYEH"
-          ]
+          "nearbyAreas": ["ASH_SHEIKH_RADWAN", "AD_DARRAJ", "ASH_SHUJAIYEH"]
         },
         {
           "key": "OLD_CITY",
@@ -127,11 +193,7 @@
           "key": "AT_TURUKMAN",
           "nameAr": "التركمان",
           "nameEn": "At Turukman",
-          "nearbyAreas": [
-            "ASH_SHUJAIYEH",
-            "AZ_ZAITOUN",
-            "IJDEEDEH"
-          ]
+          "nearbyAreas": ["ASH_SHUJAIYEH", "AZ_ZAITOUN", "IJDEEDEH"]
         },
         {
           "key": "AZ_ZAITOUN",
@@ -172,20 +234,13 @@
           "key": "ASH_SHEIKH_IJLEEN",
           "nameAr": "الشيخ عجلين",
           "nameEn": "Ash Sheikh 'Ijleen",
-          "nearbyAreas": [
-            "SOUTHERN_RIMAL",
-            "TAL_EL_HAWA"
-          ]
+          "nearbyAreas": ["SOUTHERN_RIMAL", "TAL_EL_HAWA"]
         },
         {
           "key": "IJDEEDEH",
           "nameAr": "الجديدة",
           "nameEn": "Ijdeedeh",
-          "nearbyAreas": [
-            "ASH_SHUJAIYEH",
-            "AT_TURUKMAN",
-            "AZ_ZAITOUN"
-          ]
+          "nearbyAreas": ["ASH_SHUJAIYEH", "AT_TURUKMAN", "AZ_ZAITOUN"]
         }
       ]
     },
@@ -198,40 +253,25 @@
           "key": "AL_ZAHRA",
           "nameAr": "الزهراء",
           "nameEn": "Al Zahra",
-          "nearbyAreas": [
-            "AN_NUSEIRAT_CAMP",
-            "AL_BUREIJ_CAMP"
-          ]
+          "nearbyAreas": ["AN_NUSEIRAT_CAMP", "AL_BUREIJ_CAMP"]
         },
         {
           "key": "AN_NUSEIRAT_CAMP",
           "nameAr": "النصيرات",
           "nameEn": "An Nuseirat Camp",
-          "nearbyAreas": [
-            "AL_ZAHRA",
-            "AL_BUREIJ_CAMP",
-            "AZ_ZAWAYDA"
-          ]
+          "nearbyAreas": ["AL_ZAHRA", "AL_BUREIJ_CAMP", "AZ_ZAWAYDA"]
         },
         {
           "key": "AL_BUREIJ_CAMP",
           "nameAr": "البريج",
           "nameEn": "Al Bureij Camp",
-          "nearbyAreas": [
-            "AL_ZAHRA",
-            "AN_NUSEIRAT_CAMP",
-            "AL_MAGHAZI_CAMP"
-          ]
+          "nearbyAreas": ["AL_ZAHRA", "AN_NUSEIRAT_CAMP", "AL_MAGHAZI_CAMP"]
         },
         {
           "key": "AL_MAGHAZI_CAMP",
           "nameAr": "المغازي",
           "nameEn": "Al Maghazi Camp",
-          "nearbyAreas": [
-            "AL_BUREIJ_CAMP",
-            "AL_MUSADDAR",
-            "AZ_ZAWAYDA"
-          ]
+          "nearbyAreas": ["AL_BUREIJ_CAMP", "AL_MUSADDAR", "AZ_ZAWAYDA"]
         },
         {
           "key": "AL_MUSADDAR",
@@ -240,7 +280,8 @@
           "nearbyAreas": [
             "AL_MAGHAZI_CAMP",
             "AZ_ZAWAYDA",
-            "DEIR_AL_BALAH"
+            "DEIR_AL_BALAH_ABU_ARIF",
+            "WADI_AS_SALQA"
           ]
         },
         {
@@ -251,18 +292,155 @@
             "AN_NUSEIRAT_CAMP",
             "AL_MAGHAZI_CAMP",
             "AL_MUSADDAR",
-            "DEIR_AL_BALAH"
+            "DEIR_AL_BALAH_ABU_ARIF"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DEIR_AL_BALAH",
+      "nameAr": "دير البلح",
+      "nameEn": "Deir al Balah",
+      "areas": [
+        {
+          "key": "DEIR_AL_BALAH_AL_BALAD",
+          "nameAr": "البلد - دير البلح",
+          "nameEn": "Al Balad - Deir al Balah",
+          "nearbyAreas": [
+            "DEIR_AL_BALAH_AL_MAHATTA",
+            "DEIR_AL_BALAH_AL_BARAKA",
+            "DEIR_AL_BALAH_BISHARA",
+            "DEIR_AL_BALAH_QAOUD",
+            "DEIR_AL_BALAH_AL_MAWARIS"
           ]
         },
         {
-          "key": "DEIR_AL_BALAH",
-          "nameAr": "دير البلح",
-          "nameEn": "Deir al Balah",
+          "key": "DEIR_AL_BALAH_AL_MAHATTA",
+          "nameAr": "المحطة",
+          "nameEn": "Al Mahatta",
           "nearbyAreas": [
-            "AZ_ZAWAYDA",
-            "AL_MUSADDAR",
+            "DEIR_AL_BALAH_AL_BALAD",
+            "DEIR_AL_BALAH_AL_BARAKA",
+            "DEIR_AL_BALAH_AL_BASSA",
             "DEIR_AL_BALAH_CAMP",
+            "DEIR_AL_BALAH_AL_MUASKAR"
+          ]
+        },
+        {
+          "key": "DEIR_AL_BALAH_AL_BARAKA",
+          "nameAr": "البركة",
+          "nameEn": "Al Baraka",
+          "nearbyAreas": [
+            "DEIR_AL_BALAH_AL_BALAD",
+            "DEIR_AL_BALAH_AL_MAHATTA",
+            "DEIR_AL_BALAH_BISHARA",
+            "DEIR_AL_BALAH_AL_SALAM"
+          ]
+        },
+        {
+          "key": "DEIR_AL_BALAH_AL_BASSA",
+          "nameAr": "البصة",
+          "nameEn": "Al Bassa",
+          "nearbyAreas": [
+            "DEIR_AL_BALAH_AL_MAHATTA",
+            "DEIR_AL_BALAH_CAMP",
+            "DEIR_AL_BALAH_AL_MUASKAR"
+          ]
+        },
+        {
+          "key": "DEIR_AL_BALAH_HAKR_AL_JAME",
+          "nameAr": "حكر الجامع",
+          "nameEn": "Hakr al Jame",
+          "nearbyAreas": [
+            "DEIR_AL_BALAH_ABU_ARIF",
+            "DEIR_AL_BALAH_AL_SALAM",
+            "DEIR_AL_BALAH_AL_MASHAALA"
+          ]
+        },
+        {
+          "key": "DEIR_AL_BALAH_AL_MUASKAR",
+          "nameAr": "المعسكر",
+          "nameEn": "Al Muaskar",
+          "nearbyAreas": [
+            "DEIR_AL_BALAH_CAMP",
+            "DEIR_AL_BALAH_AL_BASSA",
+            "DEIR_AL_BALAH_AL_MAHATTA"
+          ]
+        },
+        {
+          "key": "DEIR_AL_BALAH_BISHARA",
+          "nameAr": "حي بشارة",
+          "nameEn": "Bishara",
+          "nearbyAreas": [
+            "DEIR_AL_BALAH_AL_BALAD",
+            "DEIR_AL_BALAH_AL_BARAKA",
+            "DEIR_AL_BALAH_QAOUD",
+            "DEIR_AL_BALAH_AL_MAWARIS"
+          ]
+        },
+        {
+          "key": "DEIR_AL_BALAH_QAOUD",
+          "nameAr": "حي قاعود",
+          "nameEn": "Qaoud",
+          "nearbyAreas": [
+            "DEIR_AL_BALAH_AL_BALAD",
+            "DEIR_AL_BALAH_BISHARA",
+            "DEIR_AL_BALAH_AL_SALAM"
+          ]
+        },
+        {
+          "key": "DEIR_AL_BALAH_AL_SALAM",
+          "nameAr": "حي السلام",
+          "nameEn": "Al Salam",
+          "nearbyAreas": [
+            "DEIR_AL_BALAH_AL_BARAKA",
+            "DEIR_AL_BALAH_QAOUD",
+            "DEIR_AL_BALAH_HAKR_AL_JAME",
+            "DEIR_AL_BALAH_AL_MASHAALA",
+            "DEIR_AL_BALAH_ABU_ARIF"
+          ]
+        },
+        {
+          "key": "DEIR_AL_BALAH_AL_MASHAALA",
+          "nameAr": "حي المشاعلة",
+          "nameEn": "Al Mashaala",
+          "nearbyAreas": [
+            "DEIR_AL_BALAH_AL_SALAM",
+            "DEIR_AL_BALAH_HAKR_AL_JAME",
+            "DEIR_AL_BALAH_AL_MATAYIN",
             "WADI_AS_SALQA"
+          ]
+        },
+        {
+          "key": "DEIR_AL_BALAH_AL_MAWARIS",
+          "nameAr": "حي الموارس",
+          "nameEn": "Al Mawaris",
+          "nearbyAreas": [
+            "DEIR_AL_BALAH_AL_BALAD",
+            "DEIR_AL_BALAH_BISHARA",
+            "DEIR_AL_BALAH_AL_MATAYIN"
+          ]
+        },
+        {
+          "key": "DEIR_AL_BALAH_AL_MATAYIN",
+          "nameAr": "حي المطاين",
+          "nameEn": "Al Matayin",
+          "nearbyAreas": [
+            "DEIR_AL_BALAH_AL_MAWARIS",
+            "DEIR_AL_BALAH_AL_MASHAALA",
+            "WADI_AS_SALQA"
+          ]
+        },
+        {
+          "key": "DEIR_AL_BALAH_ABU_ARIF",
+          "nameAr": "أبو عريف",
+          "nameEn": "Abu Arif",
+          "nearbyAreas": [
+            "DEIR_AL_BALAH_HAKR_AL_JAME",
+            "DEIR_AL_BALAH_AL_SALAM",
+            "WADI_AS_SALQA",
+            "AL_MUSADDAR",
+            "AZ_ZAWAYDA"
           ]
         },
         {
@@ -270,7 +448,9 @@
           "nameAr": "مخيم دير البلح",
           "nameEn": "Deir al Balah Camp",
           "nearbyAreas": [
-            "DEIR_AL_BALAH",
+            "DEIR_AL_BALAH_AL_MAHATTA",
+            "DEIR_AL_BALAH_AL_BASSA",
+            "DEIR_AL_BALAH_AL_MUASKAR",
             "WADI_AS_SALQA"
           ]
         },
@@ -279,8 +459,11 @@
           "nameAr": "وادي السلقا",
           "nameEn": "Wadi as Salqa",
           "nearbyAreas": [
-            "DEIR_AL_BALAH",
             "DEIR_AL_BALAH_CAMP",
+            "DEIR_AL_BALAH_AL_MASHAALA",
+            "DEIR_AL_BALAH_AL_MATAYIN",
+            "DEIR_AL_BALAH_ABU_ARIF",
+            "AL_MUSADDAR",
             "AL_QARARA"
           ]
         }
@@ -295,11 +478,7 @@
           "key": "AL_QARARA",
           "nameAr": "القرارة",
           "nameEn": "Al Qarara",
-          "nearbyAreas": [
-            "WADI_AS_SALQA",
-            "KHAN_YUNIS_CITY",
-            "BANI_SUHEILA"
-          ]
+          "nearbyAreas": ["WADI_AS_SALQA", "KHAN_YUNIS_CITY", "BANI_SUHEILA"]
         },
         {
           "key": "KHAN_YUNIS_CITY",
@@ -310,7 +489,8 @@
             "KHAN_YUNIS_CAMP",
             "BANI_SUHEILA",
             "QIZAN_AN_NAJJAR",
-            "AL_MAWASI_KHAN_YUNIS"
+            "AL_MAWASI_KHAN_YUNIS",
+            "AS_SUREIJ"
           ]
         },
         {
@@ -350,11 +530,7 @@
           "key": "ABASAN_AL_JADIDA",
           "nameAr": "عبسان الجديدة",
           "nameEn": "Abasan al Jadida",
-          "nearbyAreas": [
-            "BANI_SUHEILA",
-            "ABASAN_AL_KABIRA",
-            "KHUZAA"
-          ]
+          "nearbyAreas": ["BANI_SUHEILA", "ABASAN_AL_KABIRA", "KHUZAA"]
         },
         {
           "key": "KHUZAA",
@@ -370,11 +546,7 @@
           "key": "AS_SUREIJ",
           "nameAr": "السريج",
           "nameEn": "As Sureij",
-          "nearbyAreas": [
-            "BANI_SUHEILA",
-            "KHAN_YUNIS_CITY",
-            "QAA_AL_QUREIN"
-          ]
+          "nearbyAreas": ["BANI_SUHEILA", "KHAN_YUNIS_CITY", "QAA_AL_QUREIN"]
         },
         {
           "key": "QIZAN_AN_NAJJAR",
@@ -402,11 +574,7 @@
           "key": "QAA_AL_KHARABA",
           "nameAr": "قاع الخرابة",
           "nameEn": "Qa' al Kharaba",
-          "nearbyAreas": [
-            "QIZAN_AN_NAJJAR",
-            "QAA_AL_QUREIN",
-            "AL_FUKHKHARI"
-          ]
+          "nearbyAreas": ["QIZAN_AN_NAJJAR", "QAA_AL_QUREIN", "AL_FUKHKHARI"]
         },
         {
           "key": "AL_FUKHKHARI",
@@ -424,18 +592,62 @@
           "key": "UMM_KAMEIL",
           "nameAr": "أم كميل",
           "nameEn": "Umm Kameil",
-          "nearbyAreas": [
-            "AL_FUKHKHARI"
-          ]
+          "nearbyAreas": ["AL_FUKHKHARI"]
         },
         {
           "key": "AL_MAWASI_KHAN_YUNIS",
           "nameAr": "مواصي خانيونس",
           "nameEn": "Al Mawasi (Khan Yunis)",
-          "nearbyAreas": [
-            "KHAN_YUNIS_CITY",
-            "KHAN_YUNIS_CAMP"
-          ]
+          "nearbyAreas": ["KHAN_YUNIS_CITY", "KHAN_YUNIS_CAMP"]
+        }
+      ]
+    },
+    {
+      "key": "RAFAH",
+      "nameAr": "رفح",
+      "nameEn": "Rafah",
+      "areas": [
+        {
+          "key": "RAFAH_CITY",
+          "nameAr": "مدينة رفح",
+          "nameEn": "Rafah City",
+          "nearbyAreas": ["RAFAH_CAMP", "ASH_SHABURA", "AL_JANINA"]
+        },
+        {
+          "key": "RAFAH_CAMP",
+          "nameAr": "مخيم رفح",
+          "nameEn": "Rafah Camp",
+          "nearbyAreas": ["RAFAH_CITY", "TALL_AS_SULTAN", "ASH_SHABURA"]
+        },
+        {
+          "key": "TALL_AS_SULTAN",
+          "nameAr": "تل السلطان",
+          "nameEn": "Tall as Sultan",
+          "nearbyAreas": ["RAFAH_CAMP", "AL_MAWASI_RAFAH"]
+        },
+        {
+          "key": "ASH_SHABURA",
+          "nameAr": "الشابورة",
+          "nameEn": "Ash Shabura",
+          "nearbyAreas": ["RAFAH_CITY", "RAFAH_CAMP", "AL_JANINA"]
+        },
+        {
+          "key": "AL_JANINA",
+          "nameAr": "الجنينة",
+          "nameEn": "Al Janina",
+          "nearbyAreas": ["RAFAH_CITY", "ASH_SHABURA", "AL_SHUKA"]
+        },
+        {
+          "key": "AL_SHUKA",
+          "nameAr": "الشوكة",
+          "nameEn": "Al Shuka",
+          "nearbyAreas": ["AL_JANINA"]
+        },
+        {
+          "key": "AL_MAWASI_RAFAH",
+          "nameAr": "مواصي رفح",
+          "nameEn": "Al Mawasi (Rafah)",
+          "nearbyAreas": ["TALL_AS_SULTAN"]
         }
       ]
     }

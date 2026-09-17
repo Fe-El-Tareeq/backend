@@ -536,6 +536,30 @@ const swaggerDefinition = {
           },
         },
       },
+      City: {
+        type: "object",
+        required: ["key", "nameAr", "nameEn", "neighborhoodsCount"],
+        properties: {
+          key: {
+            type: "string",
+            example: "GAZA_CITY",
+            description: "Stable city key used by the neighborhoods filter.",
+          },
+          nameAr: { type: "string", example: "مدينة غزة" },
+          nameEn: { type: "string", example: "Gaza City" },
+          neighborhoodsCount: { type: "integer", minimum: 0, example: 16 },
+        },
+      },
+      CityListData: {
+        type: "object",
+        required: ["cities"],
+        properties: {
+          cities: {
+            type: "array",
+            items: { $ref: "#/components/schemas/City" },
+          },
+        },
+      },
       UserProfile: {
         type: "object",
         required: [
@@ -2543,6 +2567,9 @@ const swaggerDefinition = {
       NeighborhoodListResponse: apiResponse({
         $ref: "#/components/schemas/NeighborhoodListData",
       }),
+      CityListResponse: apiResponse({
+        $ref: "#/components/schemas/CityListData",
+      }),
       ErrandResponse: apiResponse({
         type: "object",
         required: ["errand"],
@@ -3158,12 +3185,51 @@ const swaggerDefinition = {
         },
       },
     },
+    "/api/v1/locations/cities": {
+      get: {
+        tags: ["Locations"],
+        summary: "List supported cities",
+        description:
+          "Returns the public city hierarchy used to populate the city selector before loading neighborhoods.",
+        responses: {
+          200: {
+            description: "Supported cities retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/CityListResponse" },
+              },
+            },
+          },
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
     "/api/v1/locations/neighborhoods": {
       get: {
         tags: ["Locations"],
         summary: "List active neighborhoods",
         description:
-          "Returns active seeded neighborhoods for registration. This endpoint is public and excludes inactive neighborhoods.",
+          "Returns active seeded neighborhoods for registration. Optionally filters by a stable city key returned by GET /api/v1/locations/cities. This endpoint is public and excludes inactive neighborhoods.",
+        parameters: [
+          {
+            name: "city",
+            in: "query",
+            required: false,
+            description: "Stable city key returned by the cities endpoint.",
+            schema: {
+              type: "string",
+              enum: [
+                "NORTH_GAZA",
+                "GAZA_CITY",
+                "MIDDLE_AREA",
+                "DEIR_AL_BALAH",
+                "KHAN_YUNIS",
+                "RAFAH",
+              ],
+            },
+          },
+        ],
         responses: {
           200: {
             description: "Active neighborhoods retrieved successfully.",
@@ -3175,6 +3241,7 @@ const swaggerDefinition = {
               },
             },
           },
+          400: errorResponse("Unsupported city key."),
           429: {
             $ref: "#/components/responses/TooManyRequests",
           },
