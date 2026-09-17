@@ -11,6 +11,26 @@ router.post(
   validate(validation.createProposalSchema),
   controller.createProposal,
 );
+router.get(
+  "/inbox",
+  validate(validation.listProposalsSchema),
+  controller.listInbox,
+);
+router.get(
+  "/sent",
+  validate(validation.listProposalsSchema),
+  controller.listSent,
+);
+router.post(
+  "/:id/read",
+  validate(validation.proposalActionSchema),
+  controller.markProposalRead,
+);
+router.post(
+  "/:id/withdraw",
+  validate(validation.proposalActionSchema),
+  controller.withdrawProposal,
+);
 router.post(
   "/:id/accept",
   validate(validation.proposalActionSchema),
@@ -18,7 +38,7 @@ router.post(
 );
 router.post(
   "/:id/reject",
-  validate(validation.proposalActionSchema),
+  validate(validation.rejectProposalSchema),
   controller.rejectProposal,
 );
 

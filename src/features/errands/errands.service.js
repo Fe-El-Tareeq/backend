@@ -7,17 +7,70 @@ const {
   calculatePriorityScore,
   calculateExpiresAt,
 } = require("./errands.rules");
+const { findCityByKey } = require("../locations/locations.catalog");
 
 const EDITABLE_STATUSES = ["OPEN"];
 const CANCELLABLE_STATUSES = ["OPEN"];
 
+const SIZE_TO_WEIGHT_CLASS = {
+  ENVELOPE: "LIGHT",
+  SMALL: "LIGHT",
+  MEDIUM: "MEDIUM",
+  LARGE: "HEAVY",
+};
+
+const WEIGHT_CLASS_RANK = {
+  LIGHT: 1,
+  MEDIUM: 2,
+  HEAVY: 3,
+};
+
+const normalizeItem = (item) => ({
+  categoryId: item.categoryId,
+  name: item.name.trim(),
+  description: item.description?.trim() || null,
+  quantity: item.quantity,
+  size: item.size,
+  isUrgent: item.isUrgent || false,
+  itemNote: item.itemNote?.trim() || null,
+});
+
+const deriveLegacyItemFields = (items) => {
+  const weightClass = items.reduce((largest, item) => {
+    const current = SIZE_TO_WEIGHT_CLASS[item.size];
+    return WEIGHT_CLASS_RANK[current] > WEIGHT_CLASS_RANK[largest]
+      ? current
+      : largest;
+  }, "LIGHT");
+
+  return {
+    categoryId: items[0].categoryId,
+    title: items[0].name,
+    itemsDescription: items
+      .map(
+        (item) =>
+          `${item.quantity}x ${item.name}${item.description ? ` - ${item.description}` : ""}`,
+      )
+      .join("; "),
+    weightClass,
+    isUrgent: items.some((item) => item.isUrgent),
+  };
+};
+
 const normalizePayload = (payload) => {
+  const items = payload.items?.map(normalizeItem);
+  const derivedItemFields = items?.length ? deriveLegacyItemFields(items) : {};
+
   return {
     ...payload,
-    title: payload.title?.trim(),
-    itemsDescription: payload.itemsDescription?.trim(),
+    ...derivedItemFields,
+    items,
+    title: payload.title?.trim() || derivedItemFields.title,
+    itemsDescription:
+      payload.itemsDescription?.trim() || derivedItemFields.itemsDescription,
+    imageUrls: payload.imageUrls?.map((imageUrl) => imageUrl.trim()) || [],
     destinationKeyword: payload.destinationKeyword?.trim(),
-    isUrgent: payload.isUrgent || false,
+    isUrgent: derivedItemFields.isUrgent ?? payload.isUrgent ?? false,
     isInterZone: payload.isInterZone || false,
     neededByTime: payload.neededByTime ? new Date(payload.neededByTime) : null,
     voiceNoteUrl:
@@ -46,6 +99,8 @@ const toComparablePayload = (payload) => {
       : null,
     voiceNoteUrl: normalized.voiceNoteUrl || null,
     voiceNoteDurationSec: normalized.voiceNoteDurationSec,
+    items: normalized.items,
+    imageUrls: normalized.imageUrls,
   };
 };
 
@@ -64,6 +119,8 @@ const existingToComparablePayload = (errand) => {
       : null,
     voiceNoteUrl: errand.voiceNoteUrl || null,
     voiceNoteDurationSec: errand.voiceNoteDurationSec,
+    items: errand.items?.map(({ category, id, ...item }) => item),
+    imageUrls: errand.images?.map((image) => image.imageUrl) || [],
   };
 };
 
@@ -151,15 +208,18 @@ const createErrand = async (requesterId, payload) => {
     const requester = await repository.findRequesterForPosting(requesterId, tx);
     assertRequesterCanPost(requester);
 
-    const category = await repository.findActiveCategoryById(
-      normalized.categoryId,
+    const categoryIds = [
+      ...new Set(normalized.items.map((item) => item.categoryId)),
+    ];
+    const categories = await repository.findActiveCategoriesByIds(
+      categoryIds,
       tx,
     );
 
-    if (!category) {
+    if (categories.length !== categoryIds.length) {
       throw new ApiError(
         400,
-        "Selected category does not exist or is inactive.",
+        "One or more selected categories do not exist or are inactive.",
       );
     }
 
@@ -175,7 +235,12 @@ const createErrand = async (requesterId, payload) => {
       );
     }
 
-    const derivedFields = buildDerivedFields(normalized, category);
+    const priorityCategory = categories.reduce((highest, category) =>
+      Number(category.priorityWeight) > Number(highest.priorityWeight)
+        ? category
+        : highest,
+    );
+    const derivedFields = buildDerivedFields(normalized, priorityCategory);
     const debit = await walletService.debit({
       userId: requesterId,
       amount: ERRAND_POST_TOKEN_COST,
@@ -208,6 +273,18 @@ const createErrand = async (requesterId, payload) => {
         voiceNoteDurationSec: normalized.voiceNoteDurationSec,
         neededByTime: normalized.neededByTime,
         expiresAt: derivedFields.expiresAt,
+        items: {
+          create: normalized.items.map(({ categoryId, ...item }) => ({
+            ...item,
+            category: { connect: { id: categoryId } },
+          })),
+        },
+        images: {
+          create: normalized.imageUrls.map((imageUrl, position) => ({
+            imageUrl,
+            position,
+          })),
+        },
       },
       tx,
     );
@@ -226,13 +303,34 @@ const buildListWhere = async (user, filters) => {
     where.requesterId = user.id;
   }
 
-  if (filters.neighborhoodId) {
-    where.neighborhoodId = filters.neighborhoodId;
-  } else if (user && !filters.mine) {
+  const originNeighborhoodId =
+    filters.originNeighborhoodId || filters.neighborhoodId;
+
+  if (originNeighborhoodId) {
+    where.neighborhoodId = originNeighborhoodId;
+  }
+
+  if (filters.originCity) {
+    where.neighborhood = {
+      governorate: findCityByKey(filters.originCity).nameAr,
+    };
+  }
+
+  if (!originNeighborhoodId && !filters.originCity && user && !filters.mine) {
     const requester = await repository.findRequesterForPosting(user.id);
     if (requester?.neighborhoodId) {
       where.neighborhoodId = requester.neighborhoodId;
     }
+  }
+
+  if (filters.destinationNeighborhoodId) {
+    where.destinationNeighborhoodId = filters.destinationNeighborhoodId;
+  }
+
+  if (filters.destinationCity) {
+    where.destinationNeighborhood = {
+      governorate: findCityByKey(filters.destinationCity).nameAr,
+    };
   }
 
   if (filters.status) {
@@ -245,7 +343,9 @@ const buildListWhere = async (user, filters) => {
   }
 
   if (filters.categoryId) {
-    where.categoryId = filters.categoryId;
+    where.items = {
+      some: { categoryId: filters.categoryId },
+    };
   }
 
   if (filters.urgent !== undefined) {
@@ -354,7 +454,7 @@ const updateErrand = async (userId, id, payload) => {
   });
 };
 
-const cancelErrand = async (userId, id) => {
+const cancelErrand = async (userId, id, cancellationReason) => {
   const existingErrand = await repository.findById(id);
 
   if (!existingErrand) {
@@ -366,6 +466,7 @@ const cancelErrand = async (userId, id) => {
 
   return repository.updateErrand(id, {
     status: "CANCELLED",
+    cancellationReason: cancellationReason.trim(),
   });
 };
 

@@ -45,7 +45,7 @@ router.patch(
 router.post(
   "/:id/cancel",
   requireAuth,
-  validate(validation.errandIdSchema),
+  validate(validation.cancelErrandSchema),
   controller.cancelErrand,
 );
 

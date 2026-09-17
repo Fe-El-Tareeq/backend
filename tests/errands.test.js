@@ -26,6 +26,7 @@ const tx = { tx: true };
 const userId = "550e8400-e29b-41d4-a716-446655440000";
 const otherUserId = "550e8400-e29b-41d4-a716-446655440001";
 const categoryId = "60a32850-bd3f-444a-84b4-c750abf6ecb6";
+const secondCategoryId = "60a32850-bd3f-444a-84b4-c750abf6ecb5";
 const neighborhoodId = "60a32850-bd3f-444a-84b4-c750abf6ecb7";
 const pickupNeighborhoodId = "60a32850-bd3f-444a-84b4-c750abf6ed00";
 const clientRequestKey = "60a32850-bd3f-444a-84b4-c750abf6ecb8";
@@ -59,17 +60,27 @@ const category = {
 
 const createPayload = {
   clientRequestKey,
-  categoryId,
-  title: "Buy medicine",
-  itemsDescription: "One box of Panadol",
   destinationKeyword: "Central Pharmacy",
   pickupNeighborhoodId,
-  weightClass: "LIGHT",
-  isUrgent: false,
+  items: [
+    {
+      categoryId,
+      name: "Panadol",
+      description: "One box of Panadol",
+      quantity: 1,
+      size: "SMALL",
+      isUrgent: false,
+      itemNote: null,
+    },
+  ],
   isInterZone: false,
   neededByTime: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
   voiceNoteUrl: null,
   voiceNoteDurationSec: null,
+  imageUrls: [
+    "https://storage.example.com/errands/photo-1.jpg",
+    "https://storage.example.com/errands/photo-2.jpg",
+  ],
 };
 
 const makeErrand = (overrides = {}) => ({
@@ -79,11 +90,11 @@ const makeErrand = (overrides = {}) => ({
   neighborhoodId,
   destinationNeighborhoodId: pickupNeighborhoodId,
   clientRequestKey,
-  title: createPayload.title,
-  itemsDescription: createPayload.itemsDescription,
+  title: "Panadol",
+  itemsDescription: "1x Panadol - One box of Panadol",
   destinationKeyword: createPayload.destinationKeyword,
-  weightClass: createPayload.weightClass,
-  isUrgent: createPayload.isUrgent,
+  weightClass: "LIGHT",
+  isUrgent: false,
   isInterZone: createPayload.isInterZone,
   priorityScore: 8,
   calculatedFeeNis: 5,
@@ -92,11 +103,24 @@ const makeErrand = (overrides = {}) => ({
   voiceNoteUrl: null,
   voiceNoteDurationSec: null,
   status: "OPEN",
+  cancellationReason: null,
   neededByTime: new Date(createPayload.neededByTime),
   expiresAt: new Date(createPayload.neededByTime),
   createdAt: new Date(),
   updatedAt: new Date(),
   category,
+  items: [
+    {
+      id: "60a32850-bd3f-444a-84b4-c750abf6eca1",
+      ...createPayload.items[0],
+      category,
+    },
+  ],
+  images: createPayload.imageUrls.map((imageUrl, position) => ({
+    id: `60a32850-bd3f-444a-84b4-c750abf6ed1${position}`,
+    imageUrl,
+    position,
+  })),
   neighborhood: {
     id: neighborhoodId,
     name: "Al-Rimal",
@@ -125,6 +149,7 @@ beforeEach(() => {
   repository.findByRequesterAndClientKey.mockResolvedValue(null);
   repository.findRequesterForPosting.mockResolvedValue(requester);
   repository.findActiveCategoryById.mockResolvedValue(category);
+  repository.findActiveCategoriesByIds.mockResolvedValue([category]);
   repository.findActiveNeighborhoodById.mockResolvedValue({
     id: pickupNeighborhoodId,
     key: "ASH_SHUJAIYEH",
@@ -179,6 +204,28 @@ describe("Errands create", () => {
         calculatedFeeNis: 5,
         priorityScore: 8,
         postTokenTransactionId: transactionId,
+        items: {
+          create: [
+            expect.objectContaining({
+              name: "Panadol",
+              quantity: 1,
+              size: "SMALL",
+              category: { connect: { id: categoryId } },
+            }),
+          ],
+        },
+        images: {
+          create: [
+            {
+              imageUrl: "https://storage.example.com/errands/photo-1.jpg",
+              position: 0,
+            },
+            {
+              imageUrl: "https://storage.example.com/errands/photo-2.jpg",
+              position: 1,
+            },
+          ],
+        },
       }),
       tx,
     );
@@ -191,6 +238,47 @@ describe("Errands create", () => {
 
     expect(response.statusCode).toBe(401);
     expect(walletService.debit).not.toHaveBeenCalled();
+  });
+
+  test("creates multiple items atomically and charges only one token", async () => {
+    repository.findActiveCategoriesByIds.mockResolvedValue([
+      category,
+      {
+        id: secondCategoryId,
+        name: "Documents",
+        priorityWeight: 3,
+        icon: "documents",
+      },
+    ]);
+
+    const result = await service.createErrand(userId, {
+      ...createPayload,
+      items: [
+        createPayload.items[0],
+        {
+          categoryId: secondCategoryId,
+          name: "Passport copy",
+          quantity: 2,
+          size: "ENVELOPE",
+          isUrgent: false,
+          itemNote: "Keep dry",
+        },
+      ],
+    });
+
+    expect(result).toBeDefined();
+    expect(walletService.debit).toHaveBeenCalledTimes(1);
+    expect(repository.createErrand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: {
+          create: expect.arrayContaining([
+            expect.objectContaining({ name: "Panadol", quantity: 1 }),
+            expect.objectContaining({ name: "Passport copy", quantity: 2 }),
+          ]),
+        },
+      }),
+      tx,
+    );
   });
 
   test("insufficient wallet balance is rejected and no errand is created", async () => {
@@ -238,13 +326,13 @@ describe("Errands create", () => {
   });
 
   test("invalid or inactive category is rejected", async () => {
-    repository.findActiveCategoryById.mockResolvedValue(null);
+    repository.findActiveCategoriesByIds.mockResolvedValue([]);
 
     await expect(
       service.createErrand(userId, createPayload),
     ).rejects.toMatchObject({
       statusCode: 400,
-      message: "Selected category does not exist or is inactive.",
+      message: "One or more selected categories do not exist or are inactive.",
     });
 
     expect(walletService.debit).not.toHaveBeenCalled();
@@ -266,13 +354,42 @@ describe("Errands create", () => {
     });
   });
 
-  test("invalid weight class is rejected", async () => {
+  test("invalid item size is rejected", async () => {
     const response = await request(app)
       .post("/api/v1/errands")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
         ...createPayload,
-        weightClass: "TINY",
+        items: [{ ...createPayload.items[0], size: "TINY" }],
+      });
+
+    expect(response.statusCode).toBe(400);
+    expect(walletService.debit).not.toHaveBeenCalled();
+  });
+
+  test("item quantity below one is rejected", async () => {
+    const response = await request(app)
+      .post("/api/v1/errands")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        ...createPayload,
+        items: [{ ...createPayload.items[0], quantity: 0 }],
+      });
+
+    expect(response.statusCode).toBe(400);
+    expect(walletService.debit).not.toHaveBeenCalled();
+  });
+
+  test("more than five request images are rejected", async () => {
+    const response = await request(app)
+      .post("/api/v1/errands")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        ...createPayload,
+        imageUrls: Array.from(
+          { length: 6 },
+          (_, index) => `https://storage.example.com/errands/${index}.jpg`,
+        ),
       });
 
     expect(response.statusCode).toBe(400);
@@ -307,8 +424,13 @@ describe("Errands create", () => {
   test("urgent heavy inter-zone fee and priority are calculated", async () => {
     await service.createErrand(userId, {
       ...createPayload,
-      weightClass: "HEAVY",
-      isUrgent: true,
+      items: [
+        {
+          ...createPayload.items[0],
+          size: "LARGE",
+          isUrgent: true,
+        },
+      ],
       isInterZone: true,
     });
 
@@ -354,12 +476,30 @@ describe("Errands list and detail", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           neighborhoodId,
-          categoryId,
+          items: { some: { categoryId } },
           isUrgent: true,
           status: "OPEN",
         }),
         skip: 1,
         take: 5,
+      }),
+    );
+  });
+
+  test("list supports origin and destination city and neighborhood filters", async () => {
+    const response = await request(app).get(
+      `/api/v1/errands?originCity=GAZA_CITY&destinationCity=KHAN_YUNIS&originNeighborhoodId=${neighborhoodId}&destinationNeighborhoodId=${pickupNeighborhoodId}`,
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(repository.listErrands).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          neighborhoodId,
+          neighborhood: { governorate: "مدينة غزة" },
+          destinationNeighborhoodId: pickupNeighborhoodId,
+          destinationNeighborhood: { governorate: "خانيونس" },
+        }),
       }),
     );
   });
@@ -372,7 +512,10 @@ describe("Errands list and detail", () => {
     expect(response.statusCode).toBe(200);
     expect(repository.listErrands).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ requesterId: userId, status: "MATCHED" }),
+        where: expect.objectContaining({
+          requesterId: userId,
+          status: "MATCHED",
+        }),
       }),
     );
   });
@@ -475,11 +618,13 @@ describe("Errands update and cancel", () => {
   test("owner can cancel an OPEN errand", async () => {
     const response = await request(app)
       .post(`/api/v1/errands/${errandId}/cancel`)
-      .set("Authorization", `Bearer ${accessToken}`);
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ cancellationReason: "I no longer need these items." });
 
     expect(response.statusCode).toBe(200);
     expect(repository.updateErrand).toHaveBeenCalledWith(errandId, {
       status: "CANCELLED",
+      cancellationReason: "I no longer need these items.",
     });
   });
 
@@ -488,7 +633,9 @@ describe("Errands update and cancel", () => {
       makeErrand({ requesterId: otherUserId }),
     );
 
-    await expect(service.cancelErrand(userId, errandId)).rejects.toMatchObject({
+    await expect(
+      service.cancelErrand(userId, errandId, "Changed my mind."),
+    ).rejects.toMatchObject({
       statusCode: 403,
     });
   });
@@ -496,9 +643,21 @@ describe("Errands update and cancel", () => {
   test("terminal status cannot be cancelled", async () => {
     repository.findById.mockResolvedValue(makeErrand({ status: "COMPLETED" }));
 
-    await expect(service.cancelErrand(userId, errandId)).rejects.toMatchObject({
+    await expect(
+      service.cancelErrand(userId, errandId, "Changed my mind."),
+    ).rejects.toMatchObject({
       statusCode: 400,
       message: "Errand cannot be cancelled in its current status.",
     });
+  });
+
+  test("cancellation reason is required", async () => {
+    const response = await request(app)
+      .post(`/api/v1/errands/${errandId}/cancel`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({});
+
+    expect(response.statusCode).toBe(400);
+    expect(repository.updateErrand).not.toHaveBeenCalled();
   });
 });

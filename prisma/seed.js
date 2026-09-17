@@ -74,6 +74,30 @@ async function main() {
       isActive: true,
     },
     {
+      name: "Parcel",
+      priorityWeight: 3,
+      icon: "parcel",
+      isActive: true,
+    },
+    {
+      name: "Clothes",
+      priorityWeight: 2,
+      icon: "clothes",
+      isActive: true,
+    },
+    {
+      name: "Household Supplies",
+      priorityWeight: 3,
+      icon: "household-supplies",
+      isActive: true,
+    },
+    {
+      name: "Electronics",
+      priorityWeight: 2,
+      icon: "electronics",
+      isActive: true,
+    },
+    {
       name: "Other",
       priorityWeight: 1,
       icon: "other",

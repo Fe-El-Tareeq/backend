@@ -11,9 +11,13 @@ jest.mock("../src/features/assignments/assignments.service", () => ({
   assertCompatiblePair: jest.fn(),
   createAssignmentInTransaction: jest.fn(),
 }));
+jest.mock("../src/features/notifications/notifications.service", () => ({
+  templates: { newProposal: jest.fn() },
+}));
 
 const repository = require("../src/features/proposals/proposals.repository");
 const assignmentService = require("../src/features/assignments/assignments.service");
+const notificationService = require("../src/features/notifications/notifications.service");
 const service = require("../src/features/proposals/proposals.service");
 
 const requesterId = "550e8400-e29b-41d4-a716-446655440000";
@@ -52,6 +56,9 @@ const proposal = (overrides = {}) => ({
   type: "TRAVELER_OFFER",
   status: "PENDING",
   message: "I can deliver it",
+  rejectionNote: null,
+  readAt: null,
+  withdrawnAt: null,
   expiresAt: future(),
   errand: { ...errand, requester: { id: requesterId } },
   trip: { ...trip, traveler: { id: travelerId, _count: { assignments: 2 } } },
@@ -91,6 +98,14 @@ describe("Proposal creation", () => {
     expect(
       assignmentService.createAssignmentInTransaction,
     ).not.toHaveBeenCalled();
+    expect(notificationService.templates.newProposal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recipientId: requesterId,
+        proposalId,
+        proposalType: "TRAVELER_OFFER",
+      }),
+      tx,
+    );
   });
 
   test("errand owner sends a requester request", async () => {
@@ -138,12 +153,45 @@ describe("Proposal inbox and decisions", () => {
       pending: 4,
       accepted: 0,
       rejected: 1,
+      withdrawn: 0,
+      expired: 0,
     });
     expect(repository.list).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { errandId, type: "TRAVELER_OFFER", status: "PENDING" },
         skip: 0,
         take: 20,
+      }),
+    );
+  });
+
+  test("returns one combined inbox for offers received on errands and trips", async () => {
+    repository.list.mockResolvedValue([proposal()]);
+    repository.count.mockResolvedValue(1);
+    repository.countByStatus.mockResolvedValue([
+      { status: "PENDING", _count: { _all: 1 } },
+    ]);
+    const result = await service.listInbox(requesterId, {
+      unread: true,
+      skip: 0,
+      take: 20,
+    });
+    expect(result.pagination.total).toBe(1);
+    expect(repository.list).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ readAt: null }),
+      }),
+    );
+  });
+
+  test("lists proposals sent by the current user", async () => {
+    repository.list.mockResolvedValue([proposal()]);
+    repository.count.mockResolvedValue(1);
+    repository.countByStatus.mockResolvedValue([]);
+    await service.listSent(travelerId, { skip: 0, take: 20 });
+    expect(repository.list).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ initiatedById: travelerId }),
       }),
     );
   });
@@ -167,13 +215,42 @@ describe("Proposal inbox and decisions", () => {
   });
 
   test("receiver can reject pending proposal with a manual reason", async () => {
-    const result = await service.rejectProposal(requesterId, proposalId);
+    const result = await service.rejectProposal(
+      requesterId,
+      proposalId,
+      "Not suitable now",
+    );
     expect(result.status).toBe("REJECTED");
     expect(repository.update).toHaveBeenCalledWith(
       proposalId,
       expect.objectContaining({
         status: "REJECTED",
         rejectionReason: "REJECTED_BY_OWNER",
+        rejectionNote: "Not suitable now",
+      }),
+      tx,
+    );
+  });
+
+  test("receiver can mark an incoming proposal as read", async () => {
+    repository.markRead.mockResolvedValue(proposal({ readAt: new Date() }));
+    const result = await service.markProposalRead(requesterId, proposalId);
+    expect(result.readAt).toBeInstanceOf(Date);
+    expect(repository.markRead).toHaveBeenCalledWith(
+      proposalId,
+      expect.any(Date),
+      tx,
+    );
+  });
+
+  test("sender can withdraw a pending proposal", async () => {
+    const result = await service.withdrawProposal(travelerId, proposalId);
+    expect(result.status).toBe("WITHDRAWN");
+    expect(repository.update).toHaveBeenCalledWith(
+      proposalId,
+      expect.objectContaining({
+        status: "WITHDRAWN",
+        withdrawnAt: expect.any(Date),
       }),
       tx,
     );

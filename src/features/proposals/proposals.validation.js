@@ -32,8 +32,18 @@ const createProposalSchema = z.object({
 
 const listQuery = z.object({
   status: z.enum(LIST_FILTER_STATUSES).optional(),
+  unread: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
   skip: z.coerce.number().int().min(0).default(0),
   take: z.coerce.number().int().min(1).max(50).default(20),
+});
+
+const listProposalsSchema = z.object({
+  body: emptyBody,
+  params: z.object({}).optional(),
+  query: listQuery,
 });
 
 const listErrandProposalsSchema = z.object({
@@ -52,9 +62,22 @@ const proposalActionSchema = z.object({
   query: emptyQuery,
 });
 
+const rejectProposalSchema = z.object({
+  body: z
+    .object({
+      rejectionNote: z.string().trim().min(3).max(255).optional(),
+    })
+    .strict()
+    .optional(),
+  params: proposalIdParams,
+  query: emptyQuery,
+});
+
 module.exports = {
   createProposalSchema,
   listErrandProposalsSchema,
   listTripProposalsSchema,
+  listProposalsSchema,
   proposalActionSchema,
+  rejectProposalSchema,
 };

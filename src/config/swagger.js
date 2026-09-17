@@ -299,9 +299,12 @@ const swaggerDefinition = {
               "TRIP_CAPACITY_FULL",
             ],
           },
+          rejectionNote: { type: "string", nullable: true, maxLength: 255 },
+          readAt: { type: "string", format: "date-time", nullable: true },
           createdAt: { type: "string", format: "date-time" },
           acceptedAt: { type: "string", format: "date-time", nullable: true },
           rejectedAt: { type: "string", format: "date-time", nullable: true },
+          withdrawnAt: { type: "string", format: "date-time", nullable: true },
         },
       },
       RegisterRequest: {
@@ -690,16 +693,66 @@ const swaggerDefinition = {
           notifications: { $ref: "#/components/schemas/NotificationSettings" },
         },
       },
+      ErrandItemCreateRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["categoryId", "name", "quantity", "size"],
+        properties: {
+          categoryId: {
+            type: "string",
+            format: "uuid",
+            description: "Must reference an active category.",
+          },
+          name: { type: "string", minLength: 2, maxLength: 120 },
+          description: {
+            type: "string",
+            minLength: 2,
+            maxLength: 1000,
+            nullable: true,
+          },
+          quantity: { type: "integer", minimum: 1, example: 2 },
+          size: {
+            type: "string",
+            enum: ["ENVELOPE", "SMALL", "MEDIUM", "LARGE"],
+          },
+          isUrgent: { type: "boolean", default: false },
+          itemNote: {
+            type: "string",
+            maxLength: 500,
+            nullable: true,
+          },
+        },
+      },
+      ErrandItem: {
+        allOf: [
+          { $ref: "#/components/schemas/ErrandItemCreateRequest" },
+          {
+            type: "object",
+            required: ["id"],
+            properties: {
+              id: { type: "string", format: "uuid" },
+              category: { type: "object" },
+            },
+          },
+        ],
+      },
+      ErrandImage: {
+        type: "object",
+        required: ["id", "imageUrl", "position"],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          imageUrl: { type: "string", format: "uri" },
+          position: { type: "integer", minimum: 0 },
+        },
+      },
       ErrandCreateRequest: {
         type: "object",
+        additionalProperties: false,
         required: [
           "clientRequestKey",
-          "categoryId",
           "pickupNeighborhoodId",
-          "title",
-          "itemsDescription",
           "destinationKeyword",
-          "weightClass",
+          "items",
         ],
         properties: {
           clientRequestKey: {
@@ -708,12 +761,6 @@ const swaggerDefinition = {
             description:
               "Offline idempotency key. Reusing the same key with identical data returns the existing errand without another wallet debit.",
             example: "60a32850-bd3f-444a-84b4-c750abf6ecb8",
-          },
-          categoryId: {
-            type: "string",
-            format: "uuid",
-            description: "Must reference an active seeded category.",
-            example: "60a32850-bd3f-444a-84b4-c750abf6ecb6",
           },
           pickupNeighborhoodId: {
             type: "string",
@@ -725,29 +772,29 @@ const swaggerDefinition = {
             type: "string",
             minLength: 3,
             maxLength: 80,
+            description:
+              "Optional display title; defaults to the first item name.",
             example: "Buy medicine",
           },
           itemsDescription: {
             type: "string",
             minLength: 3,
             maxLength: 1000,
+            description:
+              "Optional aggregate description; generated from items when omitted.",
             example: "One box of Panadol",
+          },
+          items: {
+            type: "array",
+            minItems: 1,
+            maxItems: 20,
+            items: { $ref: "#/components/schemas/ErrandItemCreateRequest" },
           },
           destinationKeyword: {
             type: "string",
             minLength: 2,
             maxLength: 150,
             example: "Central Pharmacy",
-          },
-          weightClass: {
-            type: "string",
-            enum: ["LIGHT", "MEDIUM", "HEAVY"],
-            example: "LIGHT",
-          },
-          isUrgent: {
-            type: "boolean",
-            default: false,
-            example: false,
           },
           isInterZone: {
             type: "boolean",
@@ -774,6 +821,21 @@ const swaggerDefinition = {
             maximum: 30,
             nullable: true,
             example: null,
+          },
+          imageUrls: {
+            type: "array",
+            maxItems: 5,
+            description:
+              "Optional ordered images for the overall request. Upload files first, then send their public URLs.",
+            items: {
+              type: "string",
+              format: "uri",
+              maxLength: 2048,
+            },
+            example: [
+              "https://storage.example.com/errands/photo-1.jpg",
+              "https://storage.example.com/errands/photo-2.jpg",
+            ],
           },
         },
       },
@@ -834,6 +896,19 @@ const swaggerDefinition = {
         description:
           "Only the requester can update OPEN errands. requesterId, neighborhoodId, status, token cost, transaction IDs, and createdAt are immutable.",
       },
+      ErrandCancelRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["cancellationReason"],
+        properties: {
+          cancellationReason: {
+            type: "string",
+            minLength: 3,
+            maxLength: 255,
+            example: "The requested items are no longer needed.",
+          },
+        },
+      },
       Errand: {
         type: "object",
         required: [
@@ -851,6 +926,8 @@ const swaggerDefinition = {
           "calculatedFeeNis",
           "postTokenCost",
           "status",
+          "items",
+          "images",
           "expiresAt",
           "createdAt",
           "updatedAt",
@@ -930,6 +1007,19 @@ const swaggerDefinition = {
           status: {
             type: "string",
             enum: ["OPEN", "MATCHED", "CANCELLED", "EXPIRED", "COMPLETED"],
+          },
+          cancellationReason: {
+            type: "string",
+            nullable: true,
+            maxLength: 255,
+          },
+          items: {
+            type: "array",
+            items: { $ref: "#/components/schemas/ErrandItem" },
+          },
+          images: {
+            type: "array",
+            items: { $ref: "#/components/schemas/ErrandImage" },
           },
           neededByTime: {
             type: "string",
@@ -3256,7 +3346,7 @@ const swaggerDefinition = {
         tags: ["Errands"],
         summary: "List neighborhood errands",
         description:
-          "Returns a paginated notice-board list. When authenticated and neighborhoodId is omitted, the user's neighborhood is used. By default only non-expired OPEN errands are returned.",
+          "Returns a paginated notice-board list with origin and destination filtering. When authenticated and no origin filter is supplied, the user's neighborhood is used. By default only non-expired OPEN errands are returned.",
         security: [
           {
             bearerAuth: [],
@@ -3271,6 +3361,52 @@ const swaggerDefinition = {
               type: "string",
               format: "uuid",
             },
+            deprecated: true,
+            description: "Legacy alias for originNeighborhoodId.",
+          },
+          {
+            name: "originCity",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              enum: [
+                "NORTH_GAZA",
+                "GAZA_CITY",
+                "MIDDLE_AREA",
+                "DEIR_AL_BALAH",
+                "KHAN_YUNIS",
+                "RAFAH",
+              ],
+            },
+          },
+          {
+            name: "originNeighborhoodId",
+            in: "query",
+            required: false,
+            schema: { type: "string", format: "uuid" },
+          },
+          {
+            name: "destinationCity",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              enum: [
+                "NORTH_GAZA",
+                "GAZA_CITY",
+                "MIDDLE_AREA",
+                "DEIR_AL_BALAH",
+                "KHAN_YUNIS",
+                "RAFAH",
+              ],
+            },
+          },
+          {
+            name: "destinationNeighborhoodId",
+            in: "query",
+            required: false,
+            schema: { type: "string", format: "uuid" },
           },
           {
             name: "status",
@@ -3346,7 +3482,7 @@ const swaggerDefinition = {
         tags: ["Errands"],
         summary: "Create an errand",
         description:
-          "Creates an OPEN errand in the authenticated user's selected neighborhood and atomically debits 1 posting token with wallet transaction type ERRAND_POST_DEBIT. clientRequestKey makes unstable-network retries safe; conflicting reuse returns 409.",
+          "Creates an OPEN multi-item errand and all errand_items in one database transaction, then atomically debits exactly 1 posting token with wallet transaction type ERRAND_POST_DEBIT. clientRequestKey makes unstable-network retries safe; conflicting reuse returns 409.",
         security: [
           {
             bearerAuth: [],
@@ -3498,7 +3634,7 @@ const swaggerDefinition = {
         tags: ["Errands"],
         summary: "Cancel own open errand",
         description:
-          "Only the requester can cancel an OPEN errand. The record is kept and status is set to CANCELLED. Phase 5 does not refund the posting token.",
+          "Only the requester can cancel an OPEN errand. A cancellation reason is required and stored. The record is kept and status is set to CANCELLED; the posting token is not refunded.",
         security: [
           {
             bearerAuth: [],
@@ -3515,6 +3651,14 @@ const swaggerDefinition = {
             },
           },
         ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/ErrandCancelRequest" },
+            },
+          },
+        },
         responses: {
           200: {
             description: "Errand cancelled successfully.",
@@ -3908,12 +4052,77 @@ const swaggerDefinition = {
         },
       },
     },
+    "/api/v1/proposals/inbox": {
+      get: {
+        tags: ["Proposals"],
+        summary: "List all proposals received by the current user",
+        description:
+          "Unified incoming-offers inbox across the user's errands and trips. Each proposal includes the related errand items and images.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "status",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: ["PENDING", "ACCEPTED", "REJECTED", "WITHDRAWN", "EXPIRED"],
+            },
+          },
+          { name: "unread", in: "query", schema: { type: "boolean" } },
+          {
+            name: "skip",
+            in: "query",
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
+        ],
+        responses: {
+          200: { description: "Proposal inbox retrieved successfully." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/api/v1/proposals/sent": {
+      get: {
+        tags: ["Proposals"],
+        summary: "List proposals sent by the current user",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "status",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: ["PENDING", "ACCEPTED", "REJECTED", "WITHDRAWN", "EXPIRED"],
+            },
+          },
+          {
+            name: "skip",
+            in: "query",
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
+        ],
+        responses: {
+          200: { description: "Sent proposals retrieved successfully." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
     "/api/v1/errands/{id}/proposals": {
       get: {
         tags: ["Proposals"],
         summary: "List incoming offers for my errand",
         description:
-          "Owner-only inbox with optional PENDING, ACCEPTED or REJECTED filtering. Returns summary counts for the All, New, Accepted and Rejected UI tabs plus pagination.",
+          "Owner-only inbox with filtering for every proposal status. Returns summary counts and pagination.",
         security: [{ bearerAuth: [] }],
         parameters: [
           {
@@ -3927,7 +4136,7 @@ const swaggerDefinition = {
             in: "query",
             schema: {
               type: "string",
-              enum: ["PENDING", "ACCEPTED", "REJECTED"],
+              enum: ["PENDING", "ACCEPTED", "REJECTED", "WITHDRAWN", "EXPIRED"],
             },
           },
           {
@@ -3960,7 +4169,7 @@ const swaggerDefinition = {
         tags: ["Proposals"],
         summary: "List incoming requests for my trip",
         description:
-          "Owner-only inbox with optional PENDING, ACCEPTED or REJECTED filtering and summary counts for the design tabs.",
+          "Owner-only inbox with filtering for every proposal status and summary counts for the design tabs.",
         security: [{ bearerAuth: [] }],
         parameters: [
           {
@@ -3974,7 +4183,7 @@ const swaggerDefinition = {
             in: "query",
             schema: {
               type: "string",
-              enum: ["PENDING", "ACCEPTED", "REJECTED"],
+              enum: ["PENDING", "ACCEPTED", "REJECTED", "WITHDRAWN", "EXPIRED"],
             },
           },
           {
@@ -4046,12 +4255,71 @@ const swaggerDefinition = {
             schema: { type: "string", format: "uuid" },
           },
         ],
+        requestBody: {
+          required: false,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  rejectionNote: {
+                    type: "string",
+                    minLength: 3,
+                    maxLength: 255,
+                  },
+                },
+                additionalProperties: false,
+              },
+            },
+          },
+        },
         responses: {
           200: { description: "Proposal rejected successfully." },
           401: { $ref: "#/components/responses/Unauthorized" },
           403: errorResponse("Only the proposal receiver can reject it."),
           404: errorResponse("Proposal not found."),
           409: errorResponse("Only pending proposals can be rejected."),
+        },
+      },
+    },
+    "/api/v1/proposals/{id}/read": {
+      post: {
+        tags: ["Proposals"],
+        summary: "Mark an incoming proposal as read",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: { description: "Proposal marked as read." },
+          403: errorResponse("Only the proposal receiver can mark it read."),
+          404: errorResponse("Proposal not found."),
+        },
+      },
+    },
+    "/api/v1/proposals/{id}/withdraw": {
+      post: {
+        tags: ["Proposals"],
+        summary: "Withdraw a pending proposal",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: { description: "Proposal withdrawn successfully." },
+          403: errorResponse("Only the proposal sender can withdraw it."),
+          404: errorResponse("Proposal not found."),
+          409: errorResponse("Only pending proposals can be withdrawn."),
         },
       },
     },

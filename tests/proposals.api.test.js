@@ -85,14 +85,55 @@ test("accept and reject endpoints call proposal decisions", async () => {
       .statusCode,
   ).toBe(200);
   expect(
-    (await request(app).post(`/api/v1/proposals/${proposalId}/reject`))
+    (
+      await request(app)
+        .post(`/api/v1/proposals/${proposalId}/reject`)
+        .send({ rejectionNote: "Not suitable now" })
+    ).statusCode,
+  ).toBe(200);
+  expect(service.rejectProposal).toHaveBeenCalledWith(
+    userId,
+    proposalId,
+    "Not suitable now",
+  );
+});
+
+test("unified inbox and sent endpoints pass proposal filters", async () => {
+  service.listInbox.mockResolvedValue({ proposals: [], summary: {}, pagination: {} });
+  service.listSent.mockResolvedValue({ proposals: [], summary: {}, pagination: {} });
+  expect(
+    (await request(app).get("/api/v1/proposals/inbox?unread=true&status=PENDING"))
+      .statusCode,
+  ).toBe(200);
+  expect(
+    (await request(app).get("/api/v1/proposals/sent?status=WITHDRAWN"))
+      .statusCode,
+  ).toBe(200);
+  expect(service.listInbox).toHaveBeenCalledWith(
+    userId,
+    expect.objectContaining({ unread: true, status: "PENDING" }),
+  );
+  expect(service.listSent).toHaveBeenCalledWith(
+    userId,
+    expect.objectContaining({ status: "WITHDRAWN" }),
+  );
+});
+
+test("read and withdraw endpoints call their proposal actions", async () => {
+  service.markProposalRead.mockResolvedValue({ id: proposalId, readAt: new Date() });
+  service.withdrawProposal.mockResolvedValue({ id: proposalId, status: "WITHDRAWN" });
+  expect(
+    (await request(app).post(`/api/v1/proposals/${proposalId}/read`)).statusCode,
+  ).toBe(200);
+  expect(
+    (await request(app).post(`/api/v1/proposals/${proposalId}/withdraw`))
       .statusCode,
   ).toBe(200);
 });
 
 test("invalid status filter is rejected", async () => {
   const response = await request(app).get(
-    `/api/v1/errands/${errandId}/proposals?status=EXPIRED`,
+    `/api/v1/errands/${errandId}/proposals?status=UNKNOWN`,
   );
   expect(response.statusCode).toBe(400);
   expect(service.listErrandProposals).not.toHaveBeenCalled();
