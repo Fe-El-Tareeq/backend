@@ -2,8 +2,8 @@
 
 ## Pending OTP Registration
 
-- Registration is a multi-step flow. `POST /api/v1/auth/register` stores an expiring `pending_registrations` row and a hashed OTP, but does not create a row in `users`.
-- `POST /api/v1/auth/verify-otp` atomically claims a valid OTP, creates the verified user and signup wallet, deletes the pending registration, and issues tokens.
+- Registration is a multi-step flow. `POST /api/v1/auth/register` requires `termsAccepted: true`, snapshots the current terms/privacy versions in an expiring `pending_registrations` row, and stores a hashed OTP without creating a row in `users`.
+- `POST /api/v1/auth/verify-otp` atomically claims a valid OTP, creates the verified user and signup wallet, records the captured versions in `legal_acceptances`, deletes the pending registration, and issues tokens. Missing or stale legal consent rejects verification and rolls back the transaction.
 - Expired pending registrations and OTP records are removed by a background cleanup job. `REGISTRATION_CLEANUP_INTERVAL_MS` controls its polling interval.
 - `000000` is available only to the allowlisted test phone configured in `OTP_TEST_PHONES`; all other phones get randomly generated codes. A real SMS/WhatsApp provider is still required for production delivery.
 

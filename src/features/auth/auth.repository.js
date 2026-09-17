@@ -24,7 +24,7 @@ const createOtpVerification = async (
     expiresAt,
     maxAttempts,
   },
-  client = prisma
+  client = prisma,
 ) => {
   return client.otpVerification.create({
     data: {
@@ -54,12 +54,7 @@ const incrementOtpAttempts = async (id, maxAttempts, client = prisma) => {
   });
 };
 
-const claimOtpVerification = async (
-  id,
-  now,
-  maxAttempts,
-  client = prisma,
-) => {
+const claimOtpVerification = async (id, now, maxAttempts, client = prisma) => {
   return client.otpVerification.updateMany({
     where: {
       id,
@@ -102,6 +97,8 @@ const upsertPendingRegistration = (data, client = prisma) =>
       fullName: data.fullName,
       passwordHash: data.passwordHash,
       neighborhoodId: data.neighborhoodId,
+      termsVersion: data.termsVersion,
+      privacyVersion: data.privacyVersion,
       expiresAt: data.expiresAt,
     },
   });
@@ -161,12 +158,7 @@ const createUser = async (phone, client = prisma) => {
 };
 
 const createUserWithPassword = async (
-  {
-    fullName,
-    phone,
-    passwordHash,
-    neighborhoodId,
-  },
+  { fullName, phone, passwordHash, neighborhoodId },
   client = prisma,
 ) => {
   return client.user.create({
@@ -185,11 +177,7 @@ const createUserWithPassword = async (
 
 const updatePreparedUserRegistration = async (
   userId,
-  {
-    fullName,
-    passwordHash,
-    neighborhoodId,
-  },
+  { fullName, passwordHash, neighborhoodId },
   client = prisma,
 ) => {
   return client.user.update({
@@ -227,12 +215,8 @@ const updateUserPhoneVerifiedAt = async (userId, client = prisma) => {
 };
 
 const createRefreshToken = async (
-  {
-    userId,
-    tokenHash,
-    expiresAt,
-  },
-  client = prisma
+  { userId, tokenHash, expiresAt },
+  client = prisma,
 ) => {
   return client.refreshToken.create({
     data: {

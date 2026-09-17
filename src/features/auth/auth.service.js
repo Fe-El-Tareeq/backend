@@ -13,6 +13,7 @@ const ApiError = require("../../utils/ApiError");
 const env = require("../../config/env");
 const authRepository = require("./auth.repository");
 const walletRepository = require("../wallet/wallet.repository");
+const legalService = require("../legal/legal.service");
 
 // Signup bonus granted when a wallet is created.
 const SIGNUP_BONUS_TOKENS = 10;
@@ -22,10 +23,7 @@ const generateOtp = () => {
 };
 
 const generateOtpForPhone = (phone) => {
-  if (
-    env.otpFixedCode &&
-    env.otpTestPhones.includes(phone)
-  ) {
+  if (env.otpFixedCode && env.otpTestPhones.includes(phone)) {
     return env.otpFixedCode;
   }
 
@@ -234,10 +232,15 @@ const register = async ({
   phone,
   password,
   neighborhoodId,
+  termsAccepted,
 }) => {
-  const neighborhood = await authRepository.findActiveNeighborhoodById(
-    neighborhoodId,
-  );
+  if (termsAccepted !== true) {
+    throw new ApiError(400, "Terms and privacy policy must be accepted.");
+  }
+
+  const legalVersions = legalService.current();
+  const neighborhood =
+    await authRepository.findActiveNeighborhoodById(neighborhoodId);
 
   if (!neighborhood) {
     throw new ApiError(
@@ -266,6 +269,8 @@ const register = async ({
         phone,
         passwordHash,
         neighborhoodId: neighborhood.id,
+        termsVersion: legalVersions.termsVersion,
+        privacyVersion: legalVersions.privacyVersion,
         expiresAt,
       },
       tx,
@@ -353,6 +358,12 @@ const verifyOtp = async (phone, otp) => {
     if (!pending || pending.expiresAt <= now) {
       throw new ApiError(400, "Pending registration has expired.");
     }
+    if (!pending.termsVersion || !pending.privacyVersion) {
+      throw new ApiError(
+        409,
+        "Legal acceptance is missing. Please restart registration.",
+      );
+    }
     if (await authRepository.findUserByPhone(phone, tx)) {
       throw new ApiError(409, "A user with this phone already exists.");
     }
@@ -370,6 +381,14 @@ const verifyOtp = async (phone, otp) => {
     let user = await authRepository.createVerifiedUserFromPending(pending, tx);
     const wallet = await createWalletWithSignupBonus(user.id, tx);
     user = { ...user, wallet };
+    await legalService.accept(
+      user.id,
+      {
+        termsVersion: pending.termsVersion,
+        privacyVersion: pending.privacyVersion,
+      },
+      tx,
+    );
     await authRepository.deletePendingRegistration(phone, tx);
     const auth = await buildAuthResponse(user, tx);
 
@@ -384,12 +403,7 @@ const forgotPassword = async (phone, channel = "SMS") => {
   const user = await authRepository.findUserByPhone(phone);
 
   if (user) {
-    await createOtpVerification(
-      phone,
-      channel,
-      undefined,
-      "PASSWORD_RESET",
-    );
+    await createOtpVerification(phone, channel, undefined, "PASSWORD_RESET");
   }
 
   return {
@@ -459,7 +473,8 @@ const requestAccountReactivationOtp = async (phone, channel = "SMS") => {
   }
 
   return {
-    message: "If account recovery is available, a verification code has been sent.",
+    message:
+      "If account recovery is available, a verification code has been sent.",
     expiresInMinutes: OTP_EXPIRY_MINUTES,
   };
 };
@@ -514,7 +529,8 @@ const confirmAccountReactivation = async (phone, otp, password) => {
     const reactivatedUser = await authRepository.reactivateUser(user.id, tx);
     const auth = await buildAuthResponse(reactivatedUser, tx);
     return {
-      message: "Account deletion cancelled and account reactivated successfully.",
+      message:
+        "Account deletion cancelled and account reactivated successfully.",
       ...auth,
     };
   });

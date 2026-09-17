@@ -26,9 +26,11 @@ const registerSchema = z.object({
 
     password: passwordSchema,
 
-    neighborhoodId: z
-      .string()
-      .uuid("Neighborhood ID must be a valid UUID."),
+    neighborhoodId: z.string().uuid("Neighborhood ID must be a valid UUID."),
+
+    termsAccepted: z.literal(true, {
+      message: "Terms and privacy policy must be accepted.",
+    }),
   }),
 });
 
@@ -73,9 +75,7 @@ const verifyOtpSchema = z.object({
 
 const refreshTokenSchema = z.object({
   body: z.object({
-    refreshToken: z
-      .string()
-      .min(1, "Refresh token is required"),
+    refreshToken: z.string().min(1, "Refresh token is required"),
   }),
 });
 
@@ -119,7 +119,10 @@ const cancelDeletionConfirmSchema = z.object({
   body: z
     .object({
       phone: z.string().trim().min(8).max(20),
-      otp: z.string().length(6).regex(/^\d{6}$/),
+      otp: z
+        .string()
+        .length(6)
+        .regex(/^\d{6}$/),
       password: z.string().min(1, "Password is required"),
     })
     .strict(),
