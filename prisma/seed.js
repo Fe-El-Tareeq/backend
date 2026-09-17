@@ -2,6 +2,7 @@ require("dotenv").config();
 
 const { PrismaClient } = require("@prisma/client");
 const { PrismaPg } = require("@prisma/adapter-pg");
+const areasConfig = require("../src/data/gaza-areas.json");
 
 const adapter = new PrismaPg({
   connectionString: process.env.DIRECT_URL,
@@ -13,27 +14,24 @@ async function main() {
   console.log("Starting database seed...");
 
   // Neighborhoods
-  const neighborhoods = [
-    { name: "Al-Rimal", governorate: "Gaza" },
-    { name: "Al-Zaytoun", governorate: "Gaza" },
-    { name: "Al-Shujaeya", governorate: "Gaza" },
-    { name: "Tal Al-Hawa", governorate: "Gaza" },
-    { name: "Al-Nasr", governorate: "Gaza" },
-    { name: "Al-Sabra", governorate: "Gaza" },
-  ];
+  const neighborhoods = areasConfig.zones.flatMap((zone) =>
+    zone.areas.map((area) => ({
+      key: area.key,
+      name: area.nameAr,
+      governorate: zone.nameAr,
+    })),
+  );
 
   for (const neighborhood of neighborhoods) {
     await prisma.neighborhood.upsert({
-      where: {
-        name_governorate: {
-          name: neighborhood.name,
-          governorate: neighborhood.governorate,
-        },
-      },
+      where: { key: neighborhood.key },
       update: {
+        name: neighborhood.name,
+        governorate: neighborhood.governorate,
         isActive: true,
       },
       create: {
+        key: neighborhood.key,
         name: neighborhood.name,
         governorate: neighborhood.governorate,
         isActive: true,
