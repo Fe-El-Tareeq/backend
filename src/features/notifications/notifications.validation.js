@@ -11,6 +11,9 @@ const listNotificationsSchema = z.object({
       status: z
         .enum(["UNREAD", "PENDING", "SENT", "FAILED", "READ"])
         .optional(),
+      tab: z
+        .enum(["all", "unread", "trips", "errands", "messages"])
+        .default("all"),
       skip: z.coerce.number().int().min(0).default(0),
       take: z.coerce.number().int().min(1).max(50).default(20),
     })

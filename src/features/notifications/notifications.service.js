@@ -13,6 +13,19 @@ const VALID_LIST_STATUSES = new Set([
   "READ",
 ]);
 
+const NOTIFICATION_TYPES_BY_TAB = Object.freeze({
+  all: null,
+  unread: null,
+  trips: [NOTIFICATION_TYPES.NEW_TRIP_IN_AREA],
+  errands: [
+    NOTIFICATION_TYPES.NEW_PROPOSAL,
+    NOTIFICATION_TYPES.ASSIGNMENT_ACCEPTED,
+    NOTIFICATION_TYPES.ASSIGNMENT_STATUS_CHANGED,
+    NOTIFICATION_TYPES.ASSIGNMENT_CANCELLED,
+  ],
+  messages: [NOTIFICATION_TYPES.NEW_CHAT_MESSAGE],
+});
+
 const serializeNotification = (notification) => ({
   id: notification.id,
   type: notification.notificationType,
@@ -77,18 +90,35 @@ const createInAppNotification = async (
   }
 };
 
-const list = async (userId, { skip = 0, take = 20, status } = {}) => {
+const list = async (
+  userId,
+  { skip = 0, take = 20, status, tab = "all" } = {},
+) => {
   if (status && !VALID_LIST_STATUSES.has(status)) {
     throw new ApiError(400, "Notification status filter is not supported.");
   }
 
-  const [notifications, total] = await Promise.all([
-    repository.listForUser({ userId, skip, take, status }),
-    repository.countForUser({ userId, status }),
+  const effectiveStatus = tab === "unread" ? "UNREAD" : status;
+  const notificationTypes = NOTIFICATION_TYPES_BY_TAB[tab];
+  const [notifications, total, allUnreadCount] = await Promise.all([
+    repository.listForUser({
+      userId,
+      skip,
+      take,
+      status: effectiveStatus,
+      notificationTypes,
+    }),
+    repository.countForUser({
+      userId,
+      status: effectiveStatus,
+      notificationTypes,
+    }),
+    repository.countUnreadForUser(userId),
   ]);
 
   return {
     notifications: notifications.map(serializeNotification),
+    unreadCount: allUnreadCount,
     pagination: { skip, take, total },
   };
 };

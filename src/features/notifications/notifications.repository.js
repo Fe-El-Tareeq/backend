@@ -44,10 +44,16 @@ const findByIdempotencyKey = (idempotencyKey, client = prisma) =>
     select: notificationSelect,
   });
 
-const listForUser = ({ userId, status, skip, take }, client = prisma) => {
+const listForUser = (
+  { userId, status, notificationTypes, skip, take },
+  client = prisma,
+) => {
   const where = normalizeUnreadWhere({
     userId,
     ...(status ? { status } : {}),
+    ...(notificationTypes
+      ? { notificationType: { in: notificationTypes } }
+      : {}),
   });
 
   return client.notification.findMany({
@@ -59,10 +65,16 @@ const listForUser = ({ userId, status, skip, take }, client = prisma) => {
   });
 };
 
-const countForUser = ({ userId, status }, client = prisma) => {
+const countForUser = (
+  { userId, status, notificationTypes },
+  client = prisma,
+) => {
   const where = normalizeUnreadWhere({
     userId,
     ...(status ? { status } : {}),
+    ...(notificationTypes
+      ? { notificationType: { in: notificationTypes } }
+      : {}),
   });
 
   return client.notification.count({ where });

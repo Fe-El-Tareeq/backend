@@ -36,6 +36,31 @@ test("listForUser requests newest-first paginated notifications for one user", a
   );
 });
 
+test("list and unread-count queries remain scoped to the authenticated user", async () => {
+  prisma.notification.findMany.mockResolvedValue([]);
+  prisma.notification.count.mockResolvedValue(0);
+
+  await repository.listForUser({
+    userId,
+    notificationTypes: ["NEW_CHAT_MESSAGE"],
+    skip: 0,
+    take: 5,
+  });
+  await repository.countUnreadForUser(userId);
+
+  expect(prisma.notification.findMany).toHaveBeenCalledWith(
+    expect.objectContaining({
+      where: {
+        userId,
+        notificationType: { in: ["NEW_CHAT_MESSAGE"] },
+      },
+    }),
+  );
+  expect(prisma.notification.count).toHaveBeenCalledWith({
+    where: { userId, status: { not: "READ" } },
+  });
+});
+
 test("UNREAD filter maps to every status except READ", async () => {
   prisma.notification.findMany.mockResolvedValue([]);
   prisma.notification.count.mockResolvedValue(0);
@@ -51,6 +76,35 @@ test("UNREAD filter maps to every status except READ", async () => {
   expect(prisma.notification.count).toHaveBeenCalledWith({
     where: { userId, status: { not: "READ" } },
   });
+});
+
+test("type filters are combined with user and unread filters", async () => {
+  prisma.notification.findMany.mockResolvedValue([]);
+  prisma.notification.count.mockResolvedValue(0);
+  const notificationTypes = ["NEW_PROPOSAL", "ASSIGNMENT_ACCEPTED"];
+
+  await repository.listForUser({
+    userId,
+    status: "UNREAD",
+    notificationTypes,
+    skip: 0,
+    take: 20,
+  });
+  await repository.countForUser({
+    userId,
+    status: "UNREAD",
+    notificationTypes,
+  });
+
+  const where = {
+    userId,
+    status: { not: "READ" },
+    notificationType: { in: notificationTypes },
+  };
+  expect(prisma.notification.findMany).toHaveBeenCalledWith(
+    expect.objectContaining({ where }),
+  );
+  expect(prisma.notification.count).toHaveBeenCalledWith({ where });
 });
 
 test("read updates are scoped to the current user and only unread rows", async () => {
