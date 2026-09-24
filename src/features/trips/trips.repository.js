@@ -23,6 +23,7 @@ const findTravelerForPosting = async (travelerId, client = prisma) => {
       phoneVerifiedAt: true,
       profileCompleted: true,
       status: true,
+      verificationStatus: true,
       neighborhoodId: true,
       neighborhood: {
         select: {
@@ -86,6 +87,7 @@ const createTrip = async (data, client = prisma) => {
           id: true,
           fullName: true,
           trustScore: true,
+          isVerified: true,
         },
       },
     },
@@ -114,6 +116,7 @@ const findById = async (tripId, client = prisma) => {
           id: true,
           fullName: true,
           trustScore: true,
+          isVerified: true,
         },
       },
     },
@@ -206,7 +209,7 @@ const buildListWhere = ({
 
   if (status) {
     where.status = status;
-  } else {
+  } else if (!mine) {
     // By default, only active future trips are returned.
     where.status = "ACTIVE";
     where.expiresAt = {
@@ -288,6 +291,7 @@ const listTrips = async (
           id: true,
           fullName: true,
           trustScore: true,
+          isVerified: true,
         },
       },
     },
@@ -328,6 +332,36 @@ const countTrips = async (
   });
 };
 
+const summarizeUserTrips = async (travelerId, client = prisma) => {
+  const [groups, receivedRequestsCount, acceptedRequestsCount] =
+    await Promise.all([
+      client.trip.groupBy({
+        by: ["status"],
+        where: { travelerId },
+        _count: { _all: true },
+      }),
+      client.proposal.count({
+        where: { trip: { travelerId }, type: "REQUESTER_REQUEST" },
+      }),
+      client.proposal.count({
+        where: {
+          trip: { travelerId },
+          type: "REQUESTER_REQUEST",
+          status: "ACCEPTED",
+        },
+      }),
+    ]);
+  const counts = Object.fromEntries(groups.map((row) => [row.status, row._count._all]));
+  return {
+    totalTrips: groups.reduce((sum, row) => sum + row._count._all, 0),
+    activeTrips: counts.ACTIVE || 0,
+    completedTrips: counts.COMPLETED || 0,
+    cancelledTrips: (counts.CANCELLED || 0) + (counts.EXPIRED || 0),
+    receivedRequestsCount,
+    acceptedRequestsCount,
+  };
+};
+
 // Updates an existing trip.
 const updateTrip = async (tripId, data, client = prisma) => {
   return client.trip.update({
@@ -348,6 +382,7 @@ const updateTrip = async (tripId, data, client = prisma) => {
           id: true,
           fullName: true,
           trustScore: true,
+          isVerified: true,
         },
       },
     },
@@ -370,6 +405,7 @@ module.exports = {
   findTravelerForPosting,
   findByTravelerAndClientKey,
   createTrip,
+  summarizeUserTrips,
   findById,
   findChecklistById,
   listTrips,

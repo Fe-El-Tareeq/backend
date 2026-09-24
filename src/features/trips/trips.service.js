@@ -113,6 +113,16 @@ const validateTravelerForPosting = (traveler) => {
     throw new ApiError(403, "User is not active.");
   }
 
+  if (traveler.verificationStatus !== "VERIFIED") {
+    const error = new ApiError(
+      403,
+      "Identity verification is required before publishing a trip.",
+    );
+    error.code = "IDENTITY_VERIFICATION_REQUIRED";
+    error.verificationStatus = traveler.verificationStatus || "UNVERIFIED";
+    throw error;
+  }
+
   if (!traveler.phoneVerifiedAt) {
     throw new ApiError(
       403,
@@ -298,9 +308,10 @@ const getTrips = async (userId, filters = {}) => {
     take,
   };
 
-  const [trips, total] = await Promise.all([
+  const [trips, total, summary] = await Promise.all([
     repository.listTrips(query),
     repository.countTrips(query),
+    mine ? repository.summarizeUserTrips(userId) : null,
   ]);
 
   return {
@@ -310,6 +321,7 @@ const getTrips = async (userId, filters = {}) => {
       take,
       total,
     },
+    ...(summary ? { summary } : {}),
   };
 };
 

@@ -6,6 +6,17 @@ const adapter = new PrismaPg({
   connectionString: env.databaseUrl,
 });
 
-const prisma = new PrismaClient({ adapter });
+const prisma = new PrismaClient({ adapter }).$extends({
+  result: {
+    user: {
+      isVerified: {
+        needs: { verificationStatus: true },
+        compute(user) {
+          return user.verificationStatus === "VERIFIED";
+        },
+      },
+    },
+  },
+});
 
 module.exports = prisma;

@@ -264,6 +264,26 @@ const revokeAllRefreshTokensForUser = async (userId, client = prisma) => {
   });
 };
 
+const findUserByIdWithPassword = (userId, client = prisma) =>
+  client.user.findUnique({
+    where: { id: userId },
+    select: { id: true, passwordHash: true, status: true },
+  });
+
+const revokeOtherRefreshTokensForUser = async (
+  userId,
+  currentTokenId,
+  client = prisma,
+) =>
+  client.refreshToken.updateMany({
+    where: {
+      userId,
+      id: { not: currentTokenId },
+      revokedAt: null,
+    },
+    data: { revokedAt: new Date() },
+  });
+
 const reactivateUser = (userId, client = prisma) =>
   client.user.update({
     where: { id: userId },
@@ -283,6 +303,7 @@ module.exports = {
   claimOtpVerification,
   findUserByPhone,
   findUserWithPasswordByPhone,
+  findUserByIdWithPassword,
   findPendingRegistrationByPhone,
   upsertPendingRegistration,
   deletePendingRegistration,
@@ -299,5 +320,6 @@ module.exports = {
   revokeRefreshToken,
   updateUserPassword,
   revokeAllRefreshTokensForUser,
+  revokeOtherRefreshTokensForUser,
   reactivateUser,
 };

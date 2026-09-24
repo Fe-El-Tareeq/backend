@@ -27,6 +27,7 @@ const traveler = {
   phoneVerifiedAt: new Date(),
   profileCompleted: true,
   status: "ACTIVE",
+  verificationStatus: "VERIFIED",
   neighborhoodId: "660e8400-e29b-41d4-a716-446655440000",
   neighborhood: {
     id: "660e8400-e29b-41d4-a716-446655440000",
@@ -124,6 +125,19 @@ describe("Trips create", () => {
     );
 
     expect(result).toBe(createdTrip);
+  });
+
+  test("rejects trip publishing when identity is not verified", async () => {
+    repository.findTravelerForPosting.mockResolvedValue({
+      ...traveler,
+      verificationStatus: "PENDING_REVIEW",
+    });
+    await expect(service.createTrip(traveler.id, createData)).rejects.toMatchObject({
+      statusCode: 403,
+      code: "IDENTITY_VERIFICATION_REQUIRED",
+      verificationStatus: "PENDING_REVIEW",
+    });
+    expect(repository.createTrip).not.toHaveBeenCalled();
   });
 
   test("uses the profile neighborhood when creating a trip", async () => {

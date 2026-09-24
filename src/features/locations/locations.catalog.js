@@ -72,6 +72,8 @@ const getCompatibleAreaKeys = (areaKey) => {
 
   return [...new Set([areaKey, ...(area.nearbyAreas || []), ...reverseNearby])];
 };
+const findCityByGovernorate = (governorate) =>
+  cities.find((city) => city.nameAr === governorate) || null;
 
 module.exports = {
   areasConfig,
@@ -90,4 +92,5 @@ module.exports = {
   getAreaKeysForZone,
   isAreaInZone,
   getCompatibleAreaKeys,
+  findCityByGovernorate,
 };

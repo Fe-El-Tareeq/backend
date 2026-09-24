@@ -28,7 +28,10 @@ const legalRepository = require("../src/features/legal/legal.repository");
 const authService = require("../src/features/auth/auth.service");
 const env = require("../src/config/env");
 const prisma = require("../src/config/prisma");
-const { requireAuth } = require("../src/middleware/auth.middleware");
+const {
+  requireAuth,
+  requireSuperAdmin,
+} = require("../src/middleware/auth.middleware");
 
 const mockTx = {};
 
@@ -1098,6 +1101,34 @@ describe("Auth refresh and logout", () => {
 });
 
 describe("Auth middleware", () => {
+  test("super admin middleware requires authentication", async () => {
+    const error = await runMiddleware(requireSuperAdmin, {});
+
+    expect(error).toMatchObject({
+      statusCode: 401,
+      message: "Authentication is required.",
+    });
+  });
+
+  test("super admin middleware rejects regular users", async () => {
+    const error = await runMiddleware(requireSuperAdmin, {
+      user: { id: activeUser.id, role: "USER" },
+    });
+
+    expect(error).toMatchObject({
+      statusCode: 403,
+      message: "Super administrator access is required.",
+    });
+  });
+
+  test("super admin middleware accepts SUPER_ADMIN users", async () => {
+    const error = await runMiddleware(requireSuperAdmin, {
+      user: { id: activeUser.id, role: "SUPER_ADMIN" },
+    });
+
+    expect(error).toBeUndefined();
+  });
+
   test("no Bearer token returns 401", async () => {
     const error = await runMiddleware(requireAuth, {
       headers: {},

@@ -18,6 +18,13 @@ enum UserStatus {
   DEACTIVATED
 }
 
+enum VerificationStatus {
+  UNVERIFIED
+  PENDING_REVIEW
+  VERIFIED
+  REJECTED
+}
+
 enum OtpChannel {
   SMS
   WHATSAPP
@@ -259,6 +266,7 @@ model User {
   profileCompleted    Boolean    @default(false) @map("profile_completed")
   phoneVerifiedAt     DateTime?  @map("phone_verified_at") @db.Timestamptz(6)
   status              UserStatus @default(ACTIVE)
+  verificationStatus  VerificationStatus @default(UNVERIFIED) @map("verification_status")
   deletionRequestedAt DateTime?  @map("deletion_requested_at") @db.Timestamptz(6)
   deletionScheduledAt DateTime?  @map("deletion_scheduled_at") @db.Timestamptz(6)
   createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -303,9 +311,36 @@ model User {
 
   initiatedProposals Proposal[] @relation("ProposalInitiator")
 
+  identityVerifications         IdentityVerification[] @relation("IdentityVerificationUser")
+  reviewedIdentityVerifications IdentityVerification[] @relation("IdentityVerificationReviewer")
+
   @@index([neighborhoodId])
   @@index([status, deletionScheduledAt])
+  @@index([verificationStatus])
   @@map("users")
+}
+
+model IdentityVerification {
+  id                 String             @id @default(uuid()) @db.Uuid
+  userId             String             @map("user_id") @db.Uuid
+  status             VerificationStatus @default(PENDING_REVIEW)
+  idFrontImagePath   String             @map("id_front_image_path") @db.VarChar(500)
+  idBackImagePath    String             @map("id_back_image_path") @db.VarChar(500)
+  selfieImagePath    String             @map("selfie_image_path") @db.VarChar(500)
+  submittedAt        DateTime           @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  reviewedAt         DateTime?          @map("reviewed_at") @db.Timestamptz(6)
+  reviewedByAdminId  String?            @map("reviewed_by_admin_id") @db.Uuid
+  rejectionReason    String?            @map("rejection_reason") @db.VarChar(500)
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user            User  @relation("IdentityVerificationUser", fields: [userId], references: [id], onDelete: Cascade)
+  reviewedByAdmin User? @relation("IdentityVerificationReviewer", fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([userId, submittedAt])
+  @@index([status, submittedAt])
+  @@index([reviewedByAdminId])
+  @@map("identity_verifications")
 }
 
 model UserNotificationPreference {

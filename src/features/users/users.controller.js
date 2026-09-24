@@ -114,6 +114,22 @@ const deactivateCurrentUserAccount = async (req, res, next) => {
   }
 };
 
+const submitIdentityVerification = async (req, res, next) => {
+  try {
+    const verification = await service.submitIdentityVerification(
+      req.user.id,
+      req.files,
+    );
+    return res.status(201).json(
+      new ApiResponse(201, "Identity verification submitted successfully.", {
+        verification,
+      }),
+    );
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   getCurrentUserProfile,
   updateCurrentUserProfile,
@@ -122,4 +138,5 @@ module.exports = {
   getCurrentUserSettings,
   updateCurrentUserNotificationSettings,
   deactivateCurrentUserAccount,
+  submitIdentityVerification,
 };

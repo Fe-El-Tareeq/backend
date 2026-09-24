@@ -82,6 +82,8 @@ const errandSelect = {
       id: true,
       fullName: true,
       trustScore: true,
+      profileImageUrl: true,
+      isVerified: true,
     },
   },
 };
@@ -96,6 +98,7 @@ const findRequesterForPosting = async (userId, client = prisma) => {
     select: {
       id: true,
       fullName: true,
+      verificationStatus: true,
       neighborhoodId: true,
       profileCompleted: true,
       phoneVerifiedAt: true,
@@ -164,6 +167,29 @@ const createErrand = async (data, client = prisma) => {
   });
 };
 
+const summarizeUserErrands = async (requesterId, client = prisma) => {
+  const [groups, spent] = await Promise.all([
+    client.errand.groupBy({
+      by: ["status"],
+      where: { requesterId },
+      _count: { _all: true },
+    }),
+    client.errand.aggregate({
+      where: { requesterId },
+      _sum: { postTokenCost: true },
+    }),
+  ]);
+  const counts = Object.fromEntries(groups.map((row) => [row.status, row._count._all]));
+  return {
+    total: groups.reduce((sum, row) => sum + row._count._all, 0),
+    open: counts.OPEN || 0,
+    inProgress: counts.MATCHED || 0,
+    completed: counts.COMPLETED || 0,
+    cancelled: (counts.CANCELLED || 0) + (counts.EXPIRED || 0),
+    totalTokensSpent: spent._sum.postTokenCost || 0,
+  };
+};
+
 const findById = async (id, client = prisma) => {
   return client.errand.findUnique({
     where: { id },
@@ -210,6 +236,7 @@ module.exports = {
   findActiveNeighborhoodById,
   findByRequesterAndClientKey,
   createErrand,
+  summarizeUserErrands,
   findById,
   listErrands,
   countErrands,
