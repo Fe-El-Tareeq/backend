@@ -82,7 +82,9 @@ describe("Notification listing", () => {
       skip: 0,
       take: 20,
       status: undefined,
+      notificationTypes: null,
     });
+    expect(response.body.data.unreadCount).toBe(4);
     expect(response.body.data.notifications[0]).toMatchObject({
       id: notificationId,
       type: "ASSIGNMENT_ACCEPTED",
@@ -98,6 +100,39 @@ describe("Notification listing", () => {
     expect(repository.listForUser).not.toHaveBeenCalled();
   });
 
+  test("returns an empty page while preserving the global unread count", async () => {
+    repository.listForUser.mockResolvedValue([]);
+    repository.countForUser.mockResolvedValue(0);
+    repository.countUnreadForUser.mockResolvedValue(2);
+
+    const response = await request(app)
+      .get("/api/v1/notifications?tab=messages")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    expect(response.body.data).toEqual({
+      notifications: [],
+      unreadCount: 2,
+      pagination: { skip: 0, take: 20, total: 0 },
+    });
+  });
+
+  test("all includes notification types outside tab-specific mappings", async () => {
+    repository.listForUser.mockResolvedValue([
+      makeNotification({ notificationType: "PAYMENT_SUCCESS" }),
+    ]);
+
+    const response = await request(app)
+      .get("/api/v1/notifications?tab=all")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    expect(repository.listForUser).toHaveBeenCalledWith(
+      expect.objectContaining({ notificationTypes: null }),
+    );
+    expect(response.body.data.notifications[0].type).toBe("PAYMENT_SUCCESS");
+  });
+
   test("newest-first ordering is requested from repository", async () => {
     await service.list(userId, { skip: 0, take: 20 });
 
@@ -106,6 +141,7 @@ describe("Notification listing", () => {
       skip: 0,
       take: 20,
       status: undefined,
+      notificationTypes: null,
     });
   });
 
@@ -120,11 +156,67 @@ describe("Notification listing", () => {
       skip: 5,
       take: 10,
       status: "UNREAD",
+      notificationTypes: null,
     });
     expect(repository.countForUser).toHaveBeenCalledWith({
       userId,
       status: "UNREAD",
+      notificationTypes: null,
     });
+  });
+
+  test("unreadCount is independent of page and page size", async () => {
+    repository.countUnreadForUser.mockResolvedValue(7);
+
+    const response = await request(app)
+      .get("/api/v1/notifications?tab=trips&skip=10&take=1")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    expect(repository.listForUser).toHaveBeenCalledWith(
+      expect.objectContaining({ skip: 10, take: 1 }),
+    );
+    expect(response.body.data.unreadCount).toBe(7);
+    expect(repository.countUnreadForUser).toHaveBeenCalledWith(userId);
+  });
+
+  test.each([
+    ["all", undefined, null],
+    ["unread", "UNREAD", null],
+    ["trips", undefined, ["NEW_TRIP_IN_AREA"]],
+    [
+      "errands",
+      undefined,
+      [
+        "NEW_PROPOSAL",
+        "ASSIGNMENT_ACCEPTED",
+        "ASSIGNMENT_STATUS_CHANGED",
+        "ASSIGNMENT_CANCELLED",
+      ],
+    ],
+    ["messages", undefined, ["NEW_CHAT_MESSAGE"]],
+  ])("maps the %s tab to repository filters", async (tab, status, notificationTypes) => {
+    const response = await request(app)
+      .get(`/api/v1/notifications?tab=${tab}&take=1`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    expect(repository.listForUser).toHaveBeenCalledWith({
+      userId,
+      skip: 0,
+      take: 1,
+      status,
+      notificationTypes,
+    });
+    expect(response.body.data.unreadCount).toBe(4);
+    expect(repository.countUnreadForUser).toHaveBeenCalledWith(userId);
+  });
+
+  test("rejects an unsupported notification tab", async () => {
+    await request(app)
+      .get("/api/v1/notifications?tab=payments")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(400);
   });
 
   test("user cannot see another user's notifications", async () => {

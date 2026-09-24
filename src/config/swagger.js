@@ -2483,11 +2483,17 @@ const swaggerDefinition = {
       },
       NotificationListData: {
         type: "object",
-        required: ["notifications", "pagination"],
+        required: ["notifications", "unreadCount", "pagination"],
         properties: {
           notifications: {
             type: "array",
             items: { $ref: "#/components/schemas/Notification" },
+          },
+          unreadCount: {
+            type: "integer",
+            minimum: 0,
+            description:
+              "All unread notifications for the user, independent of tab and pagination.",
           },
           pagination: {
             type: "object",
@@ -5681,9 +5687,19 @@ const swaggerDefinition = {
         tags: ["Notifications"],
         summary: "List in-app notifications",
         description:
-          "Returns newest-first, paginated in-app notifications belonging only to the authenticated user. Use status=UNREAD to fetch records whose status is not READ. This endpoint does not expose provider payloads, phone numbers, or sensitive payment/auth data.",
+          "Returns newest-first, paginated in-app notifications belonging only to the authenticated user. unreadCount always covers all unread notifications, independent of tab and pagination. Payment notifications remain available under all. This endpoint does not expose provider payloads, phone numbers, or sensitive payment/auth data.",
         security: [{ bearerAuth: [] }],
         parameters: [
+          {
+            name: "tab",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              enum: ["all", "unread", "trips", "errands", "messages"],
+              default: "all",
+            },
+          },
           {
             name: "status",
             in: "query",
@@ -5738,6 +5754,7 @@ const swaggerDefinition = {
                         },
                       },
                     ],
+                    unreadCount: 4,
                     pagination: { skip: 0, take: 20, total: 1 },
                   },
                 },
