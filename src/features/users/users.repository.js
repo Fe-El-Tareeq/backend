@@ -99,19 +99,20 @@ const updateProfileImage = async (userId, profileImageUrl, profileImagePath) =>
   updateUserProfile(userId, { profileImageUrl, profileImagePath });
 
 const getProfileStatistics = async (userId) => {
-  const [publishedErrandsCount, tripsCount, ratings, wallet] = await Promise.all([
-    prisma.errand.count({ where: { requesterId: userId } }),
-    prisma.trip.count({ where: { travelerId: userId } }),
-    prisma.rating.aggregate({
-      where: { reviewedUserId: userId },
-      _avg: { ratingStars: true },
-      _count: { _all: true },
-    }),
-    prisma.wallet.findUnique({
-      where: { userId },
-      select: { tokenBalance: true },
-    }),
-  ]);
+  const [publishedErrandsCount, tripsCount, ratings, wallet] =
+    await Promise.all([
+      prisma.errand.count({ where: { requesterId: userId } }),
+      prisma.trip.count({ where: { travelerId: userId } }),
+      prisma.rating.aggregate({
+        where: { reviewedUserId: userId },
+        _avg: { ratingStars: true },
+        _count: { _all: true },
+      }),
+      prisma.wallet.findUnique({
+        where: { userId },
+        select: { tokenBalance: true },
+      }),
+    ]);
   return {
     publishedErrandsCount,
     tripsCount,

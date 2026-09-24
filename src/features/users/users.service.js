@@ -55,10 +55,10 @@ const submitIdentityVerification = async (userId, files) => {
   const uploadedPaths = [];
   try {
     const uploads = await Promise.allSettled([
-        identityStorage.upload(userId, "front", files.idFrontImage[0]),
-        identityStorage.upload(userId, "back", files.idBackImage[0]),
-        identityStorage.upload(userId, "selfie", files.selfieImage[0]),
-      ]);
+      identityStorage.upload(userId, "front", files.idFrontImage[0]),
+      identityStorage.upload(userId, "back", files.idBackImage[0]),
+      identityStorage.upload(userId, "selfie", files.selfieImage[0]),
+    ]);
     uploadedPaths.push(
       ...uploads
         .filter((result) => result.status === "fulfilled")

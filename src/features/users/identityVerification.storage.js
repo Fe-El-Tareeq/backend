@@ -2,8 +2,13 @@ const crypto = require("crypto");
 const ApiError = require("../../utils/ApiError");
 const env = require("../../config/env");
 
-const extensions = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
-const encodePath = (value) => value.split("/").map(encodeURIComponent).join("/");
+const extensions = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
+const encodePath = (value) =>
+  value.split("/").map(encodeURIComponent).join("/");
 
 const getConfig = () => {
   if (!env.supabaseUrl || !env.supabaseServiceRoleKey) {
@@ -35,43 +40,62 @@ const upload = async (userId, label, file) => {
   const config = getConfig();
   const path = `${userId}/${crypto.randomUUID()}-${label}.${extensions[file.mimetype]}`;
   const objectUrl = `${config.baseUrl}/storage/v1/object/${encodeURIComponent(config.bucket)}/${encodePath(path)}`;
-  await storageRequest(objectUrl, {
-    method: "POST",
-    headers: {
-      apikey: config.key,
-      Authorization: `Bearer ${config.key}`,
-      "Content-Type": file.mimetype,
-      "x-upsert": "false",
+  await storageRequest(
+    objectUrl,
+    {
+      method: "POST",
+      headers: {
+        apikey: config.key,
+        Authorization: `Bearer ${config.key}`,
+        "Content-Type": file.mimetype,
+        "x-upsert": "false",
+      },
+      body: file.buffer,
     },
-    body: file.buffer,
-  }, "Could not upload identity document.");
+    "Could not upload identity document.",
+  );
   return path;
 };
 
 const remove = async (path) => {
   const config = getConfig();
   const objectUrl = `${config.baseUrl}/storage/v1/object/${encodeURIComponent(config.bucket)}/${encodePath(path)}`;
-  return storageRequest(objectUrl, {
-    method: "DELETE",
-    headers: { apikey: config.key, Authorization: `Bearer ${config.key}` },
-  }, "Could not delete identity document.");
+  return storageRequest(
+    objectUrl,
+    {
+      method: "DELETE",
+      headers: { apikey: config.key, Authorization: `Bearer ${config.key}` },
+    },
+    "Could not delete identity document.",
+  );
 };
 
 const createSignedUrl = async (path, expiresIn = 300) => {
   const config = getConfig();
   const url = `${config.baseUrl}/storage/v1/object/sign/${encodeURIComponent(config.bucket)}/${encodePath(path)}`;
-  const result = await storageRequest(url, {
-    method: "POST",
-    headers: {
-      apikey: config.key,
-      Authorization: `Bearer ${config.key}`,
-      "Content-Type": "application/json",
+  const result = await storageRequest(
+    url,
+    {
+      method: "POST",
+      headers: {
+        apikey: config.key,
+        Authorization: `Bearer ${config.key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ expiresIn }),
     },
-    body: JSON.stringify({ expiresIn }),
-  }, "Could not create identity document access URL.", true);
+    "Could not create identity document access URL.",
+    true,
+  );
   const signedPath = result.signedURL || result.signedUrl;
-  if (!signedPath) throw new ApiError(502, "Storage did not return an identity document access URL.");
-  return signedPath.startsWith("http") ? signedPath : `${config.baseUrl}/storage/v1${signedPath}`;
+  if (!signedPath)
+    throw new ApiError(
+      502,
+      "Storage did not return an identity document access URL.",
+    );
+  return signedPath.startsWith("http")
+    ? signedPath
+    : `${config.baseUrl}/storage/v1${signedPath}`;
 };
 
 module.exports = { upload, remove, createSignedUrl };
