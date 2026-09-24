@@ -305,6 +305,9 @@ const acceptProposal = async (userId, proposalId) => {
           errandId: proposal.errandId,
           tripId: proposal.tripId,
           acceptanceSource: "PROPOSAL",
+          acceptanceNotificationRecipientId: proposal.initiatedById,
+          acceptanceNotificationTitle: "Proposal accepted",
+          acceptanceNotificationMessage: "Your proposal was accepted.",
         },
         tx,
       );

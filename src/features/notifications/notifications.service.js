@@ -150,15 +150,22 @@ const markAllRead = async (userId) => {
 };
 
 const assignmentAccepted = (
-  { requesterId, errandId, assignmentId, tripId },
+  {
+    recipientId,
+    errandId,
+    assignmentId,
+    tripId,
+    title = "Errand accepted",
+    message = "A traveler accepted your errand.",
+  },
   client,
 ) =>
   createInAppNotification(
     {
-      userId: requesterId,
+      userId: recipientId,
       type: NOTIFICATION_TYPES.ASSIGNMENT_ACCEPTED,
-      title: "Errand accepted",
-      message: "A traveler accepted your errand.",
+      title,
+      message,
       errandId,
       assignmentId,
       metadata: { tripId },
@@ -168,7 +175,7 @@ const assignmentAccepted = (
   );
 
 const assignmentStatusChanged = (
-  { userId, errandId, assignmentId, status, actorUserId },
+  { userId, errandId, assignmentId, tripId, status, actorUserId },
   client,
 ) =>
   createInAppNotification(
@@ -179,7 +186,7 @@ const assignmentStatusChanged = (
       message: `Assignment status changed to ${status}.`,
       errandId,
       assignmentId,
-      metadata: { status, actorUserId },
+      metadata: { tripId, status, actorUserId },
       idempotencyKey: `assignment-status:${assignmentId}:${status}`,
     },
     client,

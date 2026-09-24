@@ -2607,7 +2607,12 @@ const swaggerDefinition = {
               "Unread in-app notifications are any records whose status is not READ. Mark-read is idempotent.",
           },
           isRead: { type: "boolean", example: false },
-          createdAt: { type: "string", format: "date-time" },
+          createdAt: {
+            type: "string",
+            format: "date-time",
+            description:
+              "Creation timestamp used by clients to group notifications as today, yesterday, or earlier in the user's local timezone.",
+          },
           readAt: { type: "string", format: "date-time", nullable: true },
           metadata: { $ref: "#/components/schemas/NotificationMetadata" },
         },
@@ -5903,7 +5908,7 @@ const swaggerDefinition = {
         tags: ["Notifications"],
         summary: "List in-app notifications",
         description:
-          "Returns newest-first, paginated in-app notifications belonging only to the authenticated user. unreadCount always covers all unread notifications, independent of tab and pagination. Payment notifications remain available under all. This endpoint does not expose provider payloads, phone numbers, or sensitive payment/auth data.",
+          "Returns a flat, newest-first, paginated list of in-app notifications belonging only to the authenticated user. Clients may group the returned page as today, yesterday, or earlier using createdAt and the user's local timezone; the API does not return temporal groups. unreadCount always covers all unread notifications, independent of tab and pagination. Payment notifications remain available under all. This endpoint does not expose provider payloads, phone numbers, or sensitive payment/auth data.",
         security: [{ bearerAuth: [] }],
         parameters: [
           {
