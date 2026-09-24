@@ -23,6 +23,12 @@ router.post("/", validate(createTripSchema), controller.createTrip);
 // Get a paginated/filterable list of trips.
 router.get("/", validate(listTripsSchema), controller.getTrips);
 
+router.get(
+  "/:id/checklist",
+  validate(getTripByIdSchema),
+  controller.getTripChecklist,
+);
+
 // Get one trip by ID.
 router.get("/:id", validate(getTripByIdSchema), controller.getTripById);
 

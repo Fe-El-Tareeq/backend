@@ -26,6 +26,83 @@ const calculateExpiresAt = (expectedReturnTime) => {
   return new Date(expectedReturnTime);
 };
 
+const PICKED_UP_ASSIGNMENT_STATUSES = new Set([
+  "PICKED_UP",
+  "IN_TRANSIT",
+  "COMPLETED",
+]);
+
+const checklistStateForAssignment = (status) => ({
+  pickedUp: PICKED_UP_ASSIGNMENT_STATUSES.has(status),
+  delivered: status === "COMPLETED",
+});
+
+const compareByNameThenId = (left, right) =>
+  left.name.localeCompare(right.name) || left.id.localeCompare(right.id);
+
+const buildTripChecklist = (trip) => {
+  const categoryGroups = new Map();
+  let completed = 0;
+  let total = 0;
+
+  for (const assignment of trip.assignments) {
+    const state = checklistStateForAssignment(assignment.status);
+    const isCancelled = assignment.status === "CANCELLED";
+
+    for (const item of assignment.errand.items) {
+      if (!isCancelled) {
+        total += 1;
+        if (state.delivered) completed += 1;
+      }
+
+      if (!categoryGroups.has(item.category.id)) {
+        categoryGroups.set(item.category.id, {
+          category: { ...item.category },
+          items: [],
+        });
+      }
+
+      categoryGroups.get(item.category.id).items.push({
+        itemId: item.id,
+        name: item.name,
+        description: item.description,
+        quantity: item.quantity,
+        size: item.size,
+        isUrgent: item.isUrgent,
+        itemNote: item.itemNote,
+        errandId: assignment.errand.id,
+        assignmentId: assignment.id,
+        ...state,
+        status: assignment.status,
+      });
+    }
+  }
+
+  const categories = [...categoryGroups.values()]
+    .sort((left, right) =>
+      compareByNameThenId(left.category, right.category),
+    )
+    .map((group) => ({
+      ...group,
+      items: group.items.sort((left, right) =>
+        compareByNameThenId(
+          { name: left.name, id: left.itemId },
+          { name: right.name, id: right.itemId },
+        ),
+      ),
+    }));
+
+  return {
+    tripId: trip.id,
+    progress: {
+      completed,
+      total,
+      percentage: total === 0 ? 0 : Math.round((completed / total) * 100),
+    },
+    categories,
+  };
+};
+
 // Checks that the traveler can create trips.
 const validateTravelerForPosting = (traveler) => {
   if (!traveler) {
@@ -247,6 +324,20 @@ const getTripById = async (tripId) => {
   return trip;
 };
 
+const getTripChecklist = async (userId, tripId) => {
+  const trip = await repository.findChecklistById(tripId);
+
+  if (!trip) {
+    throw new ApiError(404, "Trip not found.");
+  }
+
+  if (trip.travelerId !== userId) {
+    throw new ApiError(403, "Only the trip owner can view its checklist.");
+  }
+
+  return buildTripChecklist(trip);
+};
+
 // Verifies ownership and whether the trip can still be managed.
 const validateTripForManagement = (trip, travelerId) => {
   if (!trip) {
@@ -371,6 +462,7 @@ module.exports = {
   createTrip,
   getTrips,
   getTripById,
+  getTripChecklist,
   updateTrip,
   cancelTrip,
 };

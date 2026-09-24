@@ -170,6 +170,38 @@ describe("Trips API", () => {
     expect(tripsService.getTripById).toHaveBeenCalledWith(tripId);
   });
 
+  test("GET /api/v1/trips/:id/checklist returns the execution checklist", async () => {
+    tripsService.getTripChecklist.mockResolvedValue({
+      tripId,
+      progress: { completed: 0, total: 0, percentage: 0 },
+      categories: [],
+    });
+
+    const response = await request(app).get(`/api/v1/trips/${tripId}/checklist`);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      message: "Trip checklist retrieved successfully.",
+      data: {
+        tripId,
+        progress: { completed: 0, total: 0, percentage: 0 },
+        categories: [],
+      },
+    });
+    expect(tripsService.getTripChecklist).toHaveBeenCalledWith(
+      travelerId,
+      tripId,
+    );
+  });
+
+  test("GET /api/v1/trips/:id/checklist validates the trip ID", async () => {
+    const response = await request(app).get("/api/v1/trips/not-a-uuid/checklist");
+
+    expect(response.statusCode).toBe(400);
+    expect(tripsService.getTripChecklist).not.toHaveBeenCalled();
+  });
+
   test("PATCH /api/v1/trips/:id updates a trip", async () => {
     tripsService.updateTrip.mockResolvedValue({
       ...trip,

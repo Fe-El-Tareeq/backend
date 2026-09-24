@@ -1650,6 +1650,120 @@ const swaggerDefinition = {
           },
         },
       },
+      TripChecklistProgress: {
+        type: "object",
+        required: ["completed", "total", "percentage"],
+        properties: {
+          completed: {
+            type: "integer",
+            minimum: 0,
+            description: "Number of non-cancelled checklist items delivered.",
+          },
+          total: {
+            type: "integer",
+            minimum: 0,
+            description: "Number of non-cancelled checklist items.",
+          },
+          percentage: {
+            type: "integer",
+            minimum: 0,
+            maximum: 100,
+            description:
+              "Rounded delivered percentage; zero when total is zero.",
+          },
+        },
+      },
+      TripChecklistCategory: {
+        type: "object",
+        required: ["id", "name", "icon"],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          name: { type: "string" },
+          icon: { type: "string", nullable: true },
+        },
+      },
+      TripChecklistItem: {
+        type: "object",
+        required: [
+          "itemId",
+          "name",
+          "description",
+          "quantity",
+          "size",
+          "isUrgent",
+          "itemNote",
+          "errandId",
+          "assignmentId",
+          "pickedUp",
+          "delivered",
+          "status",
+        ],
+        properties: {
+          itemId: { type: "string", format: "uuid" },
+          name: { type: "string" },
+          description: { type: "string", nullable: true },
+          quantity: {
+            type: "integer",
+            minimum: 1,
+            description:
+              "Stored item quantity; one checklist row represents one ErrandItem.",
+          },
+          size: {
+            type: "string",
+            enum: ["ENVELOPE", "SMALL", "MEDIUM", "LARGE"],
+          },
+          isUrgent: { type: "boolean" },
+          itemNote: { type: "string", nullable: true },
+          errandId: { type: "string", format: "uuid" },
+          assignmentId: { type: "string", format: "uuid" },
+          pickedUp: {
+            type: "boolean",
+            description:
+              "True for PICKED_UP, IN_TRANSIT, and COMPLETED assignments.",
+          },
+          delivered: {
+            type: "boolean",
+            description: "True only for COMPLETED assignments.",
+          },
+          status: {
+            type: "string",
+            enum: [
+              "ACCEPTED",
+              "PICKED_UP",
+              "IN_TRANSIT",
+              "COMPLETED",
+              "CANCELLED",
+            ],
+            description:
+              "Assignment lifecycle status. Cancelled items remain visible and are excluded from progress.",
+          },
+        },
+      },
+      TripChecklistCategoryGroup: {
+        type: "object",
+        required: ["category", "items"],
+        properties: {
+          category: { $ref: "#/components/schemas/TripChecklistCategory" },
+          items: {
+            type: "array",
+            items: { $ref: "#/components/schemas/TripChecklistItem" },
+          },
+        },
+      },
+      TripChecklistData: {
+        type: "object",
+        required: ["tripId", "progress", "categories"],
+        properties: {
+          tripId: { type: "string", format: "uuid" },
+          progress: { $ref: "#/components/schemas/TripChecklistProgress" },
+          categories: {
+            type: "array",
+            items: {
+              $ref: "#/components/schemas/TripChecklistCategoryGroup",
+            },
+          },
+        },
+      },
       RatingCreateRequest: {
         type: "object",
         additionalProperties: false,
@@ -2701,6 +2815,18 @@ const swaggerDefinition = {
       TripListResponse: apiResponse({
         $ref: "#/components/schemas/TripListData",
       }),
+      TripChecklistResponse: apiResponse(
+        { $ref: "#/components/schemas/TripChecklistData" },
+        {
+          success: true,
+          message: "Trip checklist retrieved successfully.",
+          data: {
+            tripId: "880e8400-e29b-41d4-a716-446655440000",
+            progress: { completed: 0, total: 0, percentage: 0 },
+            categories: [],
+          },
+        },
+      ),
       MatchingTripsResponse: apiResponse({
         $ref: "#/components/schemas/MatchingTripsData",
       }),
@@ -4025,6 +4151,43 @@ const swaggerDefinition = {
           500: {
             $ref: "#/components/responses/InternalServerError",
           },
+        },
+      },
+    },
+    "/api/v1/trips/{id}/checklist": {
+      get: {
+        tags: ["Trips"],
+        summary: "Get the trip execution checklist",
+        description:
+          "Returns the trip owner's assigned errand items grouped by category. Pickup and delivery flags are derived from assignment status. Cancelled assignment items remain visible but are excluded from progress totals.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            description: "DB identifier of the trip.",
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: {
+            description:
+              "Trip checklist retrieved successfully. A trip without assignments returns zero progress and an empty categories array.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/TripChecklistResponse",
+                },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Only the trip owner can view its checklist."),
+          404: errorResponse("Trip not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
         },
       },
     },

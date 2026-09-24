@@ -120,6 +120,47 @@ const findById = async (tripId, client = prisma) => {
   });
 };
 
+const findChecklistById = async (tripId, client = prisma) => {
+  return client.trip.findUnique({
+    where: { id: tripId },
+    select: {
+      id: true,
+      travelerId: true,
+      assignments: {
+        orderBy: [{ acceptedAt: "asc" }, { id: "asc" }],
+        select: {
+          id: true,
+          status: true,
+          errand: {
+            select: {
+              id: true,
+              items: {
+                orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+                select: {
+                  id: true,
+                  name: true,
+                  description: true,
+                  quantity: true,
+                  size: true,
+                  isUrgent: true,
+                  itemNote: true,
+                  category: {
+                    select: {
+                      id: true,
+                      name: true,
+                      icon: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+};
+
 // Builds the query used for listing trips.
 const buildListWhere = ({
   userId,
@@ -330,6 +371,7 @@ module.exports = {
   findByTravelerAndClientKey,
   createTrip,
   findById,
+  findChecklistById,
   listTrips,
   countTrips,
   updateTrip,
