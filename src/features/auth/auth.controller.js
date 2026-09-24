@@ -171,6 +171,18 @@ const confirmAccountReactivation = async (req, res, next) => {
   }
 };
 
+const changePassword = async (req, res, next) => {
+  try {
+    const result = await authService.changePassword(
+      req.user.id,
+      req.validatedData.body,
+    );
+    return res.status(200).json(new ApiResponse(200, result.message));
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -182,4 +194,5 @@ module.exports = {
   resetPassword,
   requestAccountReactivationOtp,
   confirmAccountReactivation,
+  changePassword,
 };

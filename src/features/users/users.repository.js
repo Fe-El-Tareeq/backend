@@ -22,6 +22,7 @@ const findUserById = async (userId) => {
       profileCompleted: true,
       phoneVerifiedAt: true,
       status: true,
+      verificationStatus: true,
       createdAt: true,
       updatedAt: true,
       neighborhood: {
@@ -31,6 +32,17 @@ const findUserById = async (userId) => {
           governorate: true,
           isActive: true,
         },
+      },
+      identityVerifications: {
+        select: {
+          id: true,
+          status: true,
+          submittedAt: true,
+          reviewedAt: true,
+          rejectionReason: true,
+        },
+        orderBy: { submittedAt: "desc" },
+        take: 1,
       },
     },
   });
@@ -69,6 +81,7 @@ const updateUserProfile = async (userId, data) => {
       neighborhoodId: true,
       profileCompleted: true,
       status: true,
+      verificationStatus: true,
       updatedAt: true,
       neighborhood: {
         select: {
@@ -84,6 +97,53 @@ const updateUserProfile = async (userId, data) => {
 
 const updateProfileImage = async (userId, profileImageUrl, profileImagePath) =>
   updateUserProfile(userId, { profileImageUrl, profileImagePath });
+
+const getProfileStatistics = async (userId) => {
+  const [publishedErrandsCount, tripsCount, ratings, wallet] = await Promise.all([
+    prisma.errand.count({ where: { requesterId: userId } }),
+    prisma.trip.count({ where: { travelerId: userId } }),
+    prisma.rating.aggregate({
+      where: { reviewedUserId: userId },
+      _avg: { ratingStars: true },
+      _count: { _all: true },
+    }),
+    prisma.wallet.findUnique({
+      where: { userId },
+      select: { tokenBalance: true },
+    }),
+  ]);
+  return {
+    publishedErrandsCount,
+    tripsCount,
+    averageRating:
+      ratings._avg.ratingStars === null
+        ? null
+        : Math.round(ratings._avg.ratingStars * 100) / 100,
+    ratingCount: ratings._count._all,
+    tokenBalance: wallet?.tokenBalance ?? 0,
+  };
+};
+
+const findPendingIdentityVerification = (userId, client = prisma) =>
+  client.identityVerification.findFirst({
+    where: { userId, status: "PENDING_REVIEW" },
+    select: { id: true, submittedAt: true },
+  });
+
+const submitIdentityVerification = (userId, paths) =>
+  prisma.$transaction(async (tx) => {
+    const pending = await findPendingIdentityVerification(userId, tx);
+    if (pending) return { conflict: pending };
+    const verification = await tx.identityVerification.create({
+      data: { userId, ...paths },
+      select: { id: true, status: true, submittedAt: true },
+    });
+    await tx.user.update({
+      where: { id: userId },
+      data: { verificationStatus: "PENDING_REVIEW" },
+    });
+    return { verification };
+  });
 
 const findNotificationPreference = (userId) =>
   prisma.userNotificationPreference.findUnique({ where: { userId } });
@@ -143,6 +203,9 @@ module.exports = {
   findActiveNeighborhoodById,
   updateUserProfile,
   updateProfileImage,
+  getProfileStatistics,
+  findPendingIdentityVerification,
+  submitIdentityVerification,
   findNotificationPreference,
   upsertNotificationPreference,
   runTransaction,

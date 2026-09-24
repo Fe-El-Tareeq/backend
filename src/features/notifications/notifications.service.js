@@ -237,6 +237,39 @@ const paymentFailure = ({ userId, invoiceId, reason }, client) =>
     client,
   );
 
+const identityVerificationApproved = ({ userId, verificationId }, client) =>
+  createInAppNotification(
+    {
+      userId,
+      type: NOTIFICATION_TYPES.IDENTITY_VERIFICATION_APPROVED,
+      title: "Identity verification approved",
+      message: "Your identity has been verified successfully.",
+      metadata: { verificationId, verificationStatus: "VERIFIED" },
+      idempotencyKey: `identity-verification-approved:${verificationId}`,
+    },
+    client,
+  );
+
+const identityVerificationRejected = (
+  { userId, verificationId, rejectionReason },
+  client,
+) =>
+  createInAppNotification(
+    {
+      userId,
+      type: NOTIFICATION_TYPES.IDENTITY_VERIFICATION_REJECTED,
+      title: "Identity verification needs attention",
+      message: "Your identity verification was rejected. You can submit new documents.",
+      metadata: {
+        verificationId,
+        verificationStatus: "REJECTED",
+        rejectionReason,
+      },
+      idempotencyKey: `identity-verification-rejected:${verificationId}`,
+    },
+    client,
+  );
+
 module.exports = {
   createInAppNotification,
   list,
@@ -251,6 +284,8 @@ module.exports = {
     newProposal,
     paymentFailure,
     paymentSuccess,
+    identityVerificationApproved,
+    identityVerificationRejected,
   },
   unreadCount,
 };

@@ -14,9 +14,12 @@ const cities = Object.freeze(
 const cityKeys = Object.freeze(cities.map((city) => city.key));
 
 const findCityByKey = (key) => cities.find((city) => city.key === key) || null;
+const findCityByGovernorate = (governorate) =>
+  cities.find((city) => city.nameAr === governorate) || null;
 
 module.exports = {
   cities,
   cityKeys,
   findCityByKey,
+  findCityByGovernorate,
 };

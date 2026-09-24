@@ -5,6 +5,7 @@ const safeUserSelect = {
   fullName: true,
   trustScore: true,
   profileImageUrl: true,
+  isVerified: true,
 };
 
 const assignmentSelect = {

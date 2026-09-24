@@ -29,6 +29,10 @@ const errorHandler = (err, req, res, next) => {
     success: false,
     message,
     errors,
+    ...(err.code && !String(err.code).startsWith("P") ? { code: err.code } : {}),
+    ...(err.verificationStatus
+      ? { verificationStatus: err.verificationStatus }
+      : {}),
     ...(process.env.NODE_ENV === "development" && {
       stack: err.stack,
     }),

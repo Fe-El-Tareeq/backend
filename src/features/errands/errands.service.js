@@ -335,7 +335,7 @@ const buildListWhere = async (user, filters) => {
 
   if (filters.status) {
     where.status = filters.status;
-  } else {
+  } else if (!filters.mine) {
     where.status = "OPEN";
     where.expiresAt = {
       gt: new Date(),
@@ -359,9 +359,10 @@ const listErrands = async (user, filters) => {
   const where = await buildListWhere(user, filters);
   const { skip, take } = filters;
 
-  const [errands, total] = await Promise.all([
+  const [errands, total, summary] = await Promise.all([
     repository.listErrands({ where, skip, take }),
     repository.countErrands(where),
+    filters.mine ? repository.summarizeUserErrands(user.id) : null,
   ]);
 
   return {
@@ -371,6 +372,7 @@ const listErrands = async (user, filters) => {
       take,
       total,
     },
+    ...(summary ? { summary } : {}),
   };
 };
 

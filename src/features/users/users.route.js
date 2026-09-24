@@ -9,6 +9,9 @@ const {
   deactivateAccountSchema,
 } = require("./users.validation");
 const { uploadProfileImage } = require("./profileImage.middleware");
+const {
+  uploadIdentityVerification,
+} = require("./identityVerification.middleware");
 
 const router = express.Router();
 
@@ -40,6 +43,12 @@ router.delete(
   "/me/profile-image",
   requireAuth,
   controller.deleteCurrentUserProfileImage,
+);
+router.post(
+  "/me/identity-verification",
+  requireAuth,
+  uploadIdentityVerification,
+  controller.submitIdentityVerification,
 );
 router.delete(
   "/me",

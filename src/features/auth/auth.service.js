@@ -602,6 +602,41 @@ const logout = async (refreshToken) => {
   };
 };
 
+const changePassword = async (
+  userId,
+  { currentPassword, newPassword, refreshToken },
+) => {
+  const tokenHash = hashRefreshToken(refreshToken);
+  const [user, storedToken] = await Promise.all([
+    authRepository.findUserByIdWithPassword(userId),
+    authRepository.findRefreshTokenByHash(tokenHash),
+  ]);
+  if (!user?.passwordHash || !(await bcrypt.compare(currentPassword, user.passwordHash))) {
+    throw new ApiError(401, "Current password is incorrect.");
+  }
+  if (await bcrypt.compare(newPassword, user.passwordHash)) {
+    throw new ApiError(400, "New password must be different from the current password.");
+  }
+  if (
+    !storedToken ||
+    storedToken.userId !== userId ||
+    storedToken.revokedAt ||
+    storedToken.expiresAt <= new Date()
+  ) {
+    throw new ApiError(401, "Current refresh token is invalid or expired.");
+  }
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  await authRepository.runTransaction(async (tx) => {
+    await authRepository.updateUserPassword(userId, passwordHash, tx);
+    await authRepository.revokeOtherRefreshTokensForUser(
+      userId,
+      storedToken.id,
+      tx,
+    );
+  });
+  return { message: "Password changed successfully. Other sessions were signed out." };
+};
+
 module.exports = {
   register,
   login,
@@ -614,4 +649,5 @@ module.exports = {
   requestAccountReactivationOtp,
   confirmAccountReactivation,
   hashRefreshToken,
+  changePassword,
 };

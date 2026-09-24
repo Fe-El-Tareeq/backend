@@ -3,6 +3,8 @@ const bcrypt = require("bcryptjs");
 const repository = require("./users.repository");
 const profileImageStorage = require("./profileImage.storage");
 const env = require("../../config/env");
+const identityStorage = require("./identityVerification.storage");
+const { findCityByGovernorate } = require("../locations/locations.catalog");
 
 const toPublicProfile = (user) => {
   const { profileImagePath, ...publicProfile } = user;
@@ -11,13 +13,80 @@ const toPublicProfile = (user) => {
 
 // Returns the authenticated user's profile.
 const getCurrentUserProfile = async (userId) => {
-  const user = await repository.findUserById(userId);
+  const [user, statistics] = await Promise.all([
+    repository.findUserById(userId),
+    repository.getProfileStatistics(userId),
+  ]);
 
   if (!user) {
     throw new ApiError(404, "User not found.");
   }
 
-  return toPublicProfile(user);
+  const publicProfile = toPublicProfile(user);
+  const verification = publicProfile.identityVerifications?.[0] || null;
+  delete publicProfile.identityVerifications;
+  const city = publicProfile.neighborhood
+    ? findCityByGovernorate(publicProfile.neighborhood.governorate)
+    : null;
+  return {
+    ...publicProfile,
+    city: city
+      ? { key: city.key, nameAr: city.nameAr, nameEn: city.nameEn }
+      : null,
+    isVerified: publicProfile.verificationStatus === "VERIFIED",
+    verification,
+    statistics,
+  };
+};
+
+const submitIdentityVerification = async (userId, files) => {
+  const user = await repository.findUserById(userId);
+  if (!user) throw new ApiError(404, "User not found.");
+  if (user.verificationStatus === "VERIFIED") {
+    throw new ApiError(409, "Identity is already verified.");
+  }
+  if (await repository.findPendingIdentityVerification(userId)) {
+    throw new ApiError(
+      409,
+      "An identity verification request is already pending review.",
+    );
+  }
+
+  const uploadedPaths = [];
+  try {
+    const uploads = await Promise.allSettled([
+        identityStorage.upload(userId, "front", files.idFrontImage[0]),
+        identityStorage.upload(userId, "back", files.idBackImage[0]),
+        identityStorage.upload(userId, "selfie", files.selfieImage[0]),
+      ]);
+    uploadedPaths.push(
+      ...uploads
+        .filter((result) => result.status === "fulfilled")
+        .map((result) => result.value),
+    );
+    const failedUpload = uploads.find((result) => result.status === "rejected");
+    if (failedUpload) throw failedUpload.reason;
+    const [idFrontImagePath, idBackImagePath, selfieImagePath] = uploads.map(
+      (result) => result.value,
+    );
+    const result = await repository.submitIdentityVerification(userId, {
+      idFrontImagePath,
+      idBackImagePath,
+      selfieImagePath,
+    });
+    if (result.conflict) {
+      throw new ApiError(
+        409,
+        "An identity verification request is already pending review.",
+      );
+    }
+    return result.verification;
+  } catch (error) {
+    await Promise.allSettled(
+      uploadedPaths.map((path) => identityStorage.remove(path)),
+    );
+    throw error;
+  }
 };
 
 // Updates the authenticated user's profile.
@@ -174,4 +243,5 @@ module.exports = {
   getCurrentUserSettings,
   updateCurrentUserNotificationSettings,
   deactivateCurrentUserAccount,
+  submitIdentityVerification,
 };
