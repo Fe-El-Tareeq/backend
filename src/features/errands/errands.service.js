@@ -7,7 +7,10 @@ const {
   calculatePriorityScore,
   calculateExpiresAt,
 } = require("./errands.rules");
-const { findCityByKey } = require("../locations/locations.catalog");
+const {
+  getAreaKeysForZone,
+  isAreaInZone,
+} = require("../locations/locations.catalog");
 
 const EDITABLE_STATUSES = ["OPEN"];
 const CANCELLABLE_STATUSES = ["OPEN"];
@@ -293,6 +296,9 @@ const createErrand = async (requesterId, payload) => {
 
 const buildListWhere = async (user, filters) => {
   const where = {};
+  const originZoneKey = filters.originZoneKey || filters.originCity;
+  const destinationZoneKey =
+    filters.destinationZoneKey || filters.destinationCity;
 
   if (filters.mine) {
     if (!user)
@@ -310,13 +316,25 @@ const buildListWhere = async (user, filters) => {
     where.neighborhoodId = originNeighborhoodId;
   }
 
-  if (filters.originCity) {
+  if (originZoneKey && originNeighborhoodId) {
+    const neighborhood = await repository.findActiveNeighborhoodById(
+      originNeighborhoodId,
+    );
+    if (!neighborhood) {
+      throw new ApiError(400, "Origin neighborhood is missing, inactive, or invalid.");
+    }
+    if (!isAreaInZone(neighborhood.key, originZoneKey)) {
+      throw new ApiError(400, "Origin neighborhood does not belong to the requested zone.");
+    }
+  }
+
+  if (originZoneKey) {
     where.neighborhood = {
-      governorate: findCityByKey(filters.originCity).nameAr,
+      key: { in: getAreaKeysForZone(originZoneKey) },
     };
   }
 
-  if (!originNeighborhoodId && !filters.originCity && user && !filters.mine) {
+  if (!originNeighborhoodId && !originZoneKey && user && !filters.mine) {
     const requester = await repository.findRequesterForPosting(user.id);
     if (requester?.neighborhoodId) {
       where.neighborhoodId = requester.neighborhoodId;
@@ -327,9 +345,21 @@ const buildListWhere = async (user, filters) => {
     where.destinationNeighborhoodId = filters.destinationNeighborhoodId;
   }
 
-  if (filters.destinationCity) {
+  if (destinationZoneKey && filters.destinationNeighborhoodId) {
+    const neighborhood = await repository.findActiveNeighborhoodById(
+      filters.destinationNeighborhoodId,
+    );
+    if (!neighborhood) {
+      throw new ApiError(400, "Destination neighborhood is missing, inactive, or invalid.");
+    }
+    if (!isAreaInZone(neighborhood.key, destinationZoneKey)) {
+      throw new ApiError(400, "Destination neighborhood does not belong to the requested zone.");
+    }
+  }
+
+  if (destinationZoneKey) {
     where.destinationNeighborhood = {
-      governorate: findCityByKey(filters.destinationCity).nameAr,
+      key: { in: getAreaKeysForZone(destinationZoneKey) },
     };
   }
 

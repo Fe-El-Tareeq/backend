@@ -1,5 +1,9 @@
-const areasConfig = require("../../data/gaza-areas.json");
 const pricingConfig = require("../../data/gaza-delivery-pricing.json");
+const {
+  areasConfig,
+  areaByKey,
+  zoneByAreaKey,
+} = require("../locations/locations.catalog");
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(`Invalid delivery pricing configuration: ${message}`);
@@ -7,16 +11,6 @@ const assert = (condition, message) => {
 
 assert(pricingConfig.status === "APPROVED", "status must be APPROVED");
 assert(Number.isInteger(pricingConfig.pricingVersion) && pricingConfig.pricingVersion > 0, "pricingVersion must be a positive integer");
-
-const areaByKey = new Map();
-const zoneByAreaKey = new Map();
-for (const zone of areasConfig.zones) {
-  for (const area of zone.areas) {
-    assert(!areaByKey.has(area.key), `duplicate area key ${area.key}`);
-    areaByKey.set(area.key, area);
-    zoneByAreaKey.set(area.key, zone.key);
-  }
-}
 
 const validateFee = (fee, label) => {
   const { minimumDeliveryFeeNis: min, maximumDeliveryFeeNis: max } = pricingConfig.constraints;

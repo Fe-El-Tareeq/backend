@@ -1,7 +1,10 @@
 const { z } = require("zod");
 
 const { MAX_VOICE_NOTE_DURATION_SEC } = require("./errands.rules");
-const { cityKeys } = require("../locations/locations.catalog");
+const {
+  zoneKeySchema,
+  addAliasConflictIssue,
+} = require("../locations/locations.validation");
 
 const weightClassSchema = z.enum(["LIGHT", "MEDIUM", "HEAVY"]);
 const itemSizeSchema = z.enum(["ENVELOPE", "SMALL", "MEDIUM", "LARGE"]);
@@ -169,12 +172,14 @@ const listErrandsSchema = z.object({
   body: z.object({}).optional(),
   params: z.object({}),
   query: z.object({
-    originCity: z.enum(cityKeys).optional(),
+    originZoneKey: zoneKeySchema.optional(),
+    originCity: zoneKeySchema.optional(),
     originNeighborhoodId: z
       .string()
       .uuid("Origin neighborhood ID must be a valid UUID.")
       .optional(),
-    destinationCity: z.enum(cityKeys).optional(),
+    destinationZoneKey: zoneKeySchema.optional(),
+    destinationCity: zoneKeySchema.optional(),
     destinationNeighborhoodId: z
       .string()
       .uuid("Destination neighborhood ID must be a valid UUID.")
@@ -203,6 +208,9 @@ const listErrandsSchema = z.object({
       .min(1, "Take must be at least 1.")
       .max(50, "Take must not exceed 50.")
       .default(20),
+  }).superRefine((data, ctx) => {
+    addAliasConflictIssue(data, ctx, "originZoneKey", "originCity");
+    addAliasConflictIssue(data, ctx, "destinationZoneKey", "destinationCity");
   }),
 });
 

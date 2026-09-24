@@ -150,12 +150,12 @@ beforeEach(() => {
   repository.findRequesterForPosting.mockResolvedValue(requester);
   repository.findActiveCategoryById.mockResolvedValue(category);
   repository.findActiveCategoriesByIds.mockResolvedValue([category]);
-  repository.findActiveNeighborhoodById.mockResolvedValue({
-    id: pickupNeighborhoodId,
-    key: "ASH_SHUJAIYEH",
-    name: "Ash Shujaiyeh",
-    governorate: "Gaza",
-  });
+  repository.findActiveNeighborhoodById.mockImplementation(async (id) => ({
+    id,
+    key: id === neighborhoodId ? "ASH_SHUJAIYEH" : "KHAN_YUNIS_CITY",
+    name: "Catalog neighborhood",
+    governorate: "Non-canonical display text",
+  }));
   repository.createErrand.mockImplementation(async (data) => makeErrand(data));
   repository.findById.mockResolvedValue(makeErrand());
   repository.updateErrand.mockImplementation(async (id, data) =>
@@ -486,9 +486,9 @@ describe("Errands list and detail", () => {
     );
   });
 
-  test("list supports origin and destination city and neighborhood filters", async () => {
+  test("list supports canonical zone and neighborhood filters", async () => {
     const response = await request(app).get(
-      `/api/v1/errands?originCity=GAZA_CITY&destinationCity=KHAN_YUNIS&originNeighborhoodId=${neighborhoodId}&destinationNeighborhoodId=${pickupNeighborhoodId}`,
+      `/api/v1/errands?originZoneKey=GAZA_CITY&destinationZoneKey=KHAN_YUNIS&originNeighborhoodId=${neighborhoodId}&destinationNeighborhoodId=${pickupNeighborhoodId}`,
     );
 
     expect(response.statusCode).toBe(200);
@@ -496,12 +496,96 @@ describe("Errands list and detail", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           neighborhoodId,
-          neighborhood: { governorate: "مدينة غزة" },
+          neighborhood: { key: { in: expect.arrayContaining(["ASH_SHUJAIYEH"]) } },
           destinationNeighborhoodId: pickupNeighborhoodId,
-          destinationNeighborhood: { governorate: "خانيونس" },
+          destinationNeighborhood: { key: { in: expect.arrayContaining(["KHAN_YUNIS_CITY"]) } },
         }),
       }),
     );
+  });
+
+  test("supports city aliases and rejects conflicts or neighborhood mismatches", async () => {
+    const aliasResponse = await request(app).get(
+      "/api/v1/errands?originCity=GAZA_CITY&destinationCity=KHAN_YUNIS",
+    );
+    const conflictResponse = await request(app).get(
+      "/api/v1/errands?originZoneKey=GAZA_CITY&originCity=RAFAH",
+    );
+    const mismatchResponse = await request(app).get(
+      `/api/v1/errands?originZoneKey=RAFAH&originNeighborhoodId=${neighborhoodId}`,
+    );
+
+    expect(aliasResponse.statusCode).toBe(200);
+    expect(conflictResponse.statusCode).toBe(400);
+    expect(mismatchResponse.statusCode).toBe(400);
+  });
+
+  test("destinationZoneKey constrains the destination relationship", async () => {
+    const response = await request(app).get(
+      "/api/v1/errands?destinationZoneKey=KHAN_YUNIS",
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(repository.listErrands).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          destinationNeighborhood: {
+            key: { in: expect.arrayContaining(["KHAN_YUNIS_CITY"]) },
+          },
+        }),
+      }),
+    );
+  });
+
+  test("destinationCity remains a filtering alias", async () => {
+    const response = await request(app).get(
+      "/api/v1/errands?destinationCity=RAFAH",
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(repository.listErrands).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          destinationNeighborhood: {
+            key: { in: expect.arrayContaining(["RAFAH_CITY"]) },
+          },
+        }),
+      }),
+    );
+  });
+
+  test("accepts a compatible destination zone and neighborhood", async () => {
+    const response = await request(app).get(
+      `/api/v1/errands?destinationZoneKey=KHAN_YUNIS&destinationNeighborhoodId=${pickupNeighborhoodId}`,
+    );
+
+    expect(response.statusCode).toBe(200);
+  });
+
+  test("rejects a destination zone and neighborhood mismatch", async () => {
+    const response = await request(app).get(
+      `/api/v1/errands?destinationZoneKey=RAFAH&destinationNeighborhoodId=${pickupNeighborhoodId}`,
+    );
+
+    expect(response.statusCode).toBe(400);
+    expect(repository.listErrands).not.toHaveBeenCalled();
+  });
+
+  test("accepts equal origin and destination aliases", async () => {
+    const response = await request(app).get(
+      "/api/v1/errands?originZoneKey=GAZA_CITY&originCity=GAZA_CITY&destinationZoneKey=KHAN_YUNIS&destinationCity=KHAN_YUNIS",
+    );
+
+    expect(response.statusCode).toBe(200);
+  });
+
+  test("rejects conflicting destination aliases", async () => {
+    const response = await request(app).get(
+      "/api/v1/errands?destinationZoneKey=GAZA_CITY&destinationCity=KHAN_YUNIS",
+    );
+
+    expect(response.statusCode).toBe(400);
+    expect(repository.listErrands).not.toHaveBeenCalled();
   });
 
   test("mine filter lists only the authenticated requester's errands", async () => {

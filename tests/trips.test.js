@@ -10,7 +10,11 @@ jest.mock("../src/features/trips/trips.repository");
 jest.mock("../src/features/deliveryPricing/deliveryPricing.service");
 
 const repository = require("../src/features/trips/trips.repository");
+const actualRepository = jest.requireActual(
+  "../src/features/trips/trips.repository",
+);
 const service = require("../src/features/trips/trips.service");
+const { listTripsSchema } = require("../src/features/trips/trips.validation");
 const deliveryPricingService = require("../src/features/deliveryPricing/deliveryPricing.service");
 
 const tx = {
@@ -69,6 +73,11 @@ beforeEach(() => {
   repository.findByTravelerAndClientKey.mockResolvedValue(null);
 
   repository.findTravelerForPosting.mockResolvedValue(traveler);
+  repository.findActiveNeighborhoodById.mockImplementation(async (id) => ({
+    id,
+    key:
+      id === traveler.neighborhoodId ? "ASH_SHUJAIYEH" : "KHAN_YUNIS_CITY",
+  }));
 
   repository.createTrip.mockResolvedValue(createdTrip);
   repository.hasAcceptedAssignment.mockResolvedValue(false);
@@ -253,6 +262,35 @@ describe("Trips create idempotency", () => {
 });
 
 describe("Trips list and details", () => {
+  test("rejects conflicting canonical and city aliases", () => {
+    const result = listTripsSchema.safeParse({
+      body: {},
+      params: {},
+      query: { originZoneKey: "GAZA_CITY", originCity: "RAFAH" },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  test("builds repository filters for both structured endpoints", () => {
+    const where = actualRepository.buildListWhere({
+      originNeighborhoodId: traveler.neighborhoodId,
+      originAreaKeys: ["ASH_SHUJAIYEH"],
+      destinationNeighborhoodId: createData.destinationNeighborhoodId,
+      destinationAreaKeys: ["KHAN_YUNIS_CITY"],
+      status: "ACTIVE",
+    });
+
+    expect(where).toEqual(
+      expect.objectContaining({
+        neighborhoodId: traveler.neighborhoodId,
+        neighborhood: { key: { in: ["ASH_SHUJAIYEH"] } },
+        destinationNeighborhoodId: createData.destinationNeighborhoodId,
+        destinationNeighborhood: { key: { in: ["KHAN_YUNIS_CITY"] } },
+      }),
+    );
+  });
+
   test("returns trips with pagination", async () => {
     repository.listTrips.mockResolvedValue([createdTrip]);
 
@@ -289,6 +327,75 @@ describe("Trips list and details", () => {
       statusCode: 404,
       message: "Trip not found.",
     });
+  });
+
+  test("passes canonical zone and neighborhood filters to the repository", async () => {
+    repository.listTrips.mockResolvedValue([]);
+    repository.countTrips.mockResolvedValue(0);
+
+    await service.getTrips(traveler.id, {
+      originZoneKey: "GAZA_CITY",
+      originNeighborhoodId: traveler.neighborhoodId,
+      destinationZoneKey: "KHAN_YUNIS",
+      destinationNeighborhoodId: createData.destinationNeighborhoodId,
+    });
+
+    expect(repository.listTrips).toHaveBeenCalledWith(
+      expect.objectContaining({
+        originNeighborhoodId: traveler.neighborhoodId,
+        originAreaKeys: expect.arrayContaining(["ASH_SHUJAIYEH"]),
+        destinationNeighborhoodId: createData.destinationNeighborhoodId,
+        destinationAreaKeys: expect.arrayContaining(["KHAN_YUNIS_CITY"]),
+      }),
+    );
+  });
+
+  test("supports legacy origin aliases and rejects a zone mismatch", async () => {
+    repository.listTrips.mockResolvedValue([]);
+    repository.countTrips.mockResolvedValue(0);
+
+    await service.getTrips(traveler.id, {
+      originCity: "GAZA_CITY",
+      neighborhoodId: traveler.neighborhoodId,
+    });
+
+    expect(repository.listTrips).toHaveBeenCalledWith(
+      expect.objectContaining({
+        originNeighborhoodId: traveler.neighborhoodId,
+        originAreaKeys: expect.arrayContaining(["ASH_SHUJAIYEH"]),
+      }),
+    );
+
+    await expect(
+      service.getTrips(traveler.id, {
+        originZoneKey: "RAFAH",
+        originNeighborhoodId: traveler.neighborhoodId,
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  test("supports destinationCity and validates destination membership", async () => {
+    repository.listTrips.mockResolvedValue([]);
+    repository.countTrips.mockResolvedValue(0);
+
+    await service.getTrips(traveler.id, {
+      destinationCity: "KHAN_YUNIS",
+      destinationNeighborhoodId: createData.destinationNeighborhoodId,
+    });
+
+    expect(repository.listTrips).toHaveBeenCalledWith(
+      expect.objectContaining({
+        destinationNeighborhoodId: createData.destinationNeighborhoodId,
+        destinationAreaKeys: expect.arrayContaining(["KHAN_YUNIS_CITY"]),
+      }),
+    );
+
+    await expect(
+      service.getTrips(traveler.id, {
+        destinationZoneKey: "RAFAH",
+        destinationNeighborhoodId: createData.destinationNeighborhoodId,
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
   });
 });
 

@@ -1,4 +1,13 @@
 const swaggerJSDoc = require("swagger-jsdoc");
+const { zoneKeys } = require("../features/locations/locations.catalog");
+
+const zoneKeySchema = {
+  type: "string",
+  enum: zoneKeys,
+  description: "Stable application geographic zone identifier.",
+};
+
+const zoneKeyReference = { $ref: "#/components/schemas/ZoneKey" };
 
 const apiResponse = (dataSchema, example) => ({
   type: "object",
@@ -521,6 +530,7 @@ const swaggerDefinition = {
           },
         },
       },
+      ZoneKey: zoneKeySchema,
       Neighborhood: {
         type: "object",
         required: ["id", "name", "governorate"],
@@ -530,7 +540,13 @@ const swaggerDefinition = {
             type: "string",
             example: "AN_NASER",
             description:
-              "Stable delivery-area key used by the pricing configuration.",
+              "Stable catalog local-area identifier bridging this DB neighborhood to gaza-areas.json.",
+          },
+          zoneKey: {
+            allOf: [zoneKeyReference],
+            nullable: true,
+            description:
+              "Stable application zone key derived from the geographic catalog.",
           },
           id: {
             type: "string",
@@ -539,11 +555,11 @@ const swaggerDefinition = {
           },
           name: {
             type: "string",
-            example: "Al-Bireh",
+            example: "Ash Shujaiyeh",
           },
           governorate: {
             type: "string",
-            example: "Ramallah and Al-Bireh",
+            example: "Gaza City",
           },
           isActive: {
             type: "boolean",
@@ -568,9 +584,10 @@ const swaggerDefinition = {
         required: ["key", "nameAr", "nameEn", "neighborhoodsCount"],
         properties: {
           key: {
-            type: "string",
+            ...zoneKeySchema,
             example: "GAZA_CITY",
-            description: "Stable city key used by the neighborhoods filter.",
+            description:
+              "Stable application zone key; the cities route name is retained for backward compatibility.",
           },
           nameAr: { type: "string", example: "مدينة غزة" },
           nameEn: { type: "string", example: "Gaza City" },
@@ -1657,6 +1674,120 @@ const swaggerDefinition = {
           },
         },
       },
+      TripChecklistProgress: {
+        type: "object",
+        required: ["completed", "total", "percentage"],
+        properties: {
+          completed: {
+            type: "integer",
+            minimum: 0,
+            description: "Number of non-cancelled checklist items delivered.",
+          },
+          total: {
+            type: "integer",
+            minimum: 0,
+            description: "Number of non-cancelled checklist items.",
+          },
+          percentage: {
+            type: "integer",
+            minimum: 0,
+            maximum: 100,
+            description:
+              "Rounded delivered percentage; zero when total is zero.",
+          },
+        },
+      },
+      TripChecklistCategory: {
+        type: "object",
+        required: ["id", "name", "icon"],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          name: { type: "string" },
+          icon: { type: "string", nullable: true },
+        },
+      },
+      TripChecklistItem: {
+        type: "object",
+        required: [
+          "itemId",
+          "name",
+          "description",
+          "quantity",
+          "size",
+          "isUrgent",
+          "itemNote",
+          "errandId",
+          "assignmentId",
+          "pickedUp",
+          "delivered",
+          "status",
+        ],
+        properties: {
+          itemId: { type: "string", format: "uuid" },
+          name: { type: "string" },
+          description: { type: "string", nullable: true },
+          quantity: {
+            type: "integer",
+            minimum: 1,
+            description:
+              "Stored item quantity; one checklist row represents one ErrandItem.",
+          },
+          size: {
+            type: "string",
+            enum: ["ENVELOPE", "SMALL", "MEDIUM", "LARGE"],
+          },
+          isUrgent: { type: "boolean" },
+          itemNote: { type: "string", nullable: true },
+          errandId: { type: "string", format: "uuid" },
+          assignmentId: { type: "string", format: "uuid" },
+          pickedUp: {
+            type: "boolean",
+            description:
+              "True for PICKED_UP, IN_TRANSIT, and COMPLETED assignments.",
+          },
+          delivered: {
+            type: "boolean",
+            description: "True only for COMPLETED assignments.",
+          },
+          status: {
+            type: "string",
+            enum: [
+              "ACCEPTED",
+              "PICKED_UP",
+              "IN_TRANSIT",
+              "COMPLETED",
+              "CANCELLED",
+            ],
+            description:
+              "Assignment lifecycle status. Cancelled items remain visible and are excluded from progress.",
+          },
+        },
+      },
+      TripChecklistCategoryGroup: {
+        type: "object",
+        required: ["category", "items"],
+        properties: {
+          category: { $ref: "#/components/schemas/TripChecklistCategory" },
+          items: {
+            type: "array",
+            items: { $ref: "#/components/schemas/TripChecklistItem" },
+          },
+        },
+      },
+      TripChecklistData: {
+        type: "object",
+        required: ["tripId", "progress", "categories"],
+        properties: {
+          tripId: { type: "string", format: "uuid" },
+          progress: { $ref: "#/components/schemas/TripChecklistProgress" },
+          categories: {
+            type: "array",
+            items: {
+              $ref: "#/components/schemas/TripChecklistCategoryGroup",
+            },
+          },
+        },
+      },
       RatingCreateRequest: {
         type: "object",
         additionalProperties: false,
@@ -2708,6 +2839,18 @@ const swaggerDefinition = {
       TripListResponse: apiResponse({
         $ref: "#/components/schemas/TripListData",
       }),
+      TripChecklistResponse: apiResponse(
+        { $ref: "#/components/schemas/TripChecklistData" },
+        {
+          success: true,
+          message: "Trip checklist retrieved successfully.",
+          data: {
+            tripId: "880e8400-e29b-41d4-a716-446655440000",
+            progress: { completed: 0, total: 0, percentage: 0 },
+            categories: [],
+          },
+        },
+      ),
       MatchingTripsResponse: apiResponse({
         $ref: "#/components/schemas/MatchingTripsData",
       }),
@@ -3341,7 +3484,7 @@ const swaggerDefinition = {
         tags: ["Locations"],
         summary: "List supported cities",
         description:
-          "Returns the public city hierarchy used to populate the city selector before loading neighborhoods.",
+          "Returns the six supported application geographic zones. The route name is retained for compatibility; each stable key is the canonical zoneKey clients should store and use.",
         responses: {
           200: {
             description: "Supported cities retrieved successfully.",
@@ -3361,24 +3504,22 @@ const swaggerDefinition = {
         tags: ["Locations"],
         summary: "List active neighborhoods",
         description:
-          "Returns active seeded neighborhoods for registration. Optionally filters by a stable city key returned by GET /api/v1/locations/cities. This endpoint is public and excludes inactive neighborhoods.",
+          "Returns active DB-backed neighborhoods whose stable key bridges to the geographic catalog. Prefer zoneKey; city is a backward-compatible alias. Different values for both return 400.",
         parameters: [
+          {
+            name: "zoneKey",
+            in: "query",
+            required: false,
+            description: "Canonical stable zone key returned by the cities endpoint.",
+            schema: zoneKeyReference,
+          },
           {
             name: "city",
             in: "query",
             required: false,
-            description: "Stable city key returned by the cities endpoint.",
-            schema: {
-              type: "string",
-              enum: [
-                "NORTH_GAZA",
-                "GAZA_CITY",
-                "MIDDLE_AREA",
-                "DEIR_AL_BALAH",
-                "KHAN_YUNIS",
-                "RAFAH",
-              ],
-            },
+            deprecated: true,
+            description: "Backward-compatible alias for zoneKey.",
+            schema: zoneKeyReference,
           },
         ],
         responses: {
@@ -3407,7 +3548,7 @@ const swaggerDefinition = {
         tags: ["Errands"],
         summary: "List neighborhood errands",
         description:
-          "Returns a paginated notice-board list with origin and destination filtering. When authenticated and no origin filter is supplied, the user's neighborhood is used. By default only non-expired OPEN errands are returned.",
+          "Returns errands using canonical zone keys and DB neighborhood IDs. Neighborhood keys bridge DB rows to the catalog. City parameters are backward-compatible aliases.",
         security: [
           {
             bearerAuth: [],
@@ -3426,20 +3567,18 @@ const swaggerDefinition = {
             description: "Legacy alias for originNeighborhoodId.",
           },
           {
+            name: "originZoneKey",
+            in: "query",
+            required: false,
+            schema: zoneKeyReference,
+          },
+          {
             name: "originCity",
             in: "query",
             required: false,
-            schema: {
-              type: "string",
-              enum: [
-                "NORTH_GAZA",
-                "GAZA_CITY",
-                "MIDDLE_AREA",
-                "DEIR_AL_BALAH",
-                "KHAN_YUNIS",
-                "RAFAH",
-              ],
-            },
+            schema: zoneKeyReference,
+            deprecated: true,
+            description: "Backward-compatible alias for originZoneKey.",
           },
           {
             name: "originNeighborhoodId",
@@ -3448,20 +3587,18 @@ const swaggerDefinition = {
             schema: { type: "string", format: "uuid" },
           },
           {
+            name: "destinationZoneKey",
+            in: "query",
+            required: false,
+            schema: zoneKeyReference,
+          },
+          {
             name: "destinationCity",
             in: "query",
             required: false,
-            schema: {
-              type: "string",
-              enum: [
-                "NORTH_GAZA",
-                "GAZA_CITY",
-                "MIDDLE_AREA",
-                "DEIR_AL_BALAH",
-                "KHAN_YUNIS",
-                "RAFAH",
-              ],
-            },
+            schema: zoneKeyReference,
+            deprecated: true,
+            description: "Backward-compatible alias for destinationZoneKey.",
           },
           {
             name: "destinationNeighborhoodId",
@@ -3764,13 +3901,33 @@ const swaggerDefinition = {
         tags: ["Trips"],
         summary: "List trips",
         description:
-          "Returns a paginated list of trips. Authentication is required. By default, only active and non-expired trips are returned.",
+          "Returns trips using the same canonical zone keys and DB neighborhood IDs as errands. City parameters are backward-compatible aliases; destinationKeyword remains free text.",
         security: [
           {
             bearerAuth: [],
           },
         ],
         parameters: [
+          {
+            name: "originZoneKey",
+            in: "query",
+            required: false,
+            schema: zoneKeyReference,
+          },
+          {
+            name: "originCity",
+            in: "query",
+            required: false,
+            deprecated: true,
+            description: "Backward-compatible alias for originZoneKey.",
+            schema: zoneKeyReference,
+          },
+          {
+            name: "originNeighborhoodId",
+            in: "query",
+            required: false,
+            schema: { type: "string", format: "uuid" },
+          },
           {
             name: "neighborhoodId",
             in: "query",
@@ -3779,6 +3936,28 @@ const swaggerDefinition = {
               type: "string",
               format: "uuid",
             },
+            deprecated: true,
+            description: "Legacy alias for originNeighborhoodId.",
+          },
+          {
+            name: "destinationZoneKey",
+            in: "query",
+            required: false,
+            schema: zoneKeyReference,
+          },
+          {
+            name: "destinationCity",
+            in: "query",
+            required: false,
+            deprecated: true,
+            description: "Backward-compatible alias for destinationZoneKey.",
+            schema: zoneKeyReference,
+          },
+          {
+            name: "destinationNeighborhoodId",
+            in: "query",
+            required: false,
+            schema: { type: "string", format: "uuid" },
           },
           {
             name: "destinationKeyword",
@@ -4035,6 +4214,43 @@ const swaggerDefinition = {
           500: {
             $ref: "#/components/responses/InternalServerError",
           },
+        },
+      },
+    },
+    "/api/v1/trips/{id}/checklist": {
+      get: {
+        tags: ["Trips"],
+        summary: "Get the trip execution checklist",
+        description:
+          "Returns the trip owner's assigned errand items grouped by category. Pickup and delivery flags are derived from assignment status. Cancelled assignment items remain visible but are excluded from progress totals.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            description: "DB identifier of the trip.",
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: {
+            description:
+              "Trip checklist retrieved successfully. A trip without assignments returns zero progress and an empty categories array.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/TripChecklistResponse",
+                },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Only the trip owner can view its checklist."),
+          404: errorResponse("Trip not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
         },
       },
     },
