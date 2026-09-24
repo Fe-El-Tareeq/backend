@@ -129,7 +129,14 @@ const oppositeParticipantId = (assignment, actorUserId) =>
 
 const createAssignmentInTransaction = async (
   travelerId,
-  { errandId, tripId, acceptanceSource = "TRIP_MATCH" },
+  {
+    errandId,
+    tripId,
+    acceptanceSource = "TRIP_MATCH",
+    acceptanceNotificationRecipientId,
+    acceptanceNotificationTitle,
+    acceptanceNotificationMessage,
+  },
   tx,
 ) => {
   const now = new Date();
@@ -196,10 +203,16 @@ const createAssignmentInTransaction = async (
   await repository.createChatRoom(assignmentId, tx);
   await notificationService.templates.assignmentAccepted(
     {
-      requesterId: errand.requesterId,
+      recipientId: acceptanceNotificationRecipientId || errand.requesterId,
       errandId,
       assignmentId,
       tripId,
+      ...(acceptanceNotificationTitle
+        ? { title: acceptanceNotificationTitle }
+        : {}),
+      ...(acceptanceNotificationMessage
+        ? { message: acceptanceNotificationMessage }
+        : {}),
     },
     tx,
   );
@@ -290,6 +303,7 @@ const transitionAssignment = async ({
           userId: oppositeParticipantId(assignment, userId),
           errandId: assignment.errandId,
           assignmentId,
+          tripId: assignment.tripId,
           status: toStatus,
           actorUserId: userId,
         },
@@ -315,6 +329,7 @@ const transitionAssignment = async ({
         userId: oppositeParticipantId(assignment, userId),
         errandId: assignment.errandId,
         assignmentId,
+        tripId: assignment.tripId,
         status: toStatus,
         actorUserId: userId,
       },
