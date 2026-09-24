@@ -286,6 +286,81 @@ describe("Assignment lifecycle transitions", () => {
     });
   });
 
+  test("traveler can provide an optional future ETA when starting delivery", async () => {
+    const estimatedDeliveryAt = nowPlus(2).toISOString();
+    repository.findAssignmentByIdForUpdate.mockResolvedValue(
+      makeAssignment({ status: "PICKED_UP" }),
+    );
+    repository.updateAssignment.mockResolvedValue(
+      makeAssignment({
+        status: "IN_TRANSIT",
+        estimatedDeliveryAt: new Date(estimatedDeliveryAt),
+      }),
+    );
+
+    await service.startDelivery(travelerId, assignmentId, {
+      estimatedDeliveryAt,
+    });
+
+    expect(repository.updateAssignment).toHaveBeenCalledWith(
+      assignmentId,
+      expect.objectContaining({
+        status: "IN_TRANSIT",
+        estimatedDeliveryAt: new Date(estimatedDeliveryAt),
+      }),
+      tx,
+    );
+  });
+
+  test("past estimated delivery time is rejected", async () => {
+    repository.findAssignmentByIdForUpdate.mockResolvedValue(
+      makeAssignment({ status: "PICKED_UP" }),
+    );
+
+    await expect(
+      service.startDelivery(travelerId, assignmentId, {
+        estimatedDeliveryAt: new Date(Date.now() - 60_000).toISOString(),
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  test("traveler can update or clear ETA before completion", async () => {
+    repository.findAssignmentByIdForUpdate.mockResolvedValue(
+      makeAssignment({ status: "IN_TRANSIT" }),
+    );
+    const estimatedDeliveryAt = nowPlus(1).toISOString();
+
+    await service.updateEstimatedDeliveryTime(
+      travelerId,
+      assignmentId,
+      estimatedDeliveryAt,
+    );
+    await service.updateEstimatedDeliveryTime(travelerId, assignmentId, null);
+
+    expect(repository.updateAssignment).toHaveBeenNthCalledWith(
+      1,
+      assignmentId,
+      { estimatedDeliveryAt: new Date(estimatedDeliveryAt) },
+      tx,
+    );
+    expect(repository.updateAssignment).toHaveBeenNthCalledWith(
+      2,
+      assignmentId,
+      { estimatedDeliveryAt: null },
+      tx,
+    );
+  });
+
+  test("requester cannot update the traveler's ETA", async () => {
+    repository.findAssignmentByIdForUpdate.mockResolvedValue(
+      makeAssignment({ status: "IN_TRANSIT" }),
+    );
+
+    await expect(
+      service.updateEstimatedDeliveryTime(requesterId, assignmentId, nowPlus(1)),
+    ).rejects.toMatchObject({ statusCode: 403 });
+  });
+
   test("cannot start delivery from accepted", async () => {
     await expect(service.startDelivery(travelerId, assignmentId)).rejects.toMatchObject({
       statusCode: 400,

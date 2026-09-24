@@ -85,7 +85,7 @@ describe("Assignments API", () => {
       (
         await request(app).post(
           `/api/v1/assignments/${assignmentId}/start-delivery`,
-        )
+        ).send({ estimatedDeliveryAt: "2027-09-24T18:30:00.000Z" })
       ).statusCode,
     ).toBe(200);
     expect(
@@ -101,7 +101,9 @@ describe("Assignments API", () => {
     ).toBe(200);
 
     expect(service.markPickedUp).toHaveBeenCalledWith(userId, assignmentId);
-    expect(service.startDelivery).toHaveBeenCalledWith(userId, assignmentId);
+    expect(service.startDelivery).toHaveBeenCalledWith(userId, assignmentId, {
+      estimatedDeliveryAt: "2027-09-24T18:30:00.000Z",
+    });
     expect(service.completeAssignment).toHaveBeenCalledWith(
       userId,
       assignmentId,
@@ -110,6 +112,26 @@ describe("Assignments API", () => {
       userId,
       assignmentId,
       { cancellationReason: "Changed" },
+    );
+  });
+
+  test("PATCH estimated delivery time calls the matching service method", async () => {
+    const estimatedDeliveryAt = "2027-09-24T19:00:00.000Z";
+    service.updateEstimatedDeliveryTime.mockResolvedValue({
+      ...assignment,
+      status: "IN_TRANSIT",
+      estimatedDeliveryAt,
+    });
+
+    const response = await request(app)
+      .patch(`/api/v1/assignments/${assignmentId}/estimated-delivery-time`)
+      .send({ estimatedDeliveryAt });
+
+    expect(response.statusCode).toBe(200);
+    expect(service.updateEstimatedDeliveryTime).toHaveBeenCalledWith(
+      userId,
+      assignmentId,
+      estimatedDeliveryAt,
     );
   });
 });

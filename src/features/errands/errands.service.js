@@ -502,10 +502,82 @@ const cancelErrand = async (userId, id, cancellationReason) => {
   });
 };
 
+const TRACKING_STAGES = Object.freeze([
+  { stage: 1, key: "PUBLISHED", labelAr: "تم نشر الطلب" },
+  { stage: 2, key: "ACCEPTED", labelAr: "تم قبول العرض" },
+  { stage: 3, key: "IN_TRANSIT", labelAr: "في الطريق" },
+  { stage: 4, key: "DELIVERED", labelAr: "تم التسليم" },
+]);
+
+const TRACKING_PROGRESS = Object.freeze({ 1: 25, 2: 50, 3: 67, 4: 100 });
+
+const trackingStageFor = (errand, assignment) => {
+  if (errand.status === "COMPLETED" || assignment?.status === "COMPLETED") {
+    return 4;
+  }
+  if (["PICKED_UP", "IN_TRANSIT"].includes(assignment?.status)) return 3;
+  if (assignment?.status === "ACCEPTED") return 2;
+  return 1;
+};
+
+const reachedAtForStage = (stage, errand, assignment) => {
+  if (stage === 1) return errand.createdAt;
+  if (stage === 2) return assignment?.acceptedAt || null;
+  if (stage === 3) return assignment?.pickedUpAt || assignment?.inTransitAt || null;
+  if (stage === 4) return assignment?.completedAt || null;
+  return null;
+};
+
+const getErrandTracking = async (userId, errandId) => {
+  const trackingData = await repository.findTrackingData(errandId);
+  if (!trackingData) throw new ApiError(404, "Errand not found.");
+  const { errand, assignment, ratings, completedTripsCount } = trackingData;
+  if (errand.requesterId !== userId) {
+    throw new ApiError(403, "Only the requester can track this errand.");
+  }
+
+  const currentStage = trackingStageFor(errand, assignment);
+  const averageRating = ratings?._avg.ratingStars;
+  return {
+    errandId: errand.id,
+    errandStatus: errand.status,
+    assignmentStatus: assignment?.status || null,
+    currentStage,
+    progressPercentage: TRACKING_PROGRESS[currentStage],
+    stages: TRACKING_STAGES.map((stage) => ({
+      ...stage,
+      completed: stage.stage <= currentStage,
+      reachedAt: reachedAtForStage(stage.stage, errand, assignment),
+    })),
+    estimatedDeliveryAt: assignment?.estimatedDeliveryAt || null,
+    isEstimatedTimeProvided: Boolean(assignment?.estimatedDeliveryAt),
+    cancelled: errand.status === "CANCELLED",
+    cancellationReason:
+      errand.status === "CANCELLED" ? errand.cancellationReason : null,
+    traveler: assignment
+      ? {
+          id: assignment.traveler.id,
+          fullName: assignment.traveler.fullName,
+          profileImageUrl: assignment.traveler.profileImageUrl,
+          averageRating:
+            averageRating === null || averageRating === undefined
+              ? null
+              : Math.round(Number(averageRating) * 100) / 100,
+          ratingCount: ratings?._count._all || 0,
+          completedTripsCount,
+          isVerified: assignment.traveler.isVerified,
+          joinedYear: assignment.traveler.createdAt.getUTCFullYear(),
+          acceptanceMessage: assignment.proposal?.message || null,
+        }
+      : null,
+  };
+};
+
 module.exports = {
   createErrand,
   listErrands,
   getErrandById,
   updateErrand,
   cancelErrand,
+  getErrandTracking,
 };

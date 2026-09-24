@@ -228,6 +228,62 @@ const hasAssignmentHistory = async (errandId, client = prisma) => {
   return count > 0;
 };
 
+const findTrackingData = async (errandId, client = prisma) => {
+  const errand = await client.errand.findUnique({
+    where: { id: errandId },
+    select: {
+      id: true,
+      requesterId: true,
+      status: true,
+      cancellationReason: true,
+      createdAt: true,
+    },
+  });
+  if (!errand) return null;
+
+  const assignment = await client.errandAssignment.findFirst({
+    where: {
+      errandId,
+      status: { in: ["ACCEPTED", "PICKED_UP", "IN_TRANSIT", "COMPLETED"] },
+    },
+    orderBy: { acceptedAt: "desc" },
+    select: {
+      id: true,
+      status: true,
+      acceptedAt: true,
+      pickedUpAt: true,
+      inTransitAt: true,
+      estimatedDeliveryAt: true,
+      completedAt: true,
+      traveler: {
+        select: {
+          id: true,
+          fullName: true,
+          profileImageUrl: true,
+          createdAt: true,
+          isVerified: true,
+        },
+      },
+      proposal: { select: { message: true } },
+    },
+  });
+
+  if (!assignment) return { errand, assignment: null };
+
+  const [ratings, completedTripsCount] = await Promise.all([
+    client.rating.aggregate({
+      where: { reviewedUserId: assignment.traveler.id },
+      _avg: { ratingStars: true },
+      _count: { _all: true },
+    }),
+    client.trip.count({
+      where: { travelerId: assignment.traveler.id, status: "COMPLETED" },
+    }),
+  ]);
+
+  return { errand, assignment, ratings, completedTripsCount };
+};
+
 module.exports = {
   runTransaction,
   findRequesterForPosting,
@@ -242,4 +298,5 @@ module.exports = {
   countErrands,
   updateErrand,
   hasAssignmentHistory,
+  findTrackingData,
 };
