@@ -5,6 +5,12 @@ const runTransaction = async (callback) => {
   return prisma.$transaction(callback);
 };
 
+const findActiveNeighborhoodById = async (neighborhoodId, client = prisma) =>
+  client.neighborhood.findFirst({
+    where: { id: neighborhoodId, isActive: true, key: { not: null } },
+    select: { id: true, key: true, name: true, governorate: true },
+  });
+
 // Returns the traveler information required before creating a trip.
 const findTravelerForPosting = async (travelerId, client = prisma) => {
   return client.user.findUnique({
@@ -117,7 +123,10 @@ const findById = async (tripId, client = prisma) => {
 // Builds the query used for listing trips.
 const buildListWhere = ({
   userId,
-  neighborhoodId,
+  originNeighborhoodId,
+  originAreaKeys,
+  destinationNeighborhoodId,
+  destinationAreaKeys,
   destinationKeyword,
   status,
   departureFrom,
@@ -131,8 +140,20 @@ const buildListWhere = ({
     where.travelerId = userId;
   }
 
-  if (neighborhoodId) {
-    where.neighborhoodId = neighborhoodId;
+  if (originNeighborhoodId) {
+    where.neighborhoodId = originNeighborhoodId;
+  }
+
+  if (originAreaKeys) {
+    where.neighborhood = { key: { in: originAreaKeys } };
+  }
+
+  if (destinationNeighborhoodId) {
+    where.destinationNeighborhoodId = destinationNeighborhoodId;
+  }
+
+  if (destinationAreaKeys) {
+    where.destinationNeighborhood = { key: { in: destinationAreaKeys } };
   }
 
   if (destinationKeyword) {
@@ -171,7 +192,10 @@ const buildListWhere = ({
 const listTrips = async (
   {
     userId,
-    neighborhoodId,
+    originNeighborhoodId,
+    originAreaKeys,
+    destinationNeighborhoodId,
+    destinationAreaKeys,
     destinationKeyword,
     status,
     departureFrom,
@@ -184,7 +208,10 @@ const listTrips = async (
 ) => {
   const where = buildListWhere({
     userId,
-    neighborhoodId,
+    originNeighborhoodId,
+    originAreaKeys,
+    destinationNeighborhoodId,
+    destinationAreaKeys,
     destinationKeyword,
     status,
     departureFrom,
@@ -230,7 +257,10 @@ const listTrips = async (
 const countTrips = async (
   {
     userId,
-    neighborhoodId,
+    originNeighborhoodId,
+    originAreaKeys,
+    destinationNeighborhoodId,
+    destinationAreaKeys,
     destinationKeyword,
     status,
     departureFrom,
@@ -241,7 +271,10 @@ const countTrips = async (
 ) => {
   const where = buildListWhere({
     userId,
-    neighborhoodId,
+    originNeighborhoodId,
+    originAreaKeys,
+    destinationNeighborhoodId,
+    destinationAreaKeys,
     destinationKeyword,
     status,
     departureFrom,
@@ -290,7 +323,9 @@ const hasAcceptedAssignment = async (tripId, client = prisma) => {
 };
 
 module.exports = {
+  buildListWhere,
   runTransaction,
+  findActiveNeighborhoodById,
   findTravelerForPosting,
   findByTravelerAndClientKey,
   createTrip,

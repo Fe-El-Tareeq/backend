@@ -23,6 +23,7 @@ const tripId = "880e8400-e29b-41d4-a716-446655440000";
 
 const clientRequestKey = "770e8400-e29b-41d4-a716-446655440000";
 const destinationNeighborhoodId = "990e8400-e29b-41d4-a716-446655440000";
+const originNeighborhoodId = "660e8400-e29b-41d4-a716-446655440000";
 
 const validDepartureTime = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 const validReturnTime = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
@@ -104,6 +105,57 @@ describe("Trips API", () => {
         mine: false,
       }),
     );
+  });
+
+  test("GET /api/v1/trips forwards all canonical structured filters distinctly", async () => {
+    tripsService.getTrips.mockResolvedValue({
+      trips: [],
+      pagination: { skip: 0, take: 20, total: 0 },
+    });
+
+    const response = await request(app).get(
+      `/api/v1/trips?originZoneKey=GAZA_CITY&originNeighborhoodId=${originNeighborhoodId}&destinationZoneKey=KHAN_YUNIS&destinationNeighborhoodId=${destinationNeighborhoodId}`,
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(tripsService.getTrips).toHaveBeenCalledWith(
+      travelerId,
+      expect.objectContaining({
+        originZoneKey: "GAZA_CITY",
+        originNeighborhoodId,
+        destinationZoneKey: "KHAN_YUNIS",
+        destinationNeighborhoodId,
+      }),
+    );
+  });
+
+  test("GET /api/v1/trips supports destinationCity and equal canonical aliases", async () => {
+    tripsService.getTrips.mockResolvedValue({
+      trips: [],
+      pagination: { skip: 0, take: 20, total: 0 },
+    });
+
+    const response = await request(app).get(
+      "/api/v1/trips?originZoneKey=GAZA_CITY&originCity=GAZA_CITY&destinationZoneKey=KHAN_YUNIS&destinationCity=KHAN_YUNIS",
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(tripsService.getTrips).toHaveBeenCalledWith(
+      travelerId,
+      expect.objectContaining({
+        destinationZoneKey: "KHAN_YUNIS",
+        destinationCity: "KHAN_YUNIS",
+      }),
+    );
+  });
+
+  test("GET /api/v1/trips rejects conflicting destination aliases", async () => {
+    const response = await request(app).get(
+      "/api/v1/trips?destinationZoneKey=GAZA_CITY&destinationCity=KHAN_YUNIS",
+    );
+
+    expect(response.statusCode).toBe(400);
+    expect(tripsService.getTrips).not.toHaveBeenCalled();
   });
 
   test("GET /api/v1/trips/:id returns trip details", async () => {

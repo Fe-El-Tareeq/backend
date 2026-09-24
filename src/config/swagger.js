@@ -1,4 +1,13 @@
 const swaggerJSDoc = require("swagger-jsdoc");
+const { zoneKeys } = require("../features/locations/locations.catalog");
+
+const zoneKeySchema = {
+  type: "string",
+  enum: zoneKeys,
+  description: "Stable application geographic zone identifier.",
+};
+
+const zoneKeyReference = { $ref: "#/components/schemas/ZoneKey" };
 
 const apiResponse = (dataSchema, example) => ({
   type: "object",
@@ -497,6 +506,7 @@ const swaggerDefinition = {
           },
         },
       },
+      ZoneKey: zoneKeySchema,
       Neighborhood: {
         type: "object",
         required: ["id", "name", "governorate"],
@@ -506,7 +516,13 @@ const swaggerDefinition = {
             type: "string",
             example: "AN_NASER",
             description:
-              "Stable delivery-area key used by the pricing configuration.",
+              "Stable catalog local-area identifier bridging this DB neighborhood to gaza-areas.json.",
+          },
+          zoneKey: {
+            allOf: [zoneKeyReference],
+            nullable: true,
+            description:
+              "Stable application zone key derived from the geographic catalog.",
           },
           id: {
             type: "string",
@@ -515,11 +531,11 @@ const swaggerDefinition = {
           },
           name: {
             type: "string",
-            example: "Al-Bireh",
+            example: "Ash Shujaiyeh",
           },
           governorate: {
             type: "string",
-            example: "Ramallah and Al-Bireh",
+            example: "Gaza City",
           },
           isActive: {
             type: "boolean",
@@ -544,9 +560,10 @@ const swaggerDefinition = {
         required: ["key", "nameAr", "nameEn", "neighborhoodsCount"],
         properties: {
           key: {
-            type: "string",
+            ...zoneKeySchema,
             example: "GAZA_CITY",
-            description: "Stable city key used by the neighborhoods filter.",
+            description:
+              "Stable application zone key; the cities route name is retained for backward compatibility.",
           },
           nameAr: { type: "string", example: "مدينة غزة" },
           nameEn: { type: "string", example: "Gaza City" },
@@ -3286,7 +3303,7 @@ const swaggerDefinition = {
         tags: ["Locations"],
         summary: "List supported cities",
         description:
-          "Returns the public city hierarchy used to populate the city selector before loading neighborhoods.",
+          "Returns the six supported application geographic zones. The route name is retained for compatibility; each stable key is the canonical zoneKey clients should store and use.",
         responses: {
           200: {
             description: "Supported cities retrieved successfully.",
@@ -3306,24 +3323,22 @@ const swaggerDefinition = {
         tags: ["Locations"],
         summary: "List active neighborhoods",
         description:
-          "Returns active seeded neighborhoods for registration. Optionally filters by a stable city key returned by GET /api/v1/locations/cities. This endpoint is public and excludes inactive neighborhoods.",
+          "Returns active DB-backed neighborhoods whose stable key bridges to the geographic catalog. Prefer zoneKey; city is a backward-compatible alias. Different values for both return 400.",
         parameters: [
+          {
+            name: "zoneKey",
+            in: "query",
+            required: false,
+            description: "Canonical stable zone key returned by the cities endpoint.",
+            schema: zoneKeyReference,
+          },
           {
             name: "city",
             in: "query",
             required: false,
-            description: "Stable city key returned by the cities endpoint.",
-            schema: {
-              type: "string",
-              enum: [
-                "NORTH_GAZA",
-                "GAZA_CITY",
-                "MIDDLE_AREA",
-                "DEIR_AL_BALAH",
-                "KHAN_YUNIS",
-                "RAFAH",
-              ],
-            },
+            deprecated: true,
+            description: "Backward-compatible alias for zoneKey.",
+            schema: zoneKeyReference,
           },
         ],
         responses: {
@@ -3352,7 +3367,7 @@ const swaggerDefinition = {
         tags: ["Errands"],
         summary: "List neighborhood errands",
         description:
-          "Returns a paginated notice-board list with origin and destination filtering. When authenticated and no origin filter is supplied, the user's neighborhood is used. By default only non-expired OPEN errands are returned.",
+          "Returns errands using canonical zone keys and DB neighborhood IDs. Neighborhood keys bridge DB rows to the catalog. City parameters are backward-compatible aliases.",
         security: [
           {
             bearerAuth: [],
@@ -3371,20 +3386,18 @@ const swaggerDefinition = {
             description: "Legacy alias for originNeighborhoodId.",
           },
           {
+            name: "originZoneKey",
+            in: "query",
+            required: false,
+            schema: zoneKeyReference,
+          },
+          {
             name: "originCity",
             in: "query",
             required: false,
-            schema: {
-              type: "string",
-              enum: [
-                "NORTH_GAZA",
-                "GAZA_CITY",
-                "MIDDLE_AREA",
-                "DEIR_AL_BALAH",
-                "KHAN_YUNIS",
-                "RAFAH",
-              ],
-            },
+            schema: zoneKeyReference,
+            deprecated: true,
+            description: "Backward-compatible alias for originZoneKey.",
           },
           {
             name: "originNeighborhoodId",
@@ -3393,20 +3406,18 @@ const swaggerDefinition = {
             schema: { type: "string", format: "uuid" },
           },
           {
+            name: "destinationZoneKey",
+            in: "query",
+            required: false,
+            schema: zoneKeyReference,
+          },
+          {
             name: "destinationCity",
             in: "query",
             required: false,
-            schema: {
-              type: "string",
-              enum: [
-                "NORTH_GAZA",
-                "GAZA_CITY",
-                "MIDDLE_AREA",
-                "DEIR_AL_BALAH",
-                "KHAN_YUNIS",
-                "RAFAH",
-              ],
-            },
+            schema: zoneKeyReference,
+            deprecated: true,
+            description: "Backward-compatible alias for destinationZoneKey.",
           },
           {
             name: "destinationNeighborhoodId",
@@ -3701,13 +3712,33 @@ const swaggerDefinition = {
         tags: ["Trips"],
         summary: "List trips",
         description:
-          "Returns a paginated list of trips. Authentication is required. By default, only active and non-expired trips are returned.",
+          "Returns trips using the same canonical zone keys and DB neighborhood IDs as errands. City parameters are backward-compatible aliases; destinationKeyword remains free text.",
         security: [
           {
             bearerAuth: [],
           },
         ],
         parameters: [
+          {
+            name: "originZoneKey",
+            in: "query",
+            required: false,
+            schema: zoneKeyReference,
+          },
+          {
+            name: "originCity",
+            in: "query",
+            required: false,
+            deprecated: true,
+            description: "Backward-compatible alias for originZoneKey.",
+            schema: zoneKeyReference,
+          },
+          {
+            name: "originNeighborhoodId",
+            in: "query",
+            required: false,
+            schema: { type: "string", format: "uuid" },
+          },
           {
             name: "neighborhoodId",
             in: "query",
@@ -3716,6 +3747,28 @@ const swaggerDefinition = {
               type: "string",
               format: "uuid",
             },
+            deprecated: true,
+            description: "Legacy alias for originNeighborhoodId.",
+          },
+          {
+            name: "destinationZoneKey",
+            in: "query",
+            required: false,
+            schema: zoneKeyReference,
+          },
+          {
+            name: "destinationCity",
+            in: "query",
+            required: false,
+            deprecated: true,
+            description: "Backward-compatible alias for destinationZoneKey.",
+            schema: zoneKeyReference,
+          },
+          {
+            name: "destinationNeighborhoodId",
+            in: "query",
+            required: false,
+            schema: { type: "string", format: "uuid" },
           },
           {
             name: "destinationKeyword",

@@ -1,16 +1,9 @@
 const ApiError = require("../../utils/ApiError");
-const { areaByKey } = require("../deliveryPricing/deliveryPricing.config");
+const { getCompatibleAreaKeys } = require("../locations/locations.catalog");
 const repository = require("./matching.repository");
 const { WEIGHT_CLASS_UNITS, SCORE_WEIGHTS, TRUST_BASELINE, TIME_SCORE_WINDOW_HOURS } = require("./matching.constants");
 
-const compatibleAreaKeys = (key) => {
-  const area = areaByKey.get(key);
-  if (!area) return [];
-  const reverseNearby = [...areaByKey.values()]
-    .filter((candidate) => (candidate.nearbyAreas || []).includes(key))
-    .map((candidate) => candidate.key);
-  return [...new Set([key, ...(area.nearbyAreas || []), ...reverseNearby])];
-};
+const compatibleAreaKeys = getCompatibleAreaKeys;
 const round = (value) => Math.round(value * 100) / 100;
 
 const calculateScore = ({ errand, trip, candidateTrustScore }) => {

@@ -2,6 +2,10 @@ const ApiError = require("../../utils/ApiError");
 
 const repository = require("./trips.repository");
 const deliveryPricingService = require("../deliveryPricing/deliveryPricing.service");
+const {
+  getAreaKeysForZone,
+  isAreaInZone,
+} = require("../locations/locations.catalog");
 
 const {
   MIN_DEPARTURE_LEAD_MINUTES,
@@ -164,7 +168,9 @@ const createTrip = async (travelerId, data) => {
 // Returns a paginated list of trips.
 const getTrips = async (userId, filters = {}) => {
   const {
+    originNeighborhoodId,
     neighborhoodId,
+    destinationNeighborhoodId,
     destinationKeyword,
     status,
     departureFrom,
@@ -173,10 +179,39 @@ const getTrips = async (userId, filters = {}) => {
     skip = 0,
     take = 20,
   } = filters;
+  const resolvedOriginNeighborhoodId = originNeighborhoodId || neighborhoodId;
+  const originZoneKey = filters.originZoneKey || filters.originCity;
+  const destinationZoneKey =
+    filters.destinationZoneKey || filters.destinationCity;
+
+  const assertNeighborhoodInZone = async (neighborhoodIdToCheck, zoneKey, label) => {
+    if (!neighborhoodIdToCheck || !zoneKey) return;
+    const neighborhood = await repository.findActiveNeighborhoodById(
+      neighborhoodIdToCheck,
+    );
+    if (!neighborhood) {
+      throw new ApiError(400, `${label} neighborhood is missing, inactive, or invalid.`);
+    }
+    if (!isAreaInZone(neighborhood.key, zoneKey)) {
+      throw new ApiError(400, `${label} neighborhood does not belong to the requested zone.`);
+    }
+  };
+
+  await Promise.all([
+    assertNeighborhoodInZone(resolvedOriginNeighborhoodId, originZoneKey, "Origin"),
+    assertNeighborhoodInZone(destinationNeighborhoodId, destinationZoneKey, "Destination"),
+  ]);
 
   const query = {
     userId,
-    neighborhoodId,
+    originNeighborhoodId: resolvedOriginNeighborhoodId,
+    originAreaKeys: originZoneKey
+      ? getAreaKeysForZone(originZoneKey)
+      : undefined,
+    destinationNeighborhoodId,
+    destinationAreaKeys: destinationZoneKey
+      ? getAreaKeysForZone(destinationZoneKey)
+      : undefined,
     destinationKeyword,
     status,
     departureFrom,

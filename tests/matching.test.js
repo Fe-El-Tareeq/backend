@@ -64,6 +64,63 @@ beforeEach(() => {
 });
 
 describe("Matching hard filters and ranking", () => {
+  const runCatalogCompatibilityFlow = async ({ sourceOrigin, candidateOrigin }) => {
+    const source = makeErrand({
+      neighborhood: area(origin.id, sourceOrigin),
+      destinationNeighborhood: destination,
+    });
+    const candidate = makeTrip({
+      neighborhood: area(`${origin.id}-${candidateOrigin}`, candidateOrigin),
+      destinationNeighborhood: destination,
+    });
+    repository.findErrandSource.mockResolvedValue(source);
+    repository.findCandidateTrips.mockImplementation(
+      async ({ originKeys, destinationKeys }) =>
+        originKeys.includes(candidate.neighborhood.key) &&
+        destinationKeys.includes(candidate.destinationNeighborhood.key)
+          ? [candidate]
+          : [],
+    );
+
+    return service.getTripsForErrand(userId, errandId, 10);
+  };
+
+  test("accepts exact-area compatibility through the matching flow", async () => {
+    const result = await runCatalogCompatibilityFlow({
+      sourceOrigin: "AN_NASER",
+      candidateOrigin: "AN_NASER",
+    });
+
+    expect(result.matches).toHaveLength(1);
+  });
+
+  test("accepts directly nearby compatibility through the matching flow", async () => {
+    const result = await runCatalogCompatibilityFlow({
+      sourceOrigin: "AN_NASER",
+      candidateOrigin: "ASH_SHEIKH_RADWAN",
+    });
+
+    expect(result.matches).toHaveLength(1);
+  });
+
+  test("accepts reverse-nearby compatibility through the matching flow", async () => {
+    const result = await runCatalogCompatibilityFlow({
+      sourceOrigin: "ASH_SHEIKH_RADWAN",
+      candidateOrigin: "AN_NASER",
+    });
+
+    expect(result.matches).toHaveLength(1);
+  });
+
+  test("excludes unrelated areas through the matching flow", async () => {
+    const result = await runCatalogCompatibilityFlow({
+      sourceOrigin: "AN_NASER",
+      candidateOrigin: "RAFAH_CITY",
+    });
+
+    expect(result.matches).toEqual([]);
+  });
+
   test("returns compatible trips and passes hard-filter inputs to the repository", async () => {
     const result = await service.getTripsForErrand(userId, errandId, 10);
     expect(result.matches).toHaveLength(1);

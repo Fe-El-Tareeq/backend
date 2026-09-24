@@ -45,8 +45,9 @@ const activeUser = {
 
 const activeNeighborhood = {
   id: "60a32850-bd3f-444a-84b4-c750abf6ecb6",
-  name: "Al-Bireh",
-  governorate: "Ramallah and Al-Bireh",
+  key: "ASH_SHUJAIYEH",
+  name: "Ash Shujaiyeh",
+  governorate: "Gaza display text",
 };
 const pendingRegistration = {
   id: "650e8400-e29b-41d4-a716-446655440000",
@@ -419,6 +420,20 @@ describe("Locations neighborhoods", () => {
         }),
       ]),
     );
+    expect(response.body.data.cities.map((city) => city.key)).toEqual([
+      "NORTH_GAZA",
+      "GAZA_CITY",
+      "MIDDLE_AREA",
+      "DEIR_AL_BALAH",
+      "KHAN_YUNIS",
+      "RAFAH",
+    ]);
+    expect(response.body.data.cities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "GAZA_CITY", neighborhoodsCount: 16 }),
+        expect.objectContaining({ key: "RAFAH", neighborhoodsCount: 7 }),
+      ]),
+    );
   });
 
   test("returns active neighborhoods without authentication", async () => {
@@ -426,7 +441,9 @@ describe("Locations neighborhoods", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.body.success).toBe(true);
-    expect(response.body.data.neighborhoods).toEqual([activeNeighborhood]);
+    expect(response.body.data.neighborhoods).toEqual([
+      { ...activeNeighborhood, zoneKey: "GAZA_CITY" },
+    ]);
     expect(prisma.neighborhood.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
@@ -445,9 +462,9 @@ describe("Locations neighborhoods", () => {
     );
   });
 
-  test("filters active neighborhoods by city", async () => {
+  test("filters active neighborhoods by canonical zone key", async () => {
     const response = await request(app).get(
-      "/api/v1/locations/neighborhoods?city=GAZA_CITY",
+      "/api/v1/locations/neighborhoods?zoneKey=GAZA_CITY",
     );
 
     expect(response.statusCode).toBe(200);
@@ -455,11 +472,43 @@ describe("Locations neighborhoods", () => {
       expect.objectContaining({
         where: {
           isActive: true,
-          key: { not: null },
-          governorate: "مدينة غزة",
+          key: { in: expect.arrayContaining(["ASH_SHUJAIYEH"]) },
         },
       }),
     );
+    expect(prisma.neighborhood.findMany.mock.calls[0][0].where.key.in).not.toContain(
+      "RAFAH_CITY",
+    );
+  });
+
+  test.each([
+    ["NORTH_GAZA", "BEIT_LAHIA", "GAZA_HARBOR"],
+    ["MIDDLE_AREA", "AL_ZAHRA", "RAFAH_CITY"],
+    ["DEIR_AL_BALAH", "DEIR_AL_BALAH_AL_BALAD", "AN_NUSEIRAT_CAMP"],
+    ["KHAN_YUNIS", "KHAN_YUNIS_CITY", "BEIT_LAHIA"],
+    ["RAFAH", "RAFAH_CITY", "ASH_SHUJAIYEH"],
+  ])("maps catalog zone %s to its own area keys", async (zoneKey, included, excluded) => {
+    const response = await request(app).get(
+      `/api/v1/locations/neighborhoods?zoneKey=${zoneKey}`,
+    );
+
+    expect(response.statusCode).toBe(200);
+    const areaKeys = prisma.neighborhood.findMany.mock.calls[0][0].where.key.in;
+    expect(areaKeys).toContain(included);
+    expect(areaKeys).not.toContain(excluded);
+    expect(prisma.neighborhood.findMany.mock.calls[0][0].where.governorate).toBeUndefined();
+  });
+
+  test("supports equal aliases and rejects conflicting aliases", async () => {
+    const accepted = await request(app).get(
+      "/api/v1/locations/neighborhoods?zoneKey=GAZA_CITY&city=GAZA_CITY",
+    );
+    const rejected = await request(app).get(
+      "/api/v1/locations/neighborhoods?zoneKey=GAZA_CITY&city=RAFAH",
+    );
+
+    expect(accepted.statusCode).toBe(200);
+    expect(rejected.statusCode).toBe(400);
   });
 
   test("rejects an unsupported city", async () => {
@@ -489,6 +538,7 @@ describe("Locations neighborhoods", () => {
         id: activeNeighborhood.id,
         name: activeNeighborhood.name,
         governorate: activeNeighborhood.governorate,
+        zoneKey: null,
       },
     ]);
     expect(
