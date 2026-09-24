@@ -495,6 +495,30 @@ const swaggerDefinition = {
             enum: ["ACTIVE", "SUSPENDED", "BANNED", "DEACTIVATED"],
             example: "ACTIVE",
           },
+          verificationStatus: {
+            type: "string",
+            enum: ["UNVERIFIED", "PENDING_REVIEW", "VERIFIED", "REJECTED"],
+          },
+          isVerified: { type: "boolean", example: false },
+          city: {
+            type: "object",
+            nullable: true,
+            properties: {
+              key: { type: "string", example: "GAZA_CITY" },
+              nameAr: { type: "string", example: "مدينة غزة" },
+              nameEn: { type: "string", example: "Gaza City" },
+            },
+          },
+          statistics: {
+            type: "object",
+            properties: {
+              publishedErrandsCount: { type: "integer", minimum: 0 },
+              tripsCount: { type: "integer", minimum: 0 },
+              averageRating: { type: "number", nullable: true },
+              ratingCount: { type: "integer", minimum: 0 },
+              tokenBalance: { type: "integer", minimum: 0 },
+            },
+          },
         },
       },
       Neighborhood: {
@@ -3256,6 +3280,37 @@ const swaggerDefinition = {
         },
       },
     },
+    "/api/v1/auth/change-password": {
+      post: {
+        tags: ["Authentication"],
+        summary: "Change current user's password",
+        description:
+          "Changes the password, keeps the supplied current refresh-token session active, and revokes every other active refresh token.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["currentPassword", "newPassword", "confirmNewPassword", "refreshToken"],
+                properties: {
+                  currentPassword: { type: "string", format: "password" },
+                  newPassword: { type: "string", format: "password", minLength: 8 },
+                  confirmNewPassword: { type: "string", format: "password" },
+                  refreshToken: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: "Password changed and other sessions revoked." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: errorResponse("Current password or refresh token is invalid."),
+        },
+      },
+    },
     "/api/v1/auth/cancel-deletion/request-otp": {
       post: {
         tags: ["Authentication"],
@@ -3422,6 +3477,14 @@ const swaggerDefinition = {
               type: "string",
               enum: ["OPEN", "MATCHED", "CANCELLED", "EXPIRED", "COMPLETED"],
             },
+          },
+          {
+            name: "mine",
+            in: "query",
+            required: false,
+            description:
+              "When true, returns the authenticated user's errands across all statuses unless status is supplied.",
+            schema: { type: "boolean", default: false },
           },
           {
             name: "categoryId",
@@ -5274,6 +5337,78 @@ const swaggerDefinition = {
           401: { $ref: "#/components/responses/Unauthorized" },
           404: errorResponse("User not found."),
         },
+      },
+    },
+    "/api/v1/users/me/identity-verification": {
+      post: {
+        tags: ["Users"],
+        summary: "Submit identity verification documents",
+        description:
+          "Uploads the private front ID, back ID, and selfie images together and changes the user's verification status to PENDING_REVIEW.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                required: ["idFrontImage", "idBackImage", "selfieImage"],
+                properties: {
+                  idFrontImage: { type: "string", format: "binary" },
+                  idBackImage: { type: "string", format: "binary" },
+                  selfieImage: { type: "string", format: "binary" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: "Identity verification submitted for review." },
+          400: errorResponse("All three valid images up to 5 MB are required."),
+          409: errorResponse("Identity is verified or a request is already pending."),
+          503: errorResponse("Identity document storage is not configured."),
+        },
+      },
+    },
+    "/api/v1/admin/verifications": {
+      get: {
+        tags: ["Admin"],
+        summary: "List identity verification submissions",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "status", in: "query", schema: { type: "string", enum: ["UNVERIFIED", "PENDING_REVIEW", "VERIFIED", "REJECTED"], default: "PENDING_REVIEW" } },
+          { name: "skip", in: "query", schema: { type: "integer", minimum: 0, default: 0 } },
+          { name: "take", in: "query", schema: { type: "integer", minimum: 1, maximum: 50, default: 20 } },
+        ],
+        responses: { 200: { description: "Verification submissions retrieved." }, 403: { $ref: "#/components/responses/Forbidden" } },
+      },
+    },
+    "/api/v1/admin/verifications/{id}": {
+      get: {
+        tags: ["Admin"],
+        summary: "Get a verification with five-minute signed document URLs",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        responses: { 200: { description: "Verification retrieved." }, 403: { $ref: "#/components/responses/Forbidden" }, 404: errorResponse("Identity verification not found.") },
+      },
+    },
+    "/api/v1/admin/verifications/{id}/approve": {
+      post: {
+        tags: ["Admin"],
+        summary: "Approve an identity verification",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        responses: { 200: { description: "Verification approved and user notified." }, 409: errorResponse("Verification was already reviewed.") },
+      },
+    },
+    "/api/v1/admin/verifications/{id}/reject": {
+      post: {
+        tags: ["Admin"],
+        summary: "Reject an identity verification",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["reason"], properties: { reason: { type: "string", minLength: 3, maxLength: 500 } } } } } },
+        responses: { 200: { description: "Verification rejected and user notified." }, 409: errorResponse("Verification was already reviewed.") },
       },
     },
     "/api/v1/delivery-pricing/quote": {

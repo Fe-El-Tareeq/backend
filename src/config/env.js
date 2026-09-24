@@ -64,6 +64,8 @@ module.exports = {
   supabaseUrl: process.env.SUPABASE_URL || null,
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || null,
   profileImagesBucket: process.env.PROFILE_IMAGES_BUCKET || "profile-images",
+  identityVerificationsBucket:
+    process.env.IDENTITY_VERIFICATIONS_BUCKET || "identity-verifications",
   mockPaymentEnabled,
   mockPaymentWebhookSecret: process.env.MOCK_PAYMENT_WEBHOOK_SECRET || null,
   supportEmail: process.env.SUPPORT_EMAIL || "support@wasel.ps",

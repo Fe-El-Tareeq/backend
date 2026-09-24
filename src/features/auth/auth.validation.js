@@ -113,6 +113,23 @@ const resetPasswordSchema = z.object({
   query: z.object({}),
 });
 
+const changePasswordSchema = z.object({
+  body: z
+    .object({
+      currentPassword: z.string().min(1, "Current password is required"),
+      newPassword: passwordSchema,
+      confirmNewPassword: z.string().min(1, "Password confirmation is required"),
+      refreshToken: z.string().min(1, "Current refresh token is required"),
+    })
+    .strict()
+    .refine((data) => data.newPassword === data.confirmNewPassword, {
+      path: ["confirmNewPassword"],
+      message: "Password confirmation does not match",
+    }),
+  params: z.object({}).strict(),
+  query: z.object({}).strict(),
+});
+
 const cancelDeletionRequestSchema = phoneSchema;
 
 const cancelDeletionConfirmSchema = z.object({
@@ -136,6 +153,7 @@ module.exports = {
   refreshTokenSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  changePasswordSchema,
   cancelDeletionRequestSchema,
   cancelDeletionConfirmSchema,
 };

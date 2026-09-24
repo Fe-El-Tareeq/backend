@@ -1,5 +1,6 @@
 const repository = require("../src/features/users/users.repository");
 const profileImageStorage = require("../src/features/users/profileImage.storage");
+const identityStorage = require("../src/features/users/identityVerification.storage");
 const service = require("../src/features/users/users.service");
 const validate = require("../src/middleware/validate.middleware");
 const {
@@ -9,11 +10,13 @@ const {
 // Mock the repository so the service can be tested without accessing the real database.
 jest.mock("../src/features/users/users.repository");
 jest.mock("../src/features/users/profileImage.storage");
+jest.mock("../src/features/users/identityVerification.storage");
 
 describe("User Profile Service Tests", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     profileImageStorage.remove.mockResolvedValue(undefined);
+    identityStorage.remove.mockResolvedValue(undefined);
   });
 
   // Verifies that the authenticated user's profile can be retrieved.
@@ -28,11 +31,24 @@ describe("User Profile Service Tests", () => {
     };
 
     repository.findUserById.mockResolvedValue(mockUser);
+    repository.getProfileStatistics.mockResolvedValue({
+      publishedErrandsCount: 2,
+      tripsCount: 1,
+      averageRating: 4.5,
+      ratingCount: 2,
+      tokenBalance: 10,
+    });
 
     const result = await service.getCurrentUserProfile("user-1");
 
     expect(repository.findUserById).toHaveBeenCalledWith("user-1");
-    expect(result).toEqual(mockUser);
+    expect(result).toEqual(expect.objectContaining({
+      ...mockUser,
+      city: null,
+      isVerified: false,
+      verification: null,
+      statistics: expect.objectContaining({ tokenBalance: 10 }),
+    }));
   });
 
   // Verifies that a missing user returns a 404 error.
@@ -179,6 +195,48 @@ describe("User Profile Service Tests", () => {
     expect(repository.updateProfileImage).toHaveBeenCalledWith("user-1", null, null);
     expect(profileImageStorage.remove).toHaveBeenCalledWith("user-1/old.jpg");
     expect(result.profileImageUrl).toBeNull();
+  });
+
+  test("submits all three private identity images and returns pending review", async () => {
+    repository.findUserById.mockResolvedValue({
+      id: "user-1",
+      verificationStatus: "UNVERIFIED",
+    });
+    repository.findPendingIdentityVerification.mockResolvedValue(null);
+    identityStorage.upload
+      .mockResolvedValueOnce("user-1/front.jpg")
+      .mockResolvedValueOnce("user-1/back.jpg")
+      .mockResolvedValueOnce("user-1/selfie.jpg");
+    repository.submitIdentityVerification.mockResolvedValue({
+      verification: { id: "verification-1", status: "PENDING_REVIEW" },
+    });
+    const file = { mimetype: "image/jpeg", buffer: Buffer.from([0xff, 0xd8, 0xff]) };
+    const result = await service.submitIdentityVerification("user-1", {
+      idFrontImage: [file],
+      idBackImage: [file],
+      selfieImage: [file],
+    });
+    expect(result.status).toBe("PENDING_REVIEW");
+    expect(repository.submitIdentityVerification).toHaveBeenCalledWith(
+      "user-1",
+      {
+        idFrontImagePath: "user-1/front.jpg",
+        idBackImagePath: "user-1/back.jpg",
+        selfieImagePath: "user-1/selfie.jpg",
+      },
+    );
+  });
+
+  test("rejects another identity submission while review is pending", async () => {
+    repository.findUserById.mockResolvedValue({
+      id: "user-1",
+      verificationStatus: "PENDING_REVIEW",
+    });
+    repository.findPendingIdentityVerification.mockResolvedValue({ id: "pending" });
+    await expect(
+      service.submitIdentityVerification("user-1", {}),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(identityStorage.upload).not.toHaveBeenCalled();
   });
   describe("User Profile Validation Tests", () => {
     // Verifies that a valid full name passes validation.

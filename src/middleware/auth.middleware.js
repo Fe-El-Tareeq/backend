@@ -67,6 +67,14 @@ const requireAuth = async (req, res, next) => {
   }
 };
 
+const requireSuperAdmin = (req, res, next) => {
+  if (!req.user) return next(new ApiError(401, "Authentication is required."));
+  if (req.user.role !== "SUPER_ADMIN") {
+    return next(new ApiError(403, "Super administrator access is required."));
+  }
+  return next();
+};
+
 const optionalAuth = async (req, res, next) => {
   try {
     const authorization = req.headers.authorization;
@@ -88,4 +96,5 @@ const optionalAuth = async (req, res, next) => {
 module.exports = {
   optionalAuth,
   requireAuth,
+  requireSuperAdmin,
 };
