@@ -36,10 +36,33 @@ const markPickedUp = async (req, res, next) => {
 
 const startDelivery = async (req, res, next) => {
   try {
-    const assignment = await service.startDelivery(req.user.id, req.validatedData.params.id);
+    const assignment = await service.startDelivery(
+      req.user.id,
+      req.validatedData.params.id,
+      req.validatedData.body || {},
+    );
     return res
       .status(200)
       .json(new ApiResponse(200, "Assignment delivery started.", { assignment }));
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const updateEstimatedDeliveryTime = async (req, res, next) => {
+  try {
+    const assignment = await service.updateEstimatedDeliveryTime(
+      req.user.id,
+      req.validatedData.params.id,
+      req.validatedData.body.estimatedDeliveryAt,
+    );
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(200, "Estimated delivery time updated.", {
+          assignment,
+        }),
+      );
   } catch (error) {
     return next(error);
   }
@@ -76,6 +99,7 @@ module.exports = {
   getAssignmentById,
   markPickedUp,
   startDelivery,
+  updateEstimatedDeliveryTime,
   completeAssignment,
   cancelAssignment,
 };

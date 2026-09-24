@@ -1572,6 +1572,20 @@ const swaggerDefinition = {
           },
         },
       },
+      EstimatedDeliveryTimeRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["estimatedDeliveryAt"],
+        properties: {
+          estimatedDeliveryAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+            description:
+              "Optional traveler-provided future delivery estimate. Send null to clear it.",
+          },
+        },
+      },
       AssignmentChatRoom: {
         type: "object",
         nullable: true,
@@ -1629,6 +1643,11 @@ const swaggerDefinition = {
           acceptedAt: { type: "string", format: "date-time" },
           pickedUpAt: { type: "string", format: "date-time", nullable: true },
           inTransitAt: { type: "string", format: "date-time", nullable: true },
+          estimatedDeliveryAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+          },
           completedAt: { type: "string", format: "date-time", nullable: true },
           cancelledAt: { type: "string", format: "date-time", nullable: true },
           cancelledByUserId: { type: "string", format: "uuid", nullable: true },
@@ -1672,6 +1691,69 @@ const swaggerDefinition = {
               total: { type: "integer", example: 1 },
             },
           },
+        },
+      },
+      ErrandTrackingStage: {
+        type: "object",
+        required: ["stage", "key", "labelAr", "completed", "reachedAt"],
+        properties: {
+          stage: { type: "integer", minimum: 1, maximum: 4 },
+          key: {
+            type: "string",
+            enum: ["PUBLISHED", "ACCEPTED", "IN_TRANSIT", "DELIVERED"],
+          },
+          labelAr: { type: "string" },
+          completed: { type: "boolean" },
+          reachedAt: { type: "string", format: "date-time", nullable: true },
+        },
+      },
+      ErrandTrackingTraveler: {
+        type: "object",
+        nullable: true,
+        properties: {
+          id: { type: "string", format: "uuid" },
+          fullName: { type: "string", nullable: true },
+          profileImageUrl: { type: "string", format: "uri", nullable: true },
+          averageRating: { type: "number", nullable: true, example: 4.75 },
+          ratingCount: { type: "integer", minimum: 0 },
+          completedTripsCount: { type: "integer", minimum: 0 },
+          isVerified: { type: "boolean" },
+          joinedYear: { type: "integer", example: 2024 },
+          acceptanceMessage: { type: "string", nullable: true },
+        },
+      },
+      ErrandTrackingData: {
+        type: "object",
+        required: [
+          "errandId",
+          "errandStatus",
+          "currentStage",
+          "progressPercentage",
+          "stages",
+          "isEstimatedTimeProvided",
+          "cancelled",
+        ],
+        properties: {
+          errandId: { type: "string", format: "uuid" },
+          errandStatus: { type: "string" },
+          assignmentStatus: { type: "string", nullable: true },
+          currentStage: { type: "integer", minimum: 1, maximum: 4 },
+          progressPercentage: { type: "integer", enum: [25, 50, 67, 100] },
+          stages: {
+            type: "array",
+            minItems: 4,
+            maxItems: 4,
+            items: { $ref: "#/components/schemas/ErrandTrackingStage" },
+          },
+          estimatedDeliveryAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+          },
+          isEstimatedTimeProvided: { type: "boolean" },
+          cancelled: { type: "boolean" },
+          cancellationReason: { type: "string", nullable: true },
+          traveler: { $ref: "#/components/schemas/ErrandTrackingTraveler" },
         },
       },
       TripChecklistProgress: {
@@ -2833,6 +2915,13 @@ const swaggerDefinition = {
       ErrandListResponse: apiResponse({
         $ref: "#/components/schemas/ErrandListData",
       }),
+      ErrandTrackingResponse: apiResponse({
+        type: "object",
+        required: ["tracking"],
+        properties: {
+          tracking: { $ref: "#/components/schemas/ErrandTrackingData" },
+        },
+      }),
       TripResponse: apiResponse({
         $ref: "#/components/schemas/Trip",
       }),
@@ -3893,6 +3982,41 @@ const swaggerDefinition = {
         },
       },
     },
+    "/api/v1/errands/{id}/tracking": {
+      get: {
+        tags: ["Errands"],
+        summary: "Track my errand through four delivery stages",
+        description:
+          "Requester-only tracking timeline: published (25%), accepted (50%), in transit (67%), and delivered (100%). Includes the assigned traveler summary and traveler-provided optional ETA.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Errand tracking retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ErrandTrackingResponse",
+                },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Only the requester can track this errand."),
+          404: errorResponse("Errand not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
     "/api/v1/matching/errands/{id}": {
       get: rankedTripsForErrandOperation,
     },
@@ -4731,6 +4855,26 @@ const swaggerDefinition = {
             schema: { type: "string", format: "uuid" },
           },
         ],
+        requestBody: {
+          required: false,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  estimatedDeliveryAt: {
+                    type: "string",
+                    format: "date-time",
+                    nullable: true,
+                    description:
+                      "Optional future ETA selected by the traveler; the backend does not calculate it.",
+                  },
+                },
+              },
+            },
+          },
+        },
         responses: {
           200: {
             description: "Assignment delivery started.",
@@ -4743,6 +4887,53 @@ const swaggerDefinition = {
           400: errorResponse("Only picked up assignments can start delivery."),
           401: { $ref: "#/components/responses/Unauthorized" },
           403: errorResponse("Only the traveler can start delivery."),
+          404: errorResponse("Assignment not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/assignments/{id}/estimated-delivery-time": {
+      patch: {
+        tags: ["Assignments"],
+        summary: "Update the traveler-provided delivery estimate",
+        description:
+          "Traveler-only action available after pickup and before completion. The ETA must be in the future; null clears it.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/EstimatedDeliveryTimeRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Estimated delivery time updated.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AssignmentResponse" },
+              },
+            },
+          },
+          400: errorResponse(
+            "ETA is not in the future or assignment status does not allow updates.",
+          ),
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse(
+            "Only the assigned traveler can update the estimated delivery time.",
+          ),
           404: errorResponse("Assignment not found."),
           429: { $ref: "#/components/responses/TooManyRequests" },
           500: { $ref: "#/components/responses/InternalServerError" },

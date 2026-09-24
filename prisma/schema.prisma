@@ -727,6 +727,7 @@ model ErrandAssignment {
   acceptedAt               DateTime         @default(now()) @map("accepted_at") @db.Timestamptz(6)
   pickedUpAt               DateTime?        @map("picked_up_at") @db.Timestamptz(6)
   inTransitAt              DateTime?        @map("in_transit_at") @db.Timestamptz(6)
+  estimatedDeliveryAt      DateTime?        @map("estimated_delivery_at") @db.Timestamptz(6)
   completedAt              DateTime?        @map("completed_at") @db.Timestamptz(6)
   cancelledAt              DateTime?        @map("cancelled_at") @db.Timestamptz(6)
   createdAt                DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)

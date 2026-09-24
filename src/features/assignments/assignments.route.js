@@ -5,6 +5,8 @@ const validate = require("../../middleware/validate.middleware");
 const controller = require("./assignments.controller");
 const {
   assignmentIdSchema,
+  startDeliverySchema,
+  updateEstimatedDeliveryTimeSchema,
   listAssignmentsSchema,
   cancelAssignmentSchema,
 } = require("./assignments.validation");
@@ -22,8 +24,13 @@ router.post(
 );
 router.post(
   "/:id/start-delivery",
-  validate(assignmentIdSchema),
+  validate(startDeliverySchema),
   controller.startDelivery,
+);
+router.patch(
+  "/:id/estimated-delivery-time",
+  validate(updateEstimatedDeliveryTimeSchema),
+  controller.updateEstimatedDeliveryTime,
 );
 router.post(
   "/:id/complete",

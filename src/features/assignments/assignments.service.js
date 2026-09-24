@@ -120,6 +120,15 @@ const assertStatus = (assignment, expected, message) => {
   }
 };
 
+const parseFutureEstimatedDeliveryAt = (value) => {
+  if (value === undefined || value === null) return null;
+  const estimatedDeliveryAt = new Date(value);
+  if (estimatedDeliveryAt <= new Date()) {
+    throw new ApiError(400, "Estimated delivery time must be in the future.");
+  }
+  return estimatedDeliveryAt;
+};
+
 const requesterIdFor = (assignment) => assignment.errand.requesterId;
 
 const oppositeParticipantId = (assignment, actorUserId) =>
@@ -251,6 +260,7 @@ const transitionAssignment = async ({
   actorAction,
   invalidMessage,
   updateErrandTo,
+  additionalData = {},
 }) => {
   return repository.runTransaction(async (tx) => {
     const assignment = await repository.findAssignmentByIdForUpdate(
@@ -274,6 +284,7 @@ const transitionAssignment = async ({
       {
         status: toStatus,
         [timestampField]: new Date(),
+        ...additionalData,
       },
       tx,
     );
@@ -337,7 +348,11 @@ const markPickedUp = (userId, assignmentId) =>
     invalidMessage: "Only accepted assignments can be marked as picked up.",
   });
 
-const startDelivery = (userId, assignmentId) =>
+const startDelivery = async (
+  userId,
+  assignmentId,
+  { estimatedDeliveryAt } = {},
+) =>
   transitionAssignment({
     userId,
     assignmentId,
@@ -347,6 +362,44 @@ const startDelivery = (userId, assignmentId) =>
     actor: "traveler",
     actorAction: "start delivery",
     invalidMessage: "Only picked up assignments can start delivery.",
+    additionalData: {
+      estimatedDeliveryAt:
+        estimatedDeliveryAt === undefined
+          ? null
+          : parseFutureEstimatedDeliveryAt(estimatedDeliveryAt),
+    },
+  });
+
+const updateEstimatedDeliveryTime = async (
+  userId,
+  assignmentId,
+  estimatedDeliveryAt,
+) =>
+  repository.runTransaction(async (tx) => {
+    const assignment = await repository.findAssignmentByIdForUpdate(
+      assignmentId,
+      tx,
+    );
+    if (!assignment) throw new ApiError(404, "Assignment not found.");
+    assertTraveler(
+      assignment,
+      userId,
+      "update the estimated delivery time",
+    );
+    if (!["PICKED_UP", "IN_TRANSIT"].includes(assignment.status)) {
+      throw new ApiError(
+        400,
+        "Estimated delivery time can only be updated after pickup and before completion.",
+      );
+    }
+    return repository.updateAssignment(
+      assignmentId,
+      {
+        estimatedDeliveryAt:
+          parseFutureEstimatedDeliveryAt(estimatedDeliveryAt),
+      },
+      tx,
+    );
   });
 
 const completeAssignment = (userId, assignmentId) =>
@@ -427,6 +480,7 @@ module.exports = {
   getAssignmentById,
   markPickedUp,
   startDelivery,
+  updateEstimatedDeliveryTime,
   completeAssignment,
   cancelAssignment,
 };

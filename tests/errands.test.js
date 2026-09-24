@@ -166,6 +166,16 @@ beforeEach(() => {
   );
   repository.listErrands.mockResolvedValue([makeErrand()]);
   repository.countErrands.mockResolvedValue(1);
+  repository.findTrackingData.mockResolvedValue({
+    errand: {
+      id: errandId,
+      requesterId: userId,
+      status: "OPEN",
+      cancellationReason: null,
+      createdAt: new Date("2026-09-24T10:00:00.000Z"),
+    },
+    assignment: null,
+  });
   walletService.debit.mockResolvedValue({
     id: transactionId,
     transactionType: "ERRAND_POST_DEBIT",
@@ -445,6 +455,151 @@ describe("Errands create", () => {
 });
 
 describe("Errands list and detail", () => {
+  test("tracking requires authentication", async () => {
+    const response = await request(app).get(
+      `/api/v1/errands/${errandId}/tracking`,
+    );
+
+    expect(response.statusCode).toBe(401);
+    expect(repository.findTrackingData).not.toHaveBeenCalled();
+  });
+
+  test("tracking returns stage one before an offer is accepted", async () => {
+    const response = await request(app)
+      .get(`/api/v1/errands/${errandId}/tracking`)
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.tracking).toMatchObject({
+      currentStage: 1,
+      progressPercentage: 25,
+      traveler: null,
+      estimatedDeliveryAt: null,
+      isEstimatedTimeProvided: false,
+    });
+  });
+
+  test("tracking returns stage three, traveler statistics, message, and ETA", async () => {
+    repository.findTrackingData.mockResolvedValue({
+      errand: {
+        id: errandId,
+        requesterId: userId,
+        status: "MATCHED",
+        cancellationReason: null,
+        createdAt: new Date("2026-09-24T10:00:00.000Z"),
+      },
+      assignment: {
+        id: "850e8400-e29b-41d4-a716-446655440000",
+        status: "IN_TRANSIT",
+        acceptedAt: new Date("2026-09-24T10:10:00.000Z"),
+        pickedUpAt: new Date("2026-09-24T10:30:00.000Z"),
+        inTransitAt: new Date("2026-09-24T10:40:00.000Z"),
+        estimatedDeliveryAt: new Date("2026-09-24T11:30:00.000Z"),
+        completedAt: null,
+        traveler: {
+          id: "550e8400-e29b-41d4-a716-446655440001",
+          fullName: "Traveler",
+          profileImageUrl: null,
+          createdAt: new Date("2024-01-10T00:00:00.000Z"),
+          isVerified: true,
+        },
+        proposal: { message: "I can deliver it safely." },
+      },
+      ratings: { _avg: { ratingStars: 4.75 }, _count: { _all: 12 } },
+      completedTripsCount: 9,
+    });
+
+    const response = await request(app)
+      .get(`/api/v1/errands/${errandId}/tracking`)
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.tracking).toMatchObject({
+      currentStage: 3,
+      progressPercentage: 67,
+      isEstimatedTimeProvided: true,
+      traveler: {
+        fullName: "Traveler",
+        averageRating: 4.75,
+        ratingCount: 12,
+        completedTripsCount: 9,
+        isVerified: true,
+        joinedYear: 2024,
+        acceptanceMessage: "I can deliver it safely.",
+      },
+    });
+  });
+
+  test.each([
+    ["ACCEPTED", "MATCHED", 2, 50],
+    ["COMPLETED", "COMPLETED", 4, 100],
+  ])(
+    "tracking maps %s assignment to the expected stage and progress",
+    async (assignmentStatus, errandStatus, expectedStage, expectedProgress) => {
+      repository.findTrackingData.mockResolvedValue({
+        errand: {
+          id: errandId,
+          requesterId: userId,
+          status: errandStatus,
+          cancellationReason: null,
+          createdAt: new Date("2026-09-24T10:00:00.000Z"),
+        },
+        assignment: {
+          id: "850e8400-e29b-41d4-a716-446655440000",
+          status: assignmentStatus,
+          acceptedAt: new Date("2026-09-24T10:10:00.000Z"),
+          pickedUpAt:
+            assignmentStatus === "COMPLETED"
+              ? new Date("2026-09-24T10:30:00.000Z")
+              : null,
+          inTransitAt:
+            assignmentStatus === "COMPLETED"
+              ? new Date("2026-09-24T10:40:00.000Z")
+              : null,
+          estimatedDeliveryAt: null,
+          completedAt:
+            assignmentStatus === "COMPLETED"
+              ? new Date("2026-09-24T11:00:00.000Z")
+              : null,
+          traveler: {
+            id: "550e8400-e29b-41d4-a716-446655440001",
+            fullName: "Traveler",
+            profileImageUrl: null,
+            createdAt: new Date("2024-01-10T00:00:00.000Z"),
+            isVerified: true,
+          },
+          proposal: null,
+        },
+        ratings: { _avg: { ratingStars: null }, _count: { _all: 0 } },
+        completedTripsCount: 0,
+      });
+
+      const tracking = await service.getErrandTracking(userId, errandId);
+
+      expect(tracking.currentStage).toBe(expectedStage);
+      expect(tracking.progressPercentage).toBe(expectedProgress);
+    },
+  );
+
+  test("tracking is forbidden for users other than the requester", async () => {
+    repository.findTrackingData.mockResolvedValue({
+      errand: {
+        id: errandId,
+        requesterId: otherUserId,
+        status: "OPEN",
+        cancellationReason: null,
+        createdAt: new Date(),
+      },
+      assignment: null,
+    });
+
+    const response = await request(app)
+      .get(`/api/v1/errands/${errandId}/tracking`)
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    expect(response.statusCode).toBe(403);
+  });
+
   test("list defaults to authenticated user's neighborhood and excludes expired OPEN errands", async () => {
     const response = await request(app)
       .get("/api/v1/errands?take=10")
