@@ -23,6 +23,11 @@ const token = jwt.sign(
   { type: "access", userId, role: "USER" },
   process.env.JWT_ACCESS_SECRET,
 );
+const adminId = "550e8400-e29b-41d4-a716-446655440099";
+const adminToken = jwt.sign(
+  { type: "access", userId: adminId, role: "SUPER_ADMIN" },
+  process.env.JWT_ACCESS_SECRET,
+);
 const report = {
   id,
   reportCode: "RPT-ABC123",
@@ -33,12 +38,15 @@ const report = {
 };
 beforeEach(() => {
   jest.clearAllMocks();
-  prisma.user.findUnique.mockResolvedValue({
-    id: userId,
-    role: "USER",
-    status: "ACTIVE",
-  });
+  prisma.user.findUnique.mockImplementation(({ where }) =>
+    Promise.resolve({
+      id: where.id,
+      role: where.id === adminId ? "SUPER_ADMIN" : "USER",
+      status: "ACTIVE",
+    }),
+  );
   repo.findByClientKey.mockResolvedValue(null);
+  repo.runTransaction.mockImplementation((callback) => callback({}));
   repo.create.mockResolvedValue(report);
   repo.listMine.mockResolvedValue([report]);
   repo.countMine.mockResolvedValue(1);
@@ -60,6 +68,7 @@ test("submits report and calculates high priority", async () => {
   expect(r.body.data.report.priority).toBe("HIGH");
   expect(repo.create).toHaveBeenCalledWith(
     expect.objectContaining({ priority: "HIGH", reporterId: userId }),
+    expect.anything(),
   );
   expect(email.sendReportNotification).toHaveBeenCalledWith(
     report,
@@ -92,6 +101,40 @@ test("rejects self-reporting", async () => {
       reportedUserId: userId,
     })
     .expect(400);
+});
+test("requires chatRoomId exactly when chat history is attached", async () => {
+  await request(app)
+    .post("/api/v1/support/reports")
+    .set("Authorization", `Bearer ${token}`)
+    .send({
+      clientRequestKey: key,
+      type: "ABUSE_OR_THREAT",
+      description: "The user sent abusive messages in the assignment chat.",
+      attachChatHistory: true,
+    })
+    .expect(400);
+  await request(app)
+    .post("/api/v1/support/reports")
+    .set("Authorization", `Bearer ${token}`)
+    .send({
+      clientRequestKey: key,
+      type: "ABUSE_OR_THREAT",
+      description: "The user sent abusive messages in the assignment chat.",
+      attachChatHistory: false,
+      chatRoomId: id,
+    })
+    .expect(400);
+});
+test("only SUPER_ADMIN can retrieve report evidence", async () => {
+  await request(app)
+    .get(`/api/v1/support/reports/admin/${id}`)
+    .set("Authorization", `Bearer ${token}`)
+    .expect(403);
+  repo.findAdminById.mockResolvedValue({ ...report, evidence: null });
+  await request(app)
+    .get(`/api/v1/support/reports/admin/${id}`)
+    .set("Authorization", `Bearer ${adminToken}`)
+    .expect(200);
 });
 test("does not expose another user's report", async () => {
   repo.findById.mockResolvedValue({

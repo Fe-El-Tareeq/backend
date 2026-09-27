@@ -40,6 +40,10 @@ const accountDeletionCleanupIntervalMs = Number(
 const registrationCleanupIntervalMs = Number(
   process.env.REGISTRATION_CLEANUP_INTERVAL_MS || 300000,
 );
+const supportPhones = (process.env.SUPPORT_PHONES || process.env.SUPPORT_PHONE || "059992735")
+  .split(",")
+  .map((phone) => phone.trim())
+  .filter(Boolean);
 
 if (!Number.isInteger(accountDeletionRetentionDays) || accountDeletionRetentionDays < 1) {
   throw new Error("ACCOUNT_DELETION_RETENTION_DAYS must be a positive integer");
@@ -69,6 +73,12 @@ module.exports = {
   mockPaymentEnabled,
   mockPaymentWebhookSecret: process.env.MOCK_PAYMENT_WEBHOOK_SECRET || null,
   supportEmail: process.env.SUPPORT_EMAIL || "support@wasel.ps",
+  supportPhones,
+  supportWorkingHours: {
+    days: process.env.SUPPORT_WORKING_DAYS || "SUNDAY_THURSDAY",
+    from: process.env.SUPPORT_WORKING_FROM || "09:00",
+    to: process.env.SUPPORT_WORKING_TO || "17:00",
+  },
   reportNotificationEmail:
     process.env.REPORT_NOTIFICATION_EMAIL ||
     process.env.SUPPORT_EMAIL ||

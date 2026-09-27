@@ -60,6 +60,21 @@ const updateUserVerificationStatus = (userId, verificationStatus, client) =>
   });
 const createAuditLog = (data, client) => client.adminAuditLog.create({ data });
 
+const listFaqs = ({ isActive, skip, take }, client = prisma) =>
+  client.faq.findMany({
+    where: isActive === undefined ? {} : { isActive },
+    orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+    skip,
+    take,
+  });
+const countFaqs = (isActive, client = prisma) =>
+  client.faq.count({ where: isActive === undefined ? {} : { isActive } });
+const findFaqById = (id, client = prisma) =>
+  client.faq.findUnique({ where: { id } });
+const createFaq = (data, client = prisma) => client.faq.create({ data });
+const updateFaq = (id, data, client = prisma) =>
+  client.faq.update({ where: { id }, data });
+
 module.exports = {
   listVerifications,
   countVerifications,
@@ -68,4 +83,9 @@ module.exports = {
   claimPendingVerification,
   updateUserVerificationStatus,
   createAuditLog,
+  listFaqs,
+  countFaqs,
+  findFaqById,
+  createFaq,
+  updateFaq,
 };

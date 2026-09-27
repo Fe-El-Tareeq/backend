@@ -2,6 +2,7 @@ const { randomUUID } = require("crypto");
 const ApiError = require("../../utils/ApiError");
 const repository = require("./support.repository");
 const emailService = require("../../services/email.service");
+const env = require("../../config/env");
 
 const isAdmin = (user) => user.role === "SUPER_ADMIN";
 const assertAccess = (ticket, user) => {
@@ -9,55 +10,92 @@ const assertAccess = (ticket, user) => {
   if (ticket.userId !== user.id && !isAdmin(user))
     throw new ApiError(404, "Support ticket not found.");
 };
-const config = () => ({
+const config = async () => ({
   isAvailable: true,
   availableAgents: 3,
   averageResponseMinutes: 5,
-  phone: process.env.SUPPORT_PHONE || "059992735",
-  email: process.env.SUPPORT_EMAIL || "support@wasel.ps",
-  workingHours: { days: "SUNDAY_THURSDAY", from: "09:00", to: "17:00" },
+  phone: env.supportPhones[0] || null,
+  phones: env.supportPhones,
+  email: env.supportEmail,
+  workingHours: env.supportWorkingHours,
+  faqs: await repository.listActiveFaqs(),
 });
-const create = async (user, payload) => {
-  const existing = await repository.findByClientKey(
-    user.id,
-    payload.clientRequestKey,
+const matchesExistingTicketRequest = (ticket, payload) => {
+  const firstMessage = ticket.messages?.[0];
+  return (
+    ticket.category === payload.category &&
+    firstMessage?.clientMessageKey === payload.clientMessageKey &&
+    firstMessage?.content === payload.message
   );
-  if (existing) return { created: false, ticket: existing };
-  const result = await repository.transaction(async (tx) => {
-    const ticket = await repository.createTicket(
-      {
-        id: randomUUID(),
-        ticketCode: `TKT-${randomUUID().slice(0, 6).toUpperCase()}`,
-        userId: user.id,
-        clientRequestKey: payload.clientRequestKey,
-        category: payload.category,
-        priority: payload.category === "PAYMENT_ISSUE" ? "HIGH" : "NORMAL",
-      },
-      tx,
-    );
-    await repository.createMessage(
-      {
-        ticketId: ticket.id,
-        senderId: user.id,
-        clientMessageKey: payload.clientMessageKey,
-        content: payload.message,
-      },
-      tx,
-    );
-    return {
-      created: true,
-      ticket: await repository.findTicket(ticket.id, tx),
-    };
-  });
-  await emailService
-    .sendSupportTicketNotification(result.ticket, user, payload.message)
-    .catch((error) => {
-      console.error(
-        `Failed to email support ticket ${result.ticket.ticketCode}:`,
-        error.message,
+};
+const create = async (user, payload) => {
+  let result;
+  try {
+    result = await repository.transaction(async (tx) => {
+      const existing = await repository.findByClientKey(
+        user.id,
+        payload.clientRequestKey,
+        tx,
       );
-      return { sent: false, reason: "EMAIL_DELIVERY_FAILED" };
+      if (existing) {
+        if (!matchesExistingTicketRequest(existing, payload)) {
+          throw new ApiError(
+            409,
+            "clientRequestKey was already used with different ticket data.",
+          );
+        }
+        return { created: false, ticket: existing };
+      }
+      const ticket = await repository.createTicket(
+        {
+          id: randomUUID(),
+          ticketCode: `TKT-${randomUUID().slice(0, 6).toUpperCase()}`,
+          userId: user.id,
+          clientRequestKey: payload.clientRequestKey,
+          category: payload.category,
+          priority: payload.category === "PAYMENT_ISSUE" ? "HIGH" : "NORMAL",
+        },
+        tx,
+      );
+      await repository.createMessage(
+        {
+          ticketId: ticket.id,
+          senderId: user.id,
+          clientMessageKey: payload.clientMessageKey,
+          content: payload.message,
+        },
+        tx,
+      );
+      return {
+        created: true,
+        ticket: await repository.findTicket(ticket.id, tx),
+      };
     });
+  } catch (error) {
+    if (error?.code !== "P2002") throw error;
+    const existing = await repository.findByClientKey(
+      user.id,
+      payload.clientRequestKey,
+    );
+    if (!existing || !matchesExistingTicketRequest(existing, payload)) {
+      throw new ApiError(
+        409,
+        "An idempotency key was already used with different ticket data.",
+      );
+    }
+    result = { created: false, ticket: existing };
+  }
+  if (result.created) {
+    await emailService
+      .sendSupportTicketNotification(result.ticket, user, payload.message)
+      .catch((error) => {
+        console.error(
+          `Failed to email support ticket ${result.ticket.ticketCode}:`,
+          error.message,
+        );
+        return { sent: false, reason: "EMAIL_DELIVERY_FAILED" };
+      });
+  }
   return result;
 };
 const listMine = async (user, query) => {

@@ -15,6 +15,7 @@ const createTicket = z.object({
   body: z
     .object({
       clientRequestKey: z.string().uuid(),
+      clientMessageKey: z.string().uuid(),
       category: z.enum(CATEGORIES),
       message: z.string().trim().min(2).max(1000),
     })

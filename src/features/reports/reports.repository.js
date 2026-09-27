@@ -15,14 +15,41 @@ const select = {
   updatedAt: true,
   resolvedAt: true,
 };
-const findByClientKey = (reporterId, clientRequestKey) =>
-  prisma.supportReport.findUnique({
+const reportWithEvidenceSelect = {
+  ...select,
+  adminNotes: true,
+  evidence: {
+    select: {
+      id: true,
+      chatRoomId: true,
+      snapshot: true,
+      messageCount: true,
+      snapshotTakenAt: true,
+      createdAt: true,
+    },
+  },
+};
+const idempotencySelect = {
+  ...select,
+  evidence: { select: { chatRoomId: true } },
+};
+const runTransaction = (callback) => prisma.$transaction(callback);
+const findByClientKey = (reporterId, clientRequestKey, client = prisma) =>
+  client.supportReport.findUnique({
     where: { reporterId_clientRequestKey: { reporterId, clientRequestKey } },
-    select,
+    select: idempotencySelect,
   });
-const create = (data) => prisma.supportReport.create({ data, select });
-const findById = (id) =>
-  prisma.supportReport.findUnique({ where: { id }, select });
+const create = (data, client = prisma) =>
+  client.supportReport.create({ data, select });
+const createEvidence = (data, client = prisma) =>
+  client.supportReportEvidence.create({ data });
+const findById = (id, client = prisma) =>
+  client.supportReport.findUnique({ where: { id }, select });
+const findAdminById = (id, client = prisma) =>
+  client.supportReport.findUnique({
+    where: { id },
+    select: reportWithEvidenceSelect,
+  });
 const listMine = ({ reporterId, status, skip, take }) =>
   prisma.supportReport.findMany({
     where: { reporterId, ...(status ? { status } : {}) },
@@ -47,13 +74,105 @@ const countAdmin = (status) =>
   prisma.supportReport.count({ where: status ? { status } : {} });
 const update = (id, data) =>
   prisma.supportReport.update({ where: { id }, data, select });
+const findUserById = (id, client = prisma) =>
+  client.user.findUnique({ where: { id }, select: { id: true } });
+const findAssignmentContext = (id, client = prisma) =>
+  client.errandAssignment.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      travelerId: true,
+      traveler: { select: { id: true, fullName: true } },
+      tripId: true,
+      errand: {
+        select: {
+          id: true,
+          requesterId: true,
+          requester: { select: { id: true, fullName: true } },
+        },
+      },
+      chatRoom: { select: { id: true } },
+    },
+  });
+const findErrandContext = (id, client = prisma) =>
+  client.errand.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      requesterId: true,
+      assignments: { select: { travelerId: true, tripId: true } },
+    },
+  });
+const findTripContext = (id, client = prisma) =>
+  client.trip.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      travelerId: true,
+      assignments: {
+        select: { travelerId: true, errand: { select: { requesterId: true } } },
+      },
+    },
+  });
+const findChatRoomContext = (id, client = prisma) =>
+  client.chatRoom.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      assignment: {
+        select: {
+          id: true,
+          travelerId: true,
+          traveler: { select: { id: true, fullName: true } },
+          tripId: true,
+          errand: {
+            select: {
+              id: true,
+              requesterId: true,
+              requester: { select: { id: true, fullName: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+const listLatestChatMessages = (chatRoomId, take = 50, client = prisma) =>
+  client.chatMessage.findMany({
+    where: { chatRoomId },
+    select: {
+      id: true,
+      senderId: true,
+      messageType: true,
+      contentText: true,
+      audioUrl: true,
+      audioDurationSec: true,
+      audioSizeBytes: true,
+      audioMimeType: true,
+      imageUrl: true,
+      imageSizeBytes: true,
+      imageMimeType: true,
+      sentAt: true,
+      sender: { select: { id: true, fullName: true } },
+    },
+    orderBy: [{ sentAt: "desc" }, { id: "desc" }],
+    take,
+  });
 module.exports = {
+  runTransaction,
   findByClientKey,
   create,
+  createEvidence,
   findById,
+  findAdminById,
   listMine,
   countMine,
   listAdmin,
   countAdmin,
   update,
+  findUserById,
+  findAssignmentContext,
+  findErrandContext,
+  findTripContext,
+  findChatRoomContext,
+  listLatestChatMessages,
 };

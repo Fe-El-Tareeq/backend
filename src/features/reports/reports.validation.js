@@ -25,8 +25,26 @@ const create = z.object({
       assignmentId: z.string().uuid().optional(),
       errandId: z.string().uuid().optional(),
       tripId: z.string().uuid().optional(),
+      attachChatHistory: z.boolean().default(false),
+      chatRoomId: z.string().uuid().optional(),
     })
-    .strict(),
+    .strict()
+    .superRefine((body, ctx) => {
+      if (body.attachChatHistory && !body.chatRoomId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["chatRoomId"],
+          message: "chatRoomId is required when attachChatHistory is true.",
+        });
+      }
+      if (!body.attachChatHistory && body.chatRoomId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["chatRoomId"],
+          message: "chatRoomId is allowed only when attachChatHistory is true.",
+        });
+      }
+    }),
   params: empty,
   query: empty,
 });

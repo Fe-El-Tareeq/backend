@@ -40,16 +40,19 @@
 
 ## Support Tickets
 
-- Authenticated users can read support contact configuration and create idempotent support tickets with an initial message.
+- Authenticated users can read support contact configuration, active ordered FAQs, phone numbers, email, and configured working hours.
+- Ticket creation requires client-generated `clientRequestKey` and `clientMessageKey` UUIDs so both the ticket and its first message are safe to retry on unstable connections.
 - Ticket categories cover payment issues, open requests, cancellation requests, and general inquiries. Each ticket receives a `TKT-...` tracking code.
 - Users can list, open, and message only their own tickets. Closed or resolved tickets reject new messages.
 - Super administrators can list all tickets, reply, assign themselves, and update ticket status.
+- Super administrators manage persistent FAQs under `/api/v1/admin/faqs`; deleting an FAQ deactivates it so it can be restored later.
 
 ## Support Reports
 
 - Users can submit duplicate-safe reports under `/api/v1/support/reports` and receive an `RPT-...` tracking code.
 - Fraud, dangerous-item, abuse, and fake-account reports receive high priority; fulfillment and damaged-item reports receive medium priority; technical and other reports receive normal priority.
-- Reports may reference a user, assignment, errand, or trip. Users can read only their own reports, while super administrators can review and resolve all reports.
+- Reports may reference a user, assignment, errand, or trip only after server-side participation and cross-context validation. Users can read only their own reports, while super administrators can review and resolve all reports.
+- `attachChatHistory=true` requires an authorized `chatRoomId` and atomically stores an immutable chronological snapshot of at most the latest 50 text/image/voice messages. Evidence stores media references and metadata, never binary payloads, and is available only through the super-admin report detail endpoint.
 - Every newly created report is also sent to `REPORT_NOTIFICATION_EMAIL` through Resend when `RESEND_API_KEY` and `EMAIL_FROM` are configured. Database creation remains successful if email delivery fails.
 
 ## Legal Acceptance and Safe Account Deactivation
