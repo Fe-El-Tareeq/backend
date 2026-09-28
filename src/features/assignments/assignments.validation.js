@@ -8,6 +8,46 @@ const assignmentIdSchema = z.object({
   query: z.object({}).optional(),
 });
 
+const optionalEstimatedDeliveryAtSchema = z
+  .string()
+  .datetime({
+    offset: true,
+    message: "Estimated delivery time must be a valid ISO datetime.",
+  })
+  .nullable()
+  .optional();
+
+const startDeliverySchema = z.object({
+  body: z
+    .object({
+      estimatedDeliveryAt: optionalEstimatedDeliveryAtSchema,
+    })
+    .strict()
+    .optional(),
+  params: z.object({
+    id: z.string().uuid("Assignment ID must be a valid UUID."),
+  }),
+  query: z.object({}).optional(),
+});
+
+const updateEstimatedDeliveryTimeSchema = z.object({
+  body: z
+    .object({
+      estimatedDeliveryAt: z
+        .string()
+        .datetime({
+          offset: true,
+          message: "Estimated delivery time must be a valid ISO datetime.",
+        })
+        .nullable(),
+    })
+    .strict(),
+  params: z.object({
+    id: z.string().uuid("Assignment ID must be a valid UUID."),
+  }),
+  query: z.object({}).optional(),
+});
+
 const listAssignmentsSchema = z.object({
   body: z.object({}).optional(),
   params: z.object({}).optional(),
@@ -29,6 +69,8 @@ const cancelAssignmentSchema = z.object({
 
 module.exports = {
   assignmentIdSchema,
+  startDeliverySchema,
+  updateEstimatedDeliveryTimeSchema,
   listAssignmentsSchema,
   cancelAssignmentSchema,
 };

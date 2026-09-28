@@ -40,6 +40,24 @@ const getErrandById = async (req, res, next) => {
   }
 };
 
+const getErrandTracking = async (req, res, next) => {
+  try {
+    const tracking = await service.getErrandTracking(
+      req.user.id,
+      req.validatedData.params.id,
+    );
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(200, "Errand tracking retrieved successfully", {
+          tracking,
+        }),
+      );
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const updateErrand = async (req, res, next) => {
   try {
     const errand = await service.updateErrand(
@@ -76,6 +94,7 @@ module.exports = {
   createErrand,
   listErrands,
   getErrandById,
+  getErrandTracking,
   updateErrand,
   cancelErrand,
 };
