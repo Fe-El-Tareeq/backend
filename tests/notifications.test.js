@@ -90,7 +90,11 @@ describe("Notification listing", () => {
       type: "ASSIGNMENT_ACCEPTED",
       isRead: false,
       metadata: { errandId, assignmentId, invoiceId },
+      createdAt: "2026-09-05T08:00:00.000Z",
     });
+    expect(response.body.data).not.toHaveProperty("today");
+    expect(response.body.data).not.toHaveProperty("yesterday");
+    expect(response.body.data).not.toHaveProperty("earlier");
   });
 
   test("requires authentication", async () => {
@@ -305,6 +309,93 @@ describe("Notification unread count and read state", () => {
 });
 
 describe("Notification creation idempotency", () => {
+  test.each([
+    [
+      "new proposal",
+      () =>
+        service.templates.newProposal({
+          recipientId: userId,
+          proposalId: notificationId,
+          errandId,
+          tripId: invoiceId,
+          proposalType: "TRAVELER_OFFER",
+        }),
+      "NEW_PROPOSAL",
+      { proposalId: notificationId, tripId: invoiceId, proposalType: "TRAVELER_OFFER" },
+    ],
+    [
+      "accepted assignment",
+      () =>
+        service.templates.assignmentAccepted({
+          recipientId: userId,
+          errandId,
+          assignmentId,
+          tripId: invoiceId,
+        }),
+      "ASSIGNMENT_ACCEPTED",
+      { tripId: invoiceId },
+    ],
+    [
+      "in-transit assignment",
+      () =>
+        service.templates.assignmentStatusChanged({
+          userId,
+          errandId,
+          assignmentId,
+          tripId: invoiceId,
+          status: "IN_TRANSIT",
+          actorUserId: otherNotificationId,
+        }),
+      "ASSIGNMENT_STATUS_CHANGED",
+      { tripId: invoiceId, status: "IN_TRANSIT", actorUserId: otherNotificationId },
+    ],
+    [
+      "completed assignment",
+      () =>
+        service.templates.assignmentStatusChanged({
+          userId,
+          errandId,
+          assignmentId,
+          tripId: invoiceId,
+          status: "COMPLETED",
+          actorUserId: otherNotificationId,
+        }),
+      "ASSIGNMENT_STATUS_CHANGED",
+      { tripId: invoiceId, status: "COMPLETED", actorUserId: otherNotificationId },
+    ],
+    [
+      "successful top-up",
+      () => service.templates.paymentSuccess({ userId, invoiceId, totalTokens: 28 }),
+      "PAYMENT_SUCCESS",
+      { invoiceId },
+    ],
+    [
+      "approved identity",
+      () =>
+        service.templates.identityVerificationApproved({
+          userId,
+          verificationId: notificationId,
+        }),
+      "IDENTITY_VERIFICATION_APPROVED",
+      { verificationId: notificationId, verificationStatus: "VERIFIED" },
+    ],
+  ])("creates one %s notification with stable metadata", async (_label, create, type, metadata) => {
+    repository.create.mockResolvedValue(makeNotification());
+
+    await create();
+
+    expect(repository.create).toHaveBeenCalledTimes(1);
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId,
+        notificationType: type,
+        metadata,
+        idempotencyKey: expect.any(String),
+      }),
+      undefined,
+    );
+  });
+
   test("does not create a chat notification when chat notifications are disabled", async () => {
     repository.findUserPreference.mockResolvedValue({
       chatMessagesEnabled: false,

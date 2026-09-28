@@ -55,7 +55,25 @@ test("approves a pending verification atomically and notifies the user", async (
     "VERIFIED",
     expect.anything(),
   );
-  expect(notifications.templates.identityVerificationApproved).toHaveBeenCalled();
+  expect(notifications.templates.identityVerificationApproved).toHaveBeenCalledWith(
+    {
+      userId: verification.userId,
+      verificationId: verification.id,
+      rejectionReason: null,
+    },
+    { tx: true },
+  );
+});
+
+test("notification failure rejects identity approval within its transaction", async () => {
+  notifications.templates.identityVerificationApproved.mockRejectedValue(
+    new Error("notification write failed"),
+  );
+
+  await expect(
+    service.approveVerification("admin-id", verification.id),
+  ).rejects.toThrow("notification write failed");
+  expect(repository.runTransaction).toHaveBeenCalledTimes(1);
 });
 
 test("rejects an already reviewed verification", async () => {
@@ -66,4 +84,6 @@ test("rejects an already reviewed verification", async () => {
   await expect(
     service.rejectVerification("admin-id", verification.id, "Unclear image"),
   ).rejects.toMatchObject({ statusCode: 409 });
+  expect(notifications.templates.identityVerificationApproved).not.toHaveBeenCalled();
+  expect(notifications.templates.identityVerificationRejected).not.toHaveBeenCalled();
 });

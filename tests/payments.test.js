@@ -173,6 +173,28 @@ test("a valid signed webhook credits the wallet and pays the invoice atomically"
   );
 });
 
+test("payment notification failure rejects the top-up transaction", async () => {
+  const provider = new MockPaymentProvider("phase-11-test-webhook-secret");
+  const { payload, signature } = provider.createSuccessfulWebhook(invoice);
+  repository.lockInvoiceByProviderInvoiceId.mockResolvedValue({ id: invoiceId });
+  repository.findInvoiceByProviderInvoiceId.mockResolvedValue(invoice);
+  repository.findPaymentTransactionByProviderId.mockResolvedValue(null);
+  repository.createPaymentTransaction.mockResolvedValue({});
+  walletService.credit.mockResolvedValue({ id: "wallet-transaction" });
+  notificationService.templates.paymentSuccess.mockRejectedValue(
+    new Error("notification write failed"),
+  );
+
+  await expect(service.processMockWebhook(payload, signature)).rejects.toThrow(
+    "notification write failed",
+  );
+  expect(repository.updateInvoice).not.toHaveBeenCalledWith(
+    invoiceId,
+    expect.objectContaining({ status: "PAID" }),
+    tx,
+  );
+});
+
 test("rejects an invalid webhook signature before database access", async () => {
   await expect(
     service.processMockWebhook(
