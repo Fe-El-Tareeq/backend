@@ -19,6 +19,7 @@ const email = require("../src/services/email.service");
 const userId = "550e8400-e29b-41d4-a716-446655440001";
 const ticketId = "650e8400-e29b-41d4-a716-446655440001";
 const key = "750e8400-e29b-41d4-a716-446655440001";
+const messageKey = "750e8400-e29b-41d4-a716-446655440002";
 const token = jwt.sign(
   { type: "access", userId, role: "USER" },
   process.env.JWT_ACCESS_SECRET,
@@ -48,6 +49,7 @@ beforeEach(() => {
     content: "Help",
   });
   repository.findTicket.mockResolvedValue(ticket);
+  repository.listActiveFaqs.mockResolvedValue([]);
   repository.listForUser.mockResolvedValue([ticket]);
   repository.countForUser.mockResolvedValue(1);
 });
@@ -60,17 +62,59 @@ test("creates a support ticket and first message", async () => {
     .set("Authorization", `Bearer ${token}`)
     .send({
       clientRequestKey: key,
+      clientMessageKey: messageKey,
       category: "GENERAL_INQUIRY",
       message: "I need help",
     })
     .expect(201);
   expect(response.body.data.created).toBe(true);
   expect(repository.createMessage).toHaveBeenCalled();
+  expect(repository.createMessage).toHaveBeenCalledWith(
+    expect.objectContaining({ clientMessageKey: messageKey }),
+    expect.anything(),
+  );
   expect(email.sendSupportTicketNotification).toHaveBeenCalledWith(
     ticket,
     expect.objectContaining({ id: userId }),
     "I need help",
   );
+});
+test("returns active FAQs and support contact configuration", async () => {
+  repository.listActiveFaqs.mockResolvedValue([
+    { id: key, question: "How?", answer: "This way." },
+  ]);
+  const response = await request(app)
+    .get("/api/v1/support/config")
+    .set("Authorization", `Bearer ${token}`)
+    .expect(200);
+  expect(response.body.data.faqs).toHaveLength(1);
+  expect(response.body.data.phones).toEqual(expect.any(Array));
+});
+test("replays the same ticket request but rejects changed data", async () => {
+  repository.findByClientKey.mockResolvedValue({
+    ...ticket,
+    category: "GENERAL_INQUIRY",
+    messages: [
+      { clientMessageKey: messageKey, content: "I need help" },
+    ],
+  });
+  const body = {
+    clientRequestKey: key,
+    clientMessageKey: messageKey,
+    category: "GENERAL_INQUIRY",
+    message: "I need help",
+  };
+  await request(app)
+    .post("/api/v1/support/tickets")
+    .set("Authorization", `Bearer ${token}`)
+    .send(body)
+    .expect(200);
+  expect(repository.createTicket).not.toHaveBeenCalled();
+  await request(app)
+    .post("/api/v1/support/tickets")
+    .set("Authorization", `Bearer ${token}`)
+    .send({ ...body, message: "Different message" })
+    .expect(409);
 });
 test("lists only the authenticated user's tickets", async () => {
   await request(app)

@@ -415,11 +415,12 @@ model SupportReport {
   updatedAt        DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
   resolvedAt       DateTime?             @map("resolved_at") @db.Timestamptz(6)
 
-  reporter     User              @relation("SupportReportReporter", fields: [reporterId], references: [id], onDelete: Cascade)
-  reportedUser User?             @relation("SupportReportReportedUser", fields: [reportedUserId], references: [id], onDelete: SetNull)
-  assignment   ErrandAssignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
-  errand       Errand?           @relation(fields: [errandId], references: [id], onDelete: SetNull)
-  trip         Trip?             @relation(fields: [tripId], references: [id], onDelete: SetNull)
+  reporter     User                   @relation("SupportReportReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  reportedUser User?                  @relation("SupportReportReportedUser", fields: [reportedUserId], references: [id], onDelete: SetNull)
+  assignment   ErrandAssignment?      @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  errand       Errand?                @relation(fields: [errandId], references: [id], onDelete: SetNull)
+  trip         Trip?                  @relation(fields: [tripId], references: [id], onDelete: SetNull)
+  evidence     SupportReportEvidence?
 
   @@unique([reporterId, clientRequestKey])
   @@index([reporterId, status, createdAt])
@@ -429,6 +430,35 @@ model SupportReport {
   @@index([tripId])
   @@index([status, priority, createdAt])
   @@map("support_reports")
+}
+
+model SupportReportEvidence {
+  id              String   @id @default(uuid()) @db.Uuid
+  reportId        String   @unique @map("report_id") @db.Uuid
+  chatRoomId      String?  @map("chat_room_id") @db.Uuid
+  snapshot        Json
+  messageCount    Int      @map("message_count")
+  snapshotTakenAt DateTime @map("snapshot_taken_at") @db.Timestamptz(6)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  report   SupportReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  chatRoom ChatRoom?     @relation(fields: [chatRoomId], references: [id], onDelete: SetNull)
+
+  @@index([chatRoomId])
+  @@map("support_report_evidence")
+}
+
+model Faq {
+  id           String   @id @default(uuid()) @db.Uuid
+  question     String   @db.VarChar(300)
+  answer       String   @db.VarChar(3000)
+  isActive     Boolean  @default(true) @map("is_active")
+  displayOrder Int      @default(0) @map("display_order")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([isActive, displayOrder])
+  @@map("faqs")
 }
 
 model LegalAcceptance {
@@ -764,8 +794,9 @@ model ChatRoom {
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
   lastMessageAt DateTime? @map("last_message_at") @db.Timestamptz(6)
 
-  assignment ErrandAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
-  messages   ChatMessage[]
+  assignment     ErrandAssignment        @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  messages       ChatMessage[]
+  reportEvidence SupportReportEvidence[]
 
   @@index([lastMessageAt])
   @@map("chat_rooms")

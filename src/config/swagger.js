@@ -1870,6 +1870,92 @@ const swaggerDefinition = {
           },
         },
       },
+      Faq: {
+        type: "object",
+        required: ["id", "question", "answer"],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          question: { type: "string", maxLength: 300 },
+          answer: { type: "string", maxLength: 3000 },
+          isActive: { type: "boolean" },
+          displayOrder: { type: "integer", minimum: 0 },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+        },
+      },
+      SupportConfig: {
+        type: "object",
+        required: ["isAvailable", "phones", "email", "workingHours", "faqs"],
+        properties: {
+          isAvailable: { type: "boolean" },
+          availableAgents: { type: "integer", minimum: 0 },
+          averageResponseMinutes: { type: "integer", minimum: 0 },
+          phone: {
+            type: "string",
+            nullable: true,
+            description: "Compatibility alias for the first value in phones.",
+          },
+          phones: { type: "array", items: { type: "string" } },
+          email: { type: "string", format: "email" },
+          workingHours: {
+            type: "object",
+            required: ["days", "from", "to"],
+            properties: {
+              days: { type: "string" },
+              from: { type: "string", example: "09:00" },
+              to: { type: "string", example: "17:00" },
+            },
+          },
+          faqs: {
+            type: "array",
+            description: "Active FAQs only, ordered by displayOrder.",
+            items: { $ref: "#/components/schemas/Faq" },
+          },
+        },
+      },
+      SupportReportCreateRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["clientRequestKey", "type", "description"],
+        properties: {
+          clientRequestKey: { type: "string", format: "uuid" },
+          type: {
+            type: "string",
+            enum: [
+              "FRAUD_OR_SCAM",
+              "PROHIBITED_OR_DANGEROUS_ITEM",
+              "ABUSE_OR_THREAT",
+              "FAKE_ACCOUNT",
+              "FAILURE_TO_FULFILL",
+              "DAMAGED_OR_MISSING_ITEM",
+              "TECHNICAL_ISSUE",
+              "OTHER",
+            ],
+          },
+          description: { type: "string", minLength: 10, maxLength: 1500 },
+          reportedUserId: { type: "string", format: "uuid" },
+          assignmentId: { type: "string", format: "uuid" },
+          errandId: { type: "string", format: "uuid" },
+          tripId: { type: "string", format: "uuid" },
+          attachChatHistory: { type: "boolean", default: false },
+          chatRoomId: {
+            type: "string",
+            format: "uuid",
+            description: "Required only when attachChatHistory=true.",
+          },
+        },
+      },
+      SupportReportEvidence: {
+        type: "object",
+        description: "Immutable last-50-message snapshot available only to SUPER_ADMIN.",
+        properties: {
+          id: { type: "string", format: "uuid" },
+          chatRoomId: { type: "string", format: "uuid", nullable: true },
+          messageCount: { type: "integer", minimum: 0, maximum: 50 },
+          snapshotTakenAt: { type: "string", format: "date-time" },
+          snapshot: { type: "object", additionalProperties: true },
+        },
+      },
       RatingCreateRequest: {
         type: "object",
         additionalProperties: false,
@@ -5823,6 +5909,132 @@ const swaggerDefinition = {
         responses: { 200: { description: "Verification rejected and user notified." }, 409: errorResponse("Verification was already reviewed.") },
       },
     },
+    "/api/v1/admin/faqs": {
+      get: {
+        tags: ["Admin", "Support"],
+        summary: "List FAQs for administration",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "isActive", in: "query", schema: { type: "boolean" } },
+          { name: "skip", in: "query", schema: { type: "integer", minimum: 0, default: 0 } },
+          { name: "take", in: "query", schema: { type: "integer", minimum: 1, maximum: 50, default: 20 } },
+        ],
+        responses: {
+          200: { description: "FAQs retrieved successfully." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+        },
+      },
+      post: {
+        tags: ["Admin", "Support"],
+        summary: "Create an FAQ",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                required: ["question", "answer"],
+                properties: {
+                  question: { type: "string", minLength: 3, maxLength: 300 },
+                  answer: { type: "string", minLength: 3, maxLength: 3000 },
+                  displayOrder: { type: "integer", minimum: 0, default: 0 },
+                  isActive: { type: "boolean", default: true },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: "FAQ created successfully." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          403: { $ref: "#/components/responses/Forbidden" },
+        },
+      },
+    },
+    "/api/v1/admin/faqs/reorder": {
+      patch: {
+        tags: ["Admin", "Support"],
+        summary: "Reorder FAQs atomically",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["items"],
+                properties: {
+                  items: {
+                    type: "array",
+                    minItems: 1,
+                    maxItems: 100,
+                    items: {
+                      type: "object",
+                      required: ["id", "displayOrder"],
+                      properties: {
+                        id: { type: "string", format: "uuid" },
+                        displayOrder: { type: "integer", minimum: 0 },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: "FAQs reordered successfully." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: errorResponse("FAQ not found."),
+        },
+      },
+    },
+    "/api/v1/admin/faqs/{id}": {
+      patch: {
+        tags: ["Admin", "Support"],
+        summary: "Update or activate/deactivate an FAQ",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  question: { type: "string", minLength: 3, maxLength: 300 },
+                  answer: { type: "string", minLength: 3, maxLength: 3000 },
+                  displayOrder: { type: "integer", minimum: 0 },
+                  isActive: { type: "boolean" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: "FAQ updated successfully." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: errorResponse("FAQ not found."),
+        },
+      },
+      delete: {
+        tags: ["Admin", "Support"],
+        summary: "Soft-delete an FAQ by deactivating it",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        responses: {
+          200: { description: "FAQ deactivated successfully." },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: errorResponse("FAQ not found."),
+        },
+      },
+    },
     "/api/v1/delivery-pricing/quote": {
       get: {
         tags: ["Delivery Pricing"],
@@ -5857,10 +6069,24 @@ const swaggerDefinition = {
     "/api/v1/support/config": {
       get: {
         tags: ["Support"],
-        summary: "Get support contact information",
+        summary: "Get support contact information and active FAQs",
         security: [{ bearerAuth: [] }],
         responses: {
-          200: { description: "Support configuration retrieved successfully." },
+          200: {
+            description: "Support configuration retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    success: { type: "boolean" },
+                    message: { type: "string" },
+                    data: { $ref: "#/components/schemas/SupportConfig" },
+                  },
+                },
+              },
+            },
+          },
           401: { $ref: "#/components/responses/Unauthorized" },
         },
       },
@@ -5885,9 +6111,20 @@ const swaggerDefinition = {
             "application/json": {
               schema: {
                 type: "object",
-                required: ["clientRequestKey", "category", "message"],
+                required: [
+                  "clientRequestKey",
+                  "clientMessageKey",
+                  "category",
+                  "message",
+                ],
                 properties: {
                   clientRequestKey: { type: "string", format: "uuid" },
+                  clientMessageKey: {
+                    type: "string",
+                    format: "uuid",
+                    description:
+                      "Client-generated idempotency key for the first ticket message.",
+                  },
                   category: {
                     type: "string",
                     enum: [
@@ -6017,12 +6254,42 @@ const swaggerDefinition = {
         tags: ["Support"],
         summary: "Submit a support report",
         description:
-          "Creates an idempotent report and assigns priority on the server.",
+          "Creates an idempotent report and assigns priority on the server. When attachChatHistory=true, chatRoomId is required, ownership is verified, and an immutable snapshot of at most the latest 50 messages is stored atomically. Evidence is never returned in ordinary user report responses.",
         security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/SupportReportCreateRequest" },
+              examples: {
+                withoutChat: {
+                  value: {
+                    clientRequestKey: "750e8400-e29b-41d4-a716-446655440001",
+                    type: "TECHNICAL_ISSUE",
+                    description: "The application stopped while creating an errand.",
+                    attachChatHistory: false,
+                  },
+                },
+                withChat: {
+                  value: {
+                    clientRequestKey: "750e8400-e29b-41d4-a716-446655440002",
+                    type: "ABUSE_OR_THREAT",
+                    description: "The other participant sent threatening messages.",
+                    reportedUserId: "550e8400-e29b-41d4-a716-446655440002",
+                    attachChatHistory: true,
+                    chatRoomId: "650e8400-e29b-41d4-a716-446655440004",
+                  },
+                },
+              },
+            },
+          },
+        },
         responses: {
           201: { description: "Report submitted successfully." },
           400: { $ref: "#/components/responses/ValidationFailed" },
           401: { $ref: "#/components/responses/Unauthorized" },
+          404: errorResponse("Report context not found."),
+          409: errorResponse("The idempotency key was reused with different data."),
         },
       },
     },
@@ -6057,6 +6324,27 @@ const swaggerDefinition = {
       },
     },
     "/api/v1/support/reports/admin/{id}": {
+      get: {
+        tags: ["Support"],
+        summary: "Get a safety report with immutable chat evidence",
+        description:
+          "SUPER_ADMIN only. The evidence snapshot is intentionally excluded from user report details and all list responses.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: { description: "Report evidence retrieved successfully." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Administrator access is required."),
+          404: errorResponse("Report not found."),
+        },
+      },
       patch: {
         tags: ["Support"],
         summary: "Update a safety report",

@@ -53,6 +53,12 @@ const countForAdmin = (status) =>
   prisma.supportTicket.count({ where: status ? { status } : {} });
 const updateTicket = (id, data, client = prisma) =>
   client.supportTicket.update({ where: { id }, data, include: ticketInclude });
+const listActiveFaqs = (client = prisma) =>
+  client.faq.findMany({
+    where: { isActive: true },
+    select: { id: true, question: true, answer: true },
+    orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+  });
 module.exports = {
   transaction,
   findByClientKey,
@@ -65,4 +71,5 @@ module.exports = {
   listForAdmin,
   countForAdmin,
   updateTicket,
+  listActiveFaqs,
 };

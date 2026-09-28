@@ -57,6 +57,19 @@ const listAdmin = async (req, res, next) => {
     next(e);
   }
 };
+const getAdmin = async (req, res, next) => {
+  try {
+    res.json(
+      new ApiResponse(
+        200,
+        "Report evidence retrieved successfully.",
+        await s.getAdmin(req.user, req.validatedData.params.id),
+      ),
+    );
+  } catch (e) {
+    next(e);
+  }
+};
 const update = async (req, res, next) => {
   try {
     res.json(
@@ -74,4 +87,4 @@ const update = async (req, res, next) => {
     next(e);
   }
 };
-module.exports = { create, listMine, get, listAdmin, update };
+module.exports = { create, listMine, get, listAdmin, getAdmin, update };

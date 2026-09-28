@@ -8,7 +8,7 @@ const config = async (req, res, next) => {
         new ApiResponse(
           200,
           "Support configuration retrieved successfully.",
-          service.config(),
+          await service.config(),
         ),
       );
   } catch (e) {
