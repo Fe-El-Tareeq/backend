@@ -1,6 +1,9 @@
 process.env.NODE_ENV = "test";
 jest.mock("../src/features/ratings/ratings.service");
-jest.mock("../src/middleware/auth.middleware", () => ({ requireAuth: (req, res, next) => { req.user = { id: "550e8400-e29b-41d4-a716-446655440001" }; next(); } }));
+jest.mock("../src/middleware/auth.middleware", () => ({
+  requireAuth: (req, res, next) => { req.user = { id: "550e8400-e29b-41d4-a716-446655440001" }; next(); },
+  requireAdmin: (req, res, next) => next(),
+}));
 const request = require("supertest");
 const app = require("../src/app");
 const service = require("../src/features/ratings/ratings.service");

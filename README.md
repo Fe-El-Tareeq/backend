@@ -1,5 +1,20 @@
 # Backend
 
+## Single-Admin Dashboard Authentication
+
+- The dashboard administrator remains a normal `User` row. Dashboard access requires an `ACTIVE` user whose role is `SUPER_ADMIN` and whose UUID exactly matches the backend-only `ADMIN_USER_ID` environment variable.
+- `ADMIN_USER_ID` is optional at process startup so development and user-only test environments keep working. When it is unset, invalid, or does not match an active `SUPER_ADMIN`, every dashboard authorization attempt fails closed. Invalid configured UUIDs stop startup.
+- Dashboard authentication is password-based through `/api/v1/admin/auth/login`; OTP and fixed test OTP settings never authenticate the dashboard. There is no public admin registration, promotion, or role-update endpoint.
+- Admin login failures are limited to 5 attempts per client IP in 15 minutes, regardless of the submitted phone. Successful logins are not counted against that focused limit; the global API limiter still applies.
+- Exact-one authorization is application policy, not a database uniqueness rule. Additional accidental `SUPER_ADMIN` rows do not receive dashboard access unless their ID is the configured `ADMIN_USER_ID`.
+
+Provision the administrator through a private operational workflow:
+
+1. Create or identify a phone-verified user through the existing registration flow.
+2. In an approved database console or Prisma Studio session, set only that user's role to `SUPER_ADMIN`. Do not add an HTTP promotion endpoint or a startup-time promotion.
+3. Set the deployment's `ADMIN_USER_ID` to that user's UUID. Never place the user's password or a real UUID in source control.
+4. Restart or redeploy the backend so it reloads the environment, then verify `/api/v1/admin/auth/login` and `/api/v1/admin/auth/me`.
+
 ## Multi-Item Errands
 
 - `POST /api/v1/errands` accepts 1-20 entries in `items`. Each item stores its category, name, optional description, quantity, size, urgency, and optional item note in `errand_items`.
@@ -44,14 +59,14 @@
 - Ticket creation requires client-generated `clientRequestKey` and `clientMessageKey` UUIDs so both the ticket and its first message are safe to retry on unstable connections.
 - Ticket categories cover payment issues, open requests, cancellation requests, and general inquiries. Each ticket receives a `TKT-...` tracking code.
 - Users can list, open, and message only their own tickets. Closed or resolved tickets reject new messages.
-- Super administrators can list all tickets, reply, assign themselves, and update ticket status.
-- Super administrators manage persistent FAQs under `/api/v1/admin/faqs`; deleting an FAQ deactivates it so it can be restored later.
+- The configured dashboard administrator can list all tickets, reply, assign themselves, and update ticket status.
+- The configured dashboard administrator manages persistent FAQs under `/api/v1/admin/faqs`; deleting an FAQ deactivates it so it can be restored later.
 
 ## Support Reports
 
 - Users can submit duplicate-safe reports under `/api/v1/support/reports` and receive an `RPT-...` tracking code.
 - Fraud, dangerous-item, abuse, and fake-account reports receive high priority; fulfillment and damaged-item reports receive medium priority; technical and other reports receive normal priority.
-- Reports may reference a user, assignment, errand, or trip only after server-side participation and cross-context validation. Users can read only their own reports, while super administrators can review and resolve all reports.
+- Reports may reference a user, assignment, errand, or trip only after server-side participation and cross-context validation. Users can read only their own reports, while the configured dashboard administrator can review and resolve all reports.
 - `attachChatHistory=true` requires an authorized `chatRoomId` and atomically stores an immutable chronological snapshot of at most the latest 50 text/image/voice messages. Evidence stores media references and metadata, never binary payloads, and is available only through the super-admin report detail endpoint.
 - Every newly created report is also sent to `REPORT_NOTIFICATION_EMAIL` through Resend when `RESEND_API_KEY` and `EMAIL_FROM` are configured. Database creation remains successful if email delivery fails.
 

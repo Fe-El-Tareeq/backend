@@ -31,7 +31,7 @@ const registerSchema = z.object({
     termsAccepted: z.literal(true, {
       message: "Terms and privacy policy must be accepted.",
     }),
-  }),
+  }).strict(),
 });
 
 const loginSchema = z.object({

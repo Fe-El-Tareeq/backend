@@ -285,7 +285,7 @@ const register = async ({
   });
 };
 
-const login = async (phone, password) => {
+const authenticatePassword = async (phone, password) => {
   const user = await authRepository.findUserWithPasswordByPhone(phone);
 
   if (!user?.passwordHash) {
@@ -297,6 +297,12 @@ const login = async (phone, password) => {
   if (!isValidPassword) {
     throw new ApiError(401, "Invalid phone or password.");
   }
+
+  return user;
+};
+
+const login = async (phone, password) => {
+  const user = await authenticatePassword(phone, password);
 
   if (!user.phoneVerifiedAt) {
     throw new ApiError(403, "Phone number is not verified.");
@@ -536,7 +542,7 @@ const confirmAccountReactivation = async (phone, otp, password) => {
   });
 };
 
-const refresh = async (refreshToken) => {
+const refresh = async (refreshToken, authorizeUser) => {
   let payload;
 
   try {
@@ -571,6 +577,10 @@ const refresh = async (refreshToken) => {
 
     if (!storedToken.user || storedToken.user.status !== "ACTIVE") {
       throw new ApiError(403, "User is not active.");
+    }
+
+    if (authorizeUser) {
+      await authorizeUser(storedToken.user);
     }
 
     await authRepository.revokeRefreshToken(storedToken.id, tx);
@@ -650,4 +660,6 @@ module.exports = {
   confirmAccountReactivation,
   hashRefreshToken,
   changePassword,
+  authenticatePassword,
+  buildAuthResponse,
 };

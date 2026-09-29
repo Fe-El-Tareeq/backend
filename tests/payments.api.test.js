@@ -6,6 +6,7 @@ jest.mock("../src/middleware/auth.middleware", () => ({
     req.user = { id: "550e8400-e29b-41d4-a716-446655440001" };
     next();
   },
+  requireAdmin: (req, res, next) => next(),
 }));
 
 const request = require("supertest");
