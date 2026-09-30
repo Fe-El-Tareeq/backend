@@ -149,6 +149,11 @@ const swaggerDefinition = {
         "Password registration/login, phone verification OTP, access-token refresh, and logout.",
     },
     {
+      name: "Admin Authentication",
+      description:
+        "Password-only authentication for the single configured dashboard administrator.",
+    },
+    {
       name: "Users",
       description: "Authenticated current-user profile APIs.",
     },
@@ -384,6 +389,67 @@ const swaggerDefinition = {
             minLength: 1,
             example: "Strong1!",
           },
+        },
+      },
+      AdminLoginRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["phone", "password"],
+        properties: {
+          phone: {
+            type: "string",
+            minLength: 8,
+            maxLength: 20,
+            example: "0590000000",
+          },
+          password: {
+            type: "string",
+            format: "password",
+            minLength: 1,
+            example: "Example1!",
+          },
+        },
+      },
+      AdminRefreshTokenRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["refreshToken"],
+        properties: {
+          refreshToken: {
+            type: "string",
+            minLength: 1,
+            example: "<admin-refresh-token>",
+          },
+        },
+      },
+      AdminUserSummary: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "phone", "role"],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          phone: { type: "string", example: "0590000000" },
+          role: { type: "string", enum: ["SUPER_ADMIN"] },
+        },
+      },
+      AdminAuthTokens: {
+        type: "object",
+        required: [
+          "accessToken",
+          "refreshToken",
+          "tokenType",
+          "accessTokenExpiresIn",
+          "refreshTokenExpiresIn",
+        ],
+        properties: {
+          accessToken: { type: "string", description: "Opaque access JWT." },
+          refreshToken: {
+            type: "string",
+            description: "Opaque rotating refresh JWT.",
+          },
+          tokenType: { type: "string", enum: ["Bearer"] },
+          accessTokenExpiresIn: { type: "string", example: "15m" },
+          refreshTokenExpiresIn: { type: "string", example: "7d" },
         },
       },
       OtpRequest: {
@@ -1572,6 +1638,20 @@ const swaggerDefinition = {
           },
         },
       },
+      EstimatedDeliveryTimeRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["estimatedDeliveryAt"],
+        properties: {
+          estimatedDeliveryAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+            description:
+              "Optional traveler-provided future delivery estimate. Send null to clear it.",
+          },
+        },
+      },
       AssignmentChatRoom: {
         type: "object",
         nullable: true,
@@ -1629,6 +1709,11 @@ const swaggerDefinition = {
           acceptedAt: { type: "string", format: "date-time" },
           pickedUpAt: { type: "string", format: "date-time", nullable: true },
           inTransitAt: { type: "string", format: "date-time", nullable: true },
+          estimatedDeliveryAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+          },
           completedAt: { type: "string", format: "date-time", nullable: true },
           cancelledAt: { type: "string", format: "date-time", nullable: true },
           cancelledByUserId: { type: "string", format: "uuid", nullable: true },
@@ -1672,6 +1757,69 @@ const swaggerDefinition = {
               total: { type: "integer", example: 1 },
             },
           },
+        },
+      },
+      ErrandTrackingStage: {
+        type: "object",
+        required: ["stage", "key", "labelAr", "completed", "reachedAt"],
+        properties: {
+          stage: { type: "integer", minimum: 1, maximum: 4 },
+          key: {
+            type: "string",
+            enum: ["PUBLISHED", "ACCEPTED", "IN_TRANSIT", "DELIVERED"],
+          },
+          labelAr: { type: "string" },
+          completed: { type: "boolean" },
+          reachedAt: { type: "string", format: "date-time", nullable: true },
+        },
+      },
+      ErrandTrackingTraveler: {
+        type: "object",
+        nullable: true,
+        properties: {
+          id: { type: "string", format: "uuid" },
+          fullName: { type: "string", nullable: true },
+          profileImageUrl: { type: "string", format: "uri", nullable: true },
+          averageRating: { type: "number", nullable: true, example: 4.75 },
+          ratingCount: { type: "integer", minimum: 0 },
+          completedTripsCount: { type: "integer", minimum: 0 },
+          isVerified: { type: "boolean" },
+          joinedYear: { type: "integer", example: 2024 },
+          acceptanceMessage: { type: "string", nullable: true },
+        },
+      },
+      ErrandTrackingData: {
+        type: "object",
+        required: [
+          "errandId",
+          "errandStatus",
+          "currentStage",
+          "progressPercentage",
+          "stages",
+          "isEstimatedTimeProvided",
+          "cancelled",
+        ],
+        properties: {
+          errandId: { type: "string", format: "uuid" },
+          errandStatus: { type: "string" },
+          assignmentStatus: { type: "string", nullable: true },
+          currentStage: { type: "integer", minimum: 1, maximum: 4 },
+          progressPercentage: { type: "integer", enum: [25, 50, 67, 100] },
+          stages: {
+            type: "array",
+            minItems: 4,
+            maxItems: 4,
+            items: { $ref: "#/components/schemas/ErrandTrackingStage" },
+          },
+          estimatedDeliveryAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+          },
+          isEstimatedTimeProvided: { type: "boolean" },
+          cancelled: { type: "boolean" },
+          cancellationReason: { type: "string", nullable: true },
+          traveler: { $ref: "#/components/schemas/ErrandTrackingTraveler" },
         },
       },
       TripChecklistProgress: {
@@ -1865,7 +2013,8 @@ const swaggerDefinition = {
       },
       SupportReportEvidence: {
         type: "object",
-        description: "Immutable last-50-message snapshot available only to SUPER_ADMIN.",
+        description:
+          "Immutable last-50-message snapshot available only to the configured dashboard administrator.",
         properties: {
           id: { type: "string", format: "uuid" },
           chatRoomId: { type: "string", format: "uuid", nullable: true },
@@ -2734,7 +2883,12 @@ const swaggerDefinition = {
               "Unread in-app notifications are any records whose status is not READ. Mark-read is idempotent.",
           },
           isRead: { type: "boolean", example: false },
-          createdAt: { type: "string", format: "date-time" },
+          createdAt: {
+            type: "string",
+            format: "date-time",
+            description:
+              "Creation timestamp used by clients to group notifications as today, yesterday, or earlier in the user's local timezone.",
+          },
           readAt: { type: "string", format: "date-time", nullable: true },
           metadata: { $ref: "#/components/schemas/NotificationMetadata" },
         },
@@ -2882,6 +3036,28 @@ const swaggerDefinition = {
           },
         ],
       }),
+      AdminLoginResponse: apiResponse({
+        allOf: [
+          {
+            type: "object",
+            required: ["user"],
+            properties: {
+              user: { $ref: "#/components/schemas/AdminUserSummary" },
+            },
+          },
+          { $ref: "#/components/schemas/AdminAuthTokens" },
+        ],
+      }),
+      AdminRefreshResponse: apiResponse({
+        $ref: "#/components/schemas/AdminAuthTokens",
+      }),
+      AdminMeResponse: apiResponse({
+        type: "object",
+        required: ["user"],
+        properties: {
+          user: { $ref: "#/components/schemas/AdminUserSummary" },
+        },
+      }),
       OtpRequestResponse: apiResponse(
         {
           type: "object",
@@ -2959,6 +3135,13 @@ const swaggerDefinition = {
       }),
       ErrandListResponse: apiResponse({
         $ref: "#/components/schemas/ErrandListData",
+      }),
+      ErrandTrackingResponse: apiResponse({
+        type: "object",
+        required: ["tracking"],
+        properties: {
+          tracking: { $ref: "#/components/schemas/ErrandTrackingData" },
+        },
       }),
       TripResponse: apiResponse({
         $ref: "#/components/schemas/Trip",
@@ -4022,6 +4205,41 @@ const swaggerDefinition = {
         },
       },
     },
+    "/api/v1/errands/{id}/tracking": {
+      get: {
+        tags: ["Errands"],
+        summary: "Track my errand through four delivery stages",
+        description:
+          "Requester-only tracking timeline: published (25%), accepted (50%), in transit (67%), and delivered (100%). Includes the assigned traveler summary and traveler-provided optional ETA.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Errand tracking retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ErrandTrackingResponse",
+                },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Only the requester can track this errand."),
+          404: errorResponse("Errand not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
     "/api/v1/matching/errands/{id}": {
       get: rankedTripsForErrandOperation,
     },
@@ -4860,6 +5078,26 @@ const swaggerDefinition = {
             schema: { type: "string", format: "uuid" },
           },
         ],
+        requestBody: {
+          required: false,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  estimatedDeliveryAt: {
+                    type: "string",
+                    format: "date-time",
+                    nullable: true,
+                    description:
+                      "Optional future ETA selected by the traveler; the backend does not calculate it.",
+                  },
+                },
+              },
+            },
+          },
+        },
         responses: {
           200: {
             description: "Assignment delivery started.",
@@ -4872,6 +5110,53 @@ const swaggerDefinition = {
           400: errorResponse("Only picked up assignments can start delivery."),
           401: { $ref: "#/components/responses/Unauthorized" },
           403: errorResponse("Only the traveler can start delivery."),
+          404: errorResponse("Assignment not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/assignments/{id}/estimated-delivery-time": {
+      patch: {
+        tags: ["Assignments"],
+        summary: "Update the traveler-provided delivery estimate",
+        description:
+          "Traveler-only action available after pickup and before completion. The ETA must be in the future; null clears it.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/EstimatedDeliveryTimeRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Estimated delivery time updated.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AssignmentResponse" },
+              },
+            },
+          },
+          400: errorResponse(
+            "ETA is not in the future or assignment status does not allow updates.",
+          ),
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse(
+            "Only the assigned traveler can update the estimated delivery time.",
+          ),
           404: errorResponse("Assignment not found."),
           429: { $ref: "#/components/responses/TooManyRequests" },
           500: { $ref: "#/components/responses/InternalServerError" },
@@ -5759,7 +6044,115 @@ const swaggerDefinition = {
         responses: { 200: { description: "Invoice failed, rejection note saved, and user notified." }, 400: { $ref: "#/components/responses/ValidationFailed" }, 403: { $ref: "#/components/responses/Forbidden" }, 404: errorResponse("Bank transfer invoice was not found."), 409: errorResponse("Invoice has already been reviewed or has no receipt.") },
       },
     },
-        "/api/v1/admin/verifications": {
+    "/api/v1/admin/auth/login": {
+      post: {
+        tags: ["Admin Authentication"],
+        summary: "Log in to the admin dashboard",
+        description:
+          "Password-only login for the one ACTIVE, phone-verified SUPER_ADMIN whose user ID matches the backend-configured dashboard administrator. All identity, password, status, role, and allowlist failures use the same invalid-credentials response. Limited to five failed attempts per client IP in 15 minutes regardless of the submitted phone; successful logins are not counted.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/AdminLoginRequest" },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Administrator login succeeded.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AdminLoginResponse" },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: errorResponse("Invalid phone or password."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+        },
+      },
+    },
+    "/api/v1/admin/auth/refresh": {
+      post: {
+        tags: ["Admin Authentication"],
+        summary: "Rotate admin dashboard tokens",
+        description:
+          "Validates and rotates the persisted hashed refresh token, then rechecks the user's current ACTIVE status, SUPER_ADMIN role, and exact backend-configured administrator identity before issuing new tokens.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/AdminRefreshTokenRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Admin tokens rotated successfully.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AdminRefreshResponse" },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: errorResponse("Invalid refresh token."),
+          403: errorResponse("Dashboard administrator access is required."),
+        },
+      },
+    },
+    "/api/v1/admin/auth/logout": {
+      post: {
+        tags: ["Admin Authentication"],
+        summary: "Log out an admin dashboard session",
+        description:
+          "Revokes the supplied refresh token using the shared refresh-token store.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/AdminRefreshTokenRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Admin dashboard session logged out.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LogoutResponse" },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+        },
+      },
+    },
+    "/api/v1/admin/auth/me": {
+      get: {
+        tags: ["Admin Authentication"],
+        summary: "Get the current dashboard administrator",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: "Safe dashboard identity data.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AdminMeResponse" },
+              },
+            },
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Dashboard administrator access is required."),
+        },
+      },
+    },
+    "/api/v1/admin/verifications": {
       get: {
         tags: ["Admin"],
         summary: "List identity verification submissions",
@@ -5769,7 +6162,7 @@ const swaggerDefinition = {
           { name: "skip", in: "query", schema: { type: "integer", minimum: 0, default: 0 } },
           { name: "take", in: "query", schema: { type: "integer", minimum: 1, maximum: 50, default: 20 } },
         ],
-        responses: { 200: { description: "Verification submissions retrieved." }, 403: { $ref: "#/components/responses/Forbidden" } },
+        responses: { 200: { description: "Verification submissions retrieved." }, 401: { $ref: "#/components/responses/Unauthorized" }, 403: { $ref: "#/components/responses/Forbidden" } },
       },
     },
     "/api/v1/admin/verifications/{id}": {
@@ -5778,7 +6171,7 @@ const swaggerDefinition = {
         summary: "Get a verification with five-minute signed document URLs",
         security: [{ bearerAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
-        responses: { 200: { description: "Verification retrieved." }, 403: { $ref: "#/components/responses/Forbidden" }, 404: errorResponse("Identity verification not found.") },
+        responses: { 200: { description: "Verification retrieved." }, 401: { $ref: "#/components/responses/Unauthorized" }, 403: { $ref: "#/components/responses/Forbidden" }, 404: errorResponse("Identity verification not found.") },
       },
     },
     "/api/v1/admin/verifications/{id}/approve": {
@@ -5787,7 +6180,7 @@ const swaggerDefinition = {
         summary: "Approve an identity verification",
         security: [{ bearerAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
-        responses: { 200: { description: "Verification approved and user notified." }, 409: errorResponse("Verification was already reviewed.") },
+        responses: { 200: { description: "Verification approved and user notified." }, 401: { $ref: "#/components/responses/Unauthorized" }, 403: { $ref: "#/components/responses/Forbidden" }, 409: errorResponse("Verification was already reviewed.") },
       },
     },
     "/api/v1/admin/verifications/{id}/reject": {
@@ -5797,7 +6190,7 @@ const swaggerDefinition = {
         security: [{ bearerAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
         requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["reason"], properties: { reason: { type: "string", minLength: 3, maxLength: 500 } } } } } },
-        responses: { 200: { description: "Verification rejected and user notified." }, 409: errorResponse("Verification was already reviewed.") },
+        responses: { 200: { description: "Verification rejected and user notified." }, 401: { $ref: "#/components/responses/Unauthorized" }, 403: { $ref: "#/components/responses/Forbidden" }, 409: errorResponse("Verification was already reviewed.") },
       },
     },
     "/api/v1/admin/faqs": {
@@ -6219,7 +6612,7 @@ const swaggerDefinition = {
         tags: ["Support"],
         summary: "Get a safety report with immutable chat evidence",
         description:
-          "SUPER_ADMIN only. The evidence snapshot is intentionally excluded from user report details and all list responses.",
+          "Configured dashboard administrator only. The evidence snapshot is intentionally excluded from user report details and all list responses.",
         security: [{ bearerAuth: [] }],
         parameters: [
           {
@@ -6278,7 +6671,7 @@ const swaggerDefinition = {
         tags: ["Notifications"],
         summary: "List in-app notifications",
         description:
-          "Returns newest-first, paginated in-app notifications belonging only to the authenticated user. unreadCount always covers all unread notifications, independent of tab and pagination. Payment notifications remain available under all. This endpoint does not expose provider payloads, phone numbers, or sensitive payment/auth data.",
+          "Returns a flat, newest-first, paginated list of in-app notifications belonging only to the authenticated user. Clients may group the returned page as today, yesterday, or earlier using createdAt and the user's local timezone; the API does not return temporal groups. unreadCount always covers all unread notifications, independent of tab and pagination. Payment notifications remain available under all. This endpoint does not expose provider payloads, phone numbers, or sensitive payment/auth data.",
         security: [{ bearerAuth: [] }],
         parameters: [
           {

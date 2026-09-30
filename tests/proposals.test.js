@@ -122,6 +122,38 @@ describe("Proposal creation", () => {
     ).resolves.toMatchObject({ created: true });
   });
 
+  test("repeated proposal request returns the existing proposal without another notification", async () => {
+    repository.findByInitiatorAndKey.mockResolvedValue(proposal());
+
+    await expect(
+      service.createProposal(travelerId, {
+        errandId,
+        tripId,
+        clientRequestKey: key,
+        type: "TRAVELER_OFFER",
+        message: "I can deliver it",
+      }),
+    ).resolves.toMatchObject({ created: false });
+    expect(repository.create).not.toHaveBeenCalled();
+    expect(notificationService.templates.newProposal).not.toHaveBeenCalled();
+  });
+
+  test("notification failure rejects proposal creation within its transaction", async () => {
+    notificationService.templates.newProposal.mockRejectedValue(
+      new Error("notification write failed"),
+    );
+
+    await expect(
+      service.createProposal(travelerId, {
+        errandId,
+        tripId,
+        clientRequestKey: key,
+        type: "TRAVELER_OFFER",
+      }),
+    ).rejects.toThrow("notification write failed");
+    expect(repository.runTransaction).toHaveBeenCalledTimes(1);
+  });
+
   test("rejects an actor who does not own the required resource", async () => {
     await expect(
       service.createProposal(requesterId, {
@@ -203,7 +235,14 @@ describe("Proposal inbox and decisions", () => {
       assignmentService.createAssignmentInTransaction,
     ).toHaveBeenCalledWith(
       travelerId,
-      { errandId, tripId, acceptanceSource: "PROPOSAL" },
+      {
+        errandId,
+        tripId,
+        acceptanceSource: "PROPOSAL",
+        acceptanceNotificationRecipientId: travelerId,
+        acceptanceNotificationTitle: "Proposal accepted",
+        acceptanceNotificationMessage: "Your proposal was accepted.",
+      },
       tx,
     );
     expect(repository.rejectOtherPendingForErrand).toHaveBeenCalledWith(
@@ -212,6 +251,47 @@ describe("Proposal inbox and decisions", () => {
       expect.any(Date),
       tx,
     );
+  });
+
+  test("requester proposal acceptance notifies that requester as the initiator", async () => {
+    repository.lockById.mockResolvedValue(
+      proposal({ initiatedById: requesterId, type: "REQUESTER_REQUEST" }),
+    );
+
+    await service.acceptProposal(travelerId, proposalId);
+
+    expect(assignmentService.createAssignmentInTransaction).toHaveBeenCalledWith(
+      travelerId,
+      expect.objectContaining({
+        acceptanceSource: "PROPOSAL",
+        acceptanceNotificationRecipientId: requesterId,
+        acceptanceNotificationTitle: "Proposal accepted",
+        acceptanceNotificationMessage: "Your proposal was accepted.",
+      }),
+      tx,
+    );
+  });
+
+  test("repeated acceptance returns the existing assignment without recreating it", async () => {
+    repository.lockById.mockResolvedValue(
+      proposal({ status: "ACCEPTED", assignment: { id: "assignment" } }),
+    );
+
+    await expect(service.acceptProposal(requesterId, proposalId)).resolves.toMatchObject({
+      assignment: { id: "assignment" },
+    });
+    expect(assignmentService.createAssignmentInTransaction).not.toHaveBeenCalled();
+  });
+
+  test("assignment notification failure rejects proposal acceptance", async () => {
+    assignmentService.createAssignmentInTransaction.mockRejectedValue(
+      new Error("notification write failed"),
+    );
+
+    await expect(service.acceptProposal(requesterId, proposalId)).rejects.toThrow(
+      "notification write failed",
+    );
+    expect(repository.update).not.toHaveBeenCalled();
   });
 
   test("receiver can reject pending proposal with a manual reason", async () => {

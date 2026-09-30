@@ -3,8 +3,11 @@ const ApiError = require("../../utils/ApiError");
 const repository = require("./support.repository");
 const emailService = require("../../services/email.service");
 const env = require("../../config/env");
+const {
+  isDashboardAdmin,
+} = require("../adminAuth/adminAuth.policy");
 
-const isAdmin = (user) => user.role === "SUPER_ADMIN";
+const isAdmin = isDashboardAdmin;
 const assertAccess = (ticket, user) => {
   if (!ticket) throw new ApiError(404, "Support ticket not found.");
   if (ticket.userId !== user.id && !isAdmin(user))

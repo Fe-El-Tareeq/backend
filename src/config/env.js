@@ -30,6 +30,17 @@ const otpTestPhones = (process.env.OTP_TEST_PHONES || "")
   .map((phone) => phone.trim())
   .filter(Boolean);
 
+const adminUserId = process.env.ADMIN_USER_ID?.trim() || null;
+
+if (
+  adminUserId &&
+  !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    adminUserId,
+  )
+) {
+  throw new Error("ADMIN_USER_ID must be a valid UUID");
+}
+
 const mockPaymentEnabled = process.env.MOCK_PAYMENT_ENABLED === "true";
 const mockPaymentOtpTestPhone =
   process.env.MOCK_PAYMENT_OTP_TEST_PHONE || "+970599000000";
@@ -73,6 +84,7 @@ module.exports = {
   directUrl: process.env.DIRECT_URL,
   jwtAccessSecret: process.env.JWT_ACCESS_SECRET,
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET,
+  adminUserId,
   otpFixedCode,
   otpTestPhones,
   supabaseUrl: process.env.SUPABASE_URL || null,

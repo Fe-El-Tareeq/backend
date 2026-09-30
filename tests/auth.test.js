@@ -88,6 +88,7 @@ beforeEach(() => {
   authRepository.createRefreshToken.mockResolvedValue({});
   env.otpFixedCode = null;
   env.otpTestPhones = [];
+  env.adminUserId = activeUser.id;
 
   walletRepository.createLedgerEntry.mockResolvedValue({
     id: "signup-bonus-transaction",
@@ -287,6 +288,20 @@ describe("Auth register and login", () => {
     expect(authRepository.createWallet).not.toHaveBeenCalled();
     expect(walletRepository.createLedgerEntry).not.toHaveBeenCalled();
     expect(authRepository.createRefreshToken).not.toHaveBeenCalled();
+  });
+
+  test("public registration rejects a requested SUPER_ADMIN role", async () => {
+    const response = await request(app).post("/api/v1/auth/register").send({
+      fullName: "Leenah Alborsh",
+      phone: "+970599000001",
+      password: "Strong1!",
+      neighborhoodId: activeNeighborhood.id,
+      termsAccepted: true,
+      role: "SUPER_ADMIN",
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(authRepository.upsertPendingRegistration).not.toHaveBeenCalled();
   });
 
   test("duplicate pending registration refreshes temporary data without creating a user", async () => {
@@ -1112,18 +1127,30 @@ describe("Auth middleware", () => {
 
   test("super admin middleware rejects regular users", async () => {
     const error = await runMiddleware(requireSuperAdmin, {
-      user: { id: activeUser.id, role: "USER" },
+      user: { id: activeUser.id, role: "USER", status: "ACTIVE" },
     });
 
     expect(error).toMatchObject({
       statusCode: 403,
-      message: "Super administrator access is required.",
+      message: "Dashboard administrator access is required.",
     });
   });
 
-  test("super admin middleware accepts SUPER_ADMIN users", async () => {
+  test("super admin middleware rejects a non-allowlisted SUPER_ADMIN", async () => {
     const error = await runMiddleware(requireSuperAdmin, {
-      user: { id: activeUser.id, role: "SUPER_ADMIN" },
+      user: {
+        id: "550e8400-e29b-41d4-a716-446655440099",
+        role: "SUPER_ADMIN",
+        status: "ACTIVE",
+      },
+    });
+
+    expect(error).toMatchObject({ statusCode: 403 });
+  });
+
+  test("super admin middleware accepts only the configured SUPER_ADMIN", async () => {
+    const error = await runMiddleware(requireSuperAdmin, {
+      user: { id: activeUser.id, role: "SUPER_ADMIN", status: "ACTIVE" },
     });
 
     expect(error).toBeUndefined();

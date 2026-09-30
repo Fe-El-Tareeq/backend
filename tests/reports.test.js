@@ -4,6 +4,7 @@ process.env.JWT_ACCESS_SECRET =
   process.env.JWT_ACCESS_SECRET || "test-access-secret";
 process.env.JWT_REFRESH_SECRET =
   process.env.JWT_REFRESH_SECRET || "test-refresh-secret";
+process.env.ADMIN_USER_ID = "550e8400-e29b-41d4-a716-446655440099";
 process.env.NODE_ENV = "test";
 const jwt = require("jsonwebtoken");
 const request = require("supertest");
@@ -28,6 +29,11 @@ const adminToken = jwt.sign(
   { type: "access", userId: adminId, role: "SUPER_ADMIN" },
   process.env.JWT_ACCESS_SECRET,
 );
+const otherAdminId = "550e8400-e29b-41d4-a716-446655440098";
+const otherAdminToken = jwt.sign(
+  { type: "access", userId: otherAdminId, role: "SUPER_ADMIN" },
+  process.env.JWT_ACCESS_SECRET,
+);
 const report = {
   id,
   reportCode: "RPT-ABC123",
@@ -41,7 +47,7 @@ beforeEach(() => {
   prisma.user.findUnique.mockImplementation(({ where }) =>
     Promise.resolve({
       id: where.id,
-      role: where.id === adminId ? "SUPER_ADMIN" : "USER",
+      role: where.id === userId ? "USER" : "SUPER_ADMIN",
       status: "ACTIVE",
     }),
   );
@@ -129,6 +135,10 @@ test("only SUPER_ADMIN can retrieve report evidence", async () => {
   await request(app)
     .get(`/api/v1/support/reports/admin/${id}`)
     .set("Authorization", `Bearer ${token}`)
+    .expect(403);
+  await request(app)
+    .get(`/api/v1/support/reports/admin/${id}`)
+    .set("Authorization", `Bearer ${otherAdminToken}`)
     .expect(403);
   repo.findAdminById.mockResolvedValue({ ...report, evidence: null });
   await request(app)

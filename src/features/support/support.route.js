@@ -1,5 +1,8 @@
 const express = require("express");
-const { requireAuth } = require("../../middleware/auth.middleware");
+const {
+  requireAdmin,
+  requireAuth,
+} = require("../../middleware/auth.middleware");
 const validate = require("../../middleware/validate.middleware");
 const controller = require("./support.controller");
 const v = require("./support.validation");
@@ -14,9 +17,15 @@ router.post(
   validate(v.message),
   controller.sendMessage,
 );
-router.get("/admin/tickets", validate(v.list), controller.listAdmin);
+router.get(
+  "/admin/tickets",
+  requireAdmin,
+  validate(v.list),
+  controller.listAdmin,
+);
 router.patch(
   "/admin/tickets/:id/status",
+  requireAdmin,
   validate(v.status),
   controller.updateStatus,
 );

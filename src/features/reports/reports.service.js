@@ -3,8 +3,11 @@ const ApiError = require("../../utils/ApiError");
 const repository = require("./reports.repository");
 const { priorityFor } = require("./reports.constants");
 const emailService = require("../../services/email.service");
+const {
+  isDashboardAdmin,
+} = require("../adminAuth/adminAuth.policy");
 
-const admin = (user) => user.role === "SUPER_ADMIN";
+const admin = isDashboardAdmin;
 const contextNotFound = () => new ApiError(404, "Report context not found.");
 const isParticipant = (userId, requesterId, travelerId) =>
   userId === requesterId || userId === travelerId;

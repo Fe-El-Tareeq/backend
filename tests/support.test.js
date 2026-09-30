@@ -4,6 +4,7 @@ process.env.JWT_ACCESS_SECRET =
   process.env.JWT_ACCESS_SECRET || "test-access-secret";
 process.env.JWT_REFRESH_SECRET =
   process.env.JWT_REFRESH_SECRET || "test-refresh-secret";
+process.env.ADMIN_USER_ID = "550e8400-e29b-41d4-a716-446655440090";
 process.env.NODE_ENV = "test";
 const jwt = require("jsonwebtoken");
 const request = require("supertest");
@@ -17,11 +18,21 @@ const prisma = require("../src/config/prisma");
 const repository = require("../src/features/support/support.repository");
 const email = require("../src/services/email.service");
 const userId = "550e8400-e29b-41d4-a716-446655440001";
+const adminId = "550e8400-e29b-41d4-a716-446655440090";
+const otherAdminId = "550e8400-e29b-41d4-a716-446655440091";
 const ticketId = "650e8400-e29b-41d4-a716-446655440001";
 const key = "750e8400-e29b-41d4-a716-446655440001";
 const messageKey = "750e8400-e29b-41d4-a716-446655440002";
 const token = jwt.sign(
   { type: "access", userId, role: "USER" },
+  process.env.JWT_ACCESS_SECRET,
+);
+const adminToken = jwt.sign(
+  { type: "access", userId: adminId, role: "SUPER_ADMIN" },
+  process.env.JWT_ACCESS_SECRET,
+);
+const otherAdminToken = jwt.sign(
+  { type: "access", userId: otherAdminId, role: "SUPER_ADMIN" },
   process.env.JWT_ACCESS_SECRET,
 );
 const ticket = {
@@ -34,11 +45,13 @@ const ticket = {
 };
 beforeEach(() => {
   jest.clearAllMocks();
-  prisma.user.findUnique.mockResolvedValue({
-    id: userId,
-    role: "USER",
-    status: "ACTIVE",
-  });
+  prisma.user.findUnique.mockImplementation(({ where }) =>
+    Promise.resolve({
+      id: where.id,
+      role: where.id === userId ? "USER" : "SUPER_ADMIN",
+      status: "ACTIVE",
+    }),
+  );
   repository.transaction.mockImplementation((cb) => cb({}));
   repository.findByClientKey.mockResolvedValue(null);
   repository.createTicket.mockResolvedValue(ticket);
@@ -52,6 +65,8 @@ beforeEach(() => {
   repository.listActiveFaqs.mockResolvedValue([]);
   repository.listForUser.mockResolvedValue([ticket]);
   repository.countForUser.mockResolvedValue(1);
+  repository.listForAdmin.mockResolvedValue([ticket]);
+  repository.countForAdmin.mockResolvedValue(1);
 });
 test("support endpoints require authentication", async () => {
   await request(app).get("/api/v1/support/tickets").expect(401);
@@ -141,4 +156,35 @@ test("hides another user's ticket", async () => {
     .get(`/api/v1/support/tickets/${ticketId}`)
     .set("Authorization", `Bearer ${token}`)
     .expect(404);
+});
+
+test("support administration requires the configured dashboard admin", async () => {
+  await request(app)
+    .get("/api/v1/support/admin/tickets")
+    .set("Authorization", `Bearer ${token}`)
+    .expect(403);
+  await request(app)
+    .get("/api/v1/support/admin/tickets")
+    .set("Authorization", `Bearer ${otherAdminToken}`)
+    .expect(403);
+  await request(app)
+    .get("/api/v1/support/admin/tickets")
+    .set("Authorization", `Bearer ${adminToken}`)
+    .expect(200);
+});
+
+test("only the configured dashboard admin receives cross-user ticket access", async () => {
+  repository.findTicket.mockResolvedValue({
+    ...ticket,
+    userId,
+  });
+
+  await request(app)
+    .get(`/api/v1/support/tickets/${ticketId}`)
+    .set("Authorization", `Bearer ${otherAdminToken}`)
+    .expect(404);
+  await request(app)
+    .get(`/api/v1/support/tickets/${ticketId}`)
+    .set("Authorization", `Bearer ${adminToken}`)
+    .expect(200);
 });

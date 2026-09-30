@@ -140,7 +140,7 @@ describe("Assignment accept flow", () => {
     expect(repository.createChatRoom).toHaveBeenCalledWith(debitReferenceId, tx);
     expect(notificationService.templates.assignmentAccepted).toHaveBeenCalledWith(
       {
-        requesterId,
+        recipientId: requesterId,
         errandId,
         assignmentId: debitReferenceId,
         tripId,
@@ -284,6 +284,92 @@ describe("Assignment lifecycle transitions", () => {
     await expect(service.startDelivery(travelerId, assignmentId)).resolves.toMatchObject({
       status: "IN_TRANSIT",
     });
+    expect(notificationService.templates.assignmentStatusChanged).toHaveBeenCalledWith(
+      {
+        userId: requesterId,
+        errandId,
+        assignmentId,
+        tripId,
+        status: "IN_TRANSIT",
+        actorUserId: travelerId,
+      },
+      tx,
+    );
+  });
+
+  test("traveler can provide an optional future ETA when starting delivery", async () => {
+    const estimatedDeliveryAt = nowPlus(2).toISOString();
+    repository.findAssignmentByIdForUpdate.mockResolvedValue(
+      makeAssignment({ status: "PICKED_UP" }),
+    );
+    repository.updateAssignment.mockResolvedValue(
+      makeAssignment({
+        status: "IN_TRANSIT",
+        estimatedDeliveryAt: new Date(estimatedDeliveryAt),
+      }),
+    );
+
+    await service.startDelivery(travelerId, assignmentId, {
+      estimatedDeliveryAt,
+    });
+
+    expect(repository.updateAssignment).toHaveBeenCalledWith(
+      assignmentId,
+      expect.objectContaining({
+        status: "IN_TRANSIT",
+        estimatedDeliveryAt: new Date(estimatedDeliveryAt),
+      }),
+      tx,
+    );
+  });
+
+  test("past estimated delivery time is rejected", async () => {
+    repository.findAssignmentByIdForUpdate.mockResolvedValue(
+      makeAssignment({ status: "PICKED_UP" }),
+    );
+
+    await expect(
+      service.startDelivery(travelerId, assignmentId, {
+        estimatedDeliveryAt: new Date(Date.now() - 60_000).toISOString(),
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  test("traveler can update or clear ETA before completion", async () => {
+    repository.findAssignmentByIdForUpdate.mockResolvedValue(
+      makeAssignment({ status: "IN_TRANSIT" }),
+    );
+    const estimatedDeliveryAt = nowPlus(1).toISOString();
+
+    await service.updateEstimatedDeliveryTime(
+      travelerId,
+      assignmentId,
+      estimatedDeliveryAt,
+    );
+    await service.updateEstimatedDeliveryTime(travelerId, assignmentId, null);
+
+    expect(repository.updateAssignment).toHaveBeenNthCalledWith(
+      1,
+      assignmentId,
+      { estimatedDeliveryAt: new Date(estimatedDeliveryAt) },
+      tx,
+    );
+    expect(repository.updateAssignment).toHaveBeenNthCalledWith(
+      2,
+      assignmentId,
+      { estimatedDeliveryAt: null },
+      tx,
+    );
+  });
+
+  test("requester cannot update the traveler's ETA", async () => {
+    repository.findAssignmentByIdForUpdate.mockResolvedValue(
+      makeAssignment({ status: "IN_TRANSIT" }),
+    );
+
+    await expect(
+      service.updateEstimatedDeliveryTime(requesterId, assignmentId, nowPlus(1)),
+    ).rejects.toMatchObject({ statusCode: 403 });
   });
 
   test("cannot start delivery from accepted", async () => {
@@ -306,6 +392,9 @@ describe("Assignment lifecycle transitions", () => {
     expect(notificationService.templates.assignmentStatusChanged).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: travelerId,
+        errandId,
+        assignmentId,
+        tripId,
         status: "COMPLETED",
         actorUserId: requesterId,
       }),
@@ -327,6 +416,20 @@ describe("Assignment lifecycle transitions", () => {
 
     repository.findAssignmentByIdForUpdate.mockResolvedValue(makeAssignment({ status: "CANCELLED" }));
     await expect(service.startDelivery(travelerId, assignmentId)).rejects.toMatchObject({ statusCode: 400 });
+    expect(notificationService.templates.assignmentStatusChanged).not.toHaveBeenCalled();
+  });
+
+  test("notification failure rejects the lifecycle transaction", async () => {
+    repository.findAssignmentByIdForUpdate.mockResolvedValue(makeAssignment({ status: "PICKED_UP" }));
+    repository.updateAssignment.mockResolvedValue(makeAssignment({ status: "IN_TRANSIT" }));
+    notificationService.templates.assignmentStatusChanged.mockRejectedValue(
+      new Error("notification write failed"),
+    );
+
+    await expect(service.startDelivery(travelerId, assignmentId)).rejects.toThrow(
+      "notification write failed",
+    );
+    expect(repository.runTransaction).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -2,6 +2,7 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || "postgresql://test";
 process.env.DIRECT_URL = process.env.DIRECT_URL || "postgresql://test";
 process.env.JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || "test-access-secret";
 process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || "test-refresh-secret";
+process.env.ADMIN_USER_ID = "550e8400-e29b-41d4-a716-446655440001";
 process.env.NODE_ENV = "test";
 
 const jwt = require("jsonwebtoken");
@@ -14,11 +15,13 @@ const repository = require("../src/features/admin/admin.repository");
 
 const adminId = "550e8400-e29b-41d4-a716-446655440001";
 const userId = "550e8400-e29b-41d4-a716-446655440002";
+const otherAdminId = "550e8400-e29b-41d4-a716-446655440003";
 const faqId = "650e8400-e29b-41d4-a716-446655440001";
 const tokenFor = (id, role) =>
   jwt.sign({ type: "access", userId: id, role }, process.env.JWT_ACCESS_SECRET);
 const adminToken = tokenFor(adminId, "SUPER_ADMIN");
 const userToken = tokenFor(userId, "USER");
+const otherAdminToken = tokenFor(otherAdminId, "SUPER_ADMIN");
 const faq = {
   id: faqId,
   question: "How do I create an errand?",
@@ -32,7 +35,7 @@ beforeEach(() => {
   prisma.user.findUnique.mockImplementation(({ where }) =>
     Promise.resolve({
       id: where.id,
-      role: where.id === adminId ? "SUPER_ADMIN" : "USER",
+      role: where.id === userId ? "USER" : "SUPER_ADMIN",
       status: "ACTIVE",
     }),
   );
@@ -52,6 +55,10 @@ test("FAQ admin endpoints require SUPER_ADMIN", async () => {
   await request(app)
     .get("/api/v1/admin/faqs")
     .set("Authorization", `Bearer ${userToken}`)
+    .expect(403);
+  await request(app)
+    .get("/api/v1/admin/faqs")
+    .set("Authorization", `Bearer ${otherAdminToken}`)
     .expect(403);
 });
 

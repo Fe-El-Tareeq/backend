@@ -6,6 +6,7 @@ process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || "test";
 
 jest.mock("../src/middleware/auth.middleware", () => ({
   requireAuth: (req, res, next) => { req.user = { id: "550e8400-e29b-41d4-a716-446655440000" }; next(); },
+  requireAdmin: (req, res, next) => next(),
 }));
 jest.mock("../src/features/users/users.repository");
 jest.mock("../src/features/deliveryPricing/deliveryPricing.service");

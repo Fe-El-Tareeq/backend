@@ -1,4 +1,5 @@
 ﻿process.env.NODE_ENV = "test";
+process.env.ADMIN_USER_ID = "550e8400-e29b-41d4-a716-446655440001";
 process.env.DATABASE_URL = process.env.DATABASE_URL || "postgresql://test";
 process.env.DIRECT_URL = process.env.DIRECT_URL || "postgresql://test";
 process.env.JWT_ACCESS_SECRET =
