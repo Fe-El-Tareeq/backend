@@ -117,3 +117,37 @@ describe("Wallet API Tests", () => {
     expect(response.statusCode).toBe(404);
   });
 });
+
+describe("Wallet summary and activity filters", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  test("returns all summary totals", async () => {
+    walletService.getWallet.mockResolvedValue({
+      tokenBalance: 38, totalTokensPurchased: 50, totalTokensSpent: 22,
+    });
+    const response = await request(app).get("/api/v1/wallet/");
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data).toEqual({
+      tokenBalance: 38, totalTokensPurchased: 50, totalTokensSpent: 22,
+    });
+  });
+
+  test.each(["SUCCESS", "PENDING", "PENDING_VERIFICATION", "FAILED", "EXPIRED"])("forwards status %s with type and pagination", async (status) => {
+    walletService.getTransactionHistory.mockResolvedValue({ transactions: [], pagination: { skip: 2, take: 5, total: 0 } });
+    const response = await request(app).get("/api/v1/wallet/transactions")
+      .query({ status, transactionType: "TOKEN_TOP_UP", skip: 2, take: 5 });
+    expect(response.statusCode).toBe(200);
+    expect(walletService.getTransactionHistory).toHaveBeenCalledWith("user-1", {
+      status, transactionType: "TOKEN_TOP_UP", skip: 2, take: 5,
+    });
+  });
+
+  test.each([
+    { status: "PAID" }, { status: "anything" }, { transactionType: "INVALID" },
+    { status: "" }, { take: 101 }, { skip: 1.5 }, { unknown: "value" },
+  ])("rejects invalid filters %j before querying history", async (query) => {
+    const response = await request(app).get("/api/v1/wallet/transactions").query(query);
+    expect(response.statusCode).toBe(400);
+    expect(walletService.getTransactionHistory).not.toHaveBeenCalled();
+  });
+});

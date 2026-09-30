@@ -274,6 +274,21 @@ const paymentFailure = ({ userId, invoiceId, reason }, client) =>
     client,
   );
 
+const bankTransferRejected = ({ userId, invoiceId, rejectionNotes }, client) =>
+  createInAppNotification(
+    {
+      userId,
+      type: NOTIFICATION_TYPES.PAYMENT_FAILURE,
+      title: "Bank transfer needs attention",
+      message: rejectionNotes
+        ? "Your bank transfer was rejected: " + rejectionNotes
+        : "Your bank transfer could not be verified.",
+      metadata: { invoiceId, rejectionNotes },
+      idempotencyKey: "bank-transfer-rejected:" + invoiceId,
+    },
+    client,
+  );
+
 const identityVerificationApproved = ({ userId, verificationId }, client) =>
   createInAppNotification(
     {
@@ -321,6 +336,7 @@ module.exports = {
     newProposal,
     paymentFailure,
     paymentSuccess,
+    bankTransferRejected,
     identityVerificationApproved,
     identityVerificationRejected,
   },

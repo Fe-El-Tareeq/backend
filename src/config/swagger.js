@@ -2580,7 +2580,7 @@ const swaggerDefinition = {
       },
       Wallet: {
         type: "object",
-        required: ["id", "userId", "tokenBalance", "createdAt", "updatedAt"],
+        required: ["id", "userId", "tokenBalance", "totalTokensPurchased", "totalTokensSpent", "createdAt", "updatedAt"],
         properties: {
           id: {
             type: "string",
@@ -2592,6 +2592,8 @@ const swaggerDefinition = {
             format: "uuid",
             example: "0f46f56f-32d1-4fd4-84d2-69bc2b077d8f",
           },
+          totalTokensPurchased: { type: "integer", minimum: 0, description: "Completed TOKEN_TOP_UP tokens, including package bonuses; excludes signup bonuses, refunds and admin credits." },
+          totalTokensSpent: { type: "integer", minimum: 0, description: "Gross tokens debited for errands, trips, acceptance and admin debits; refunds do not reduce this total." },
           tokenBalance: {
             type: "integer",
             example: 3,
@@ -2624,6 +2626,12 @@ const swaggerDefinition = {
             format: "uuid",
             example: "17268c0e-0748-4108-a486-dce6d1da412e",
           },
+          status: { type: "string", enum: ["SUCCESS", "PENDING", "PENDING_VERIFICATION", "FAILED", "EXPIRED"], description: "SUCCESS for committed ledger entries; otherwise the payment invoice status." },
+          source: { type: "string", enum: ["WALLET_TRANSACTION", "PAYMENT_INVOICE"] },
+          paymentInvoiceId: { type: "string", format: "uuid", nullable: true },
+          rejectionNotes: { type: "string", nullable: true },
+          paymentMethod: { type: "string", enum: ["QR", "OTP", "BANK_TRANSFER"] },
+          referenceCode: { type: "string", nullable: true },
           transactionType: {
             type: "string",
             enum: [
@@ -2644,10 +2652,12 @@ const swaggerDefinition = {
           },
           balanceBefore: {
             type: "integer",
+            nullable: true,
             example: 0,
           },
           balanceAfter: {
             type: "integer",
+            nullable: true,
             example: 3,
           },
           referenceType: {
@@ -2723,16 +2733,38 @@ const swaggerDefinition = {
           "totalTokens",
           "priceNis",
           "currency",
+          "discountPercentage",
+          "features",
+          "savingsText",
+          "hasSearchPriority",
         ],
         properties: {
           id: { type: "string", format: "uuid" },
-          name: { type: "string", example: "Standard" },
+          name: { type: "string", example: "المتوسطة" },
           tokenAmount: { type: "integer", example: 25 },
-          bonusTokens: { type: "integer", example: 3 },
-          totalTokens: { type: "integer", example: 28 },
-          priceNis: { type: "number", format: "double", example: 12 },
+          bonusTokens: { type: "integer", example: 0 },
+          totalTokens: { type: "integer", example: 25 },
+          priceNis: { type: "number", format: "double", example: 10 },
           currency: { type: "string", enum: ["NIS"] },
+          discountPercentage: { type: "integer", example: 20 },
+          features: {
+            type: "array",
+            items: { type: "string" },
+            example: ["خصم 20%"],
+          },
+          savingsText: { type: "string", example: "وفّر 2.5 ₪" },
+          hasSearchPriority: { type: "boolean", example: false },
           isActive: { type: "boolean", example: true },
+        },
+      },
+      BankTransferAccount: {
+        type: "object",
+        required: ["beneficiaryName", "bankName"],
+        properties: {
+          beneficiaryName: { type: "string" },
+          accountNumber: { type: "string", nullable: true },
+          iban: { type: "string", nullable: true },
+          bankName: { type: "string" },
         },
       },
       PaymentInvoice: {
@@ -2745,7 +2777,7 @@ const swaggerDefinition = {
           "amountNis",
           "currency",
           "paymentProvider",
-          "qrCodePayload",
+          "paymentMethod",
           "status",
           "createdAt",
           "expiresAt",
@@ -2765,7 +2797,15 @@ const swaggerDefinition = {
           totalTokens: { type: "integer", example: 28 },
           amountNis: { type: "number", format: "double", example: 12 },
           currency: { type: "string", enum: ["NIS"] },
-          paymentProvider: { type: "string", enum: ["MOCK", "JAWWAL_PAY"] },
+          paymentProvider: { type: "string", enum: ["MOCK", "JAWWAL_PAY", "BANK_TRANSFER"] },
+          paymentMethod: { type: "string", enum: ["QR", "OTP", "BANK_TRANSFER"] },
+          referenceCode: { type: "string", nullable: true, example: "ORD-MT06H0QG-6D8F1A0B42" },
+          hasTransferReceipt: { type: "boolean" },
+          rejectionNotes: { type: "string", nullable: true },
+          reviewedAt: { type: "string", format: "date-time", nullable: true },
+          paymentPhone: { type: "string", nullable: true, description: "Masked phone number used by the OTP mock flow." },
+          otpExpiresAt: { type: "string", format: "date-time", nullable: true },
+          otpResendAvailableAt: { type: "string", format: "date-time", nullable: true },
           providerInvoiceId: {
             type: "string",
             nullable: true,
@@ -2773,12 +2813,13 @@ const swaggerDefinition = {
           },
           qrCodePayload: {
             type: "string",
+            nullable: true,
             example: "feeltareeq://payments/mock?invoiceId=uuid",
           },
           paymentUrl: { type: "string", nullable: true },
           status: {
             type: "string",
-            enum: ["PENDING", "PAID", "FAILED", "EXPIRED"],
+            enum: ["PENDING", "PENDING_VERIFICATION", "PAID", "FAILED", "EXPIRED"],
           },
           createdAt: { type: "string", format: "date-time" },
           expiresAt: { type: "string", format: "date-time" },
@@ -3191,6 +3232,8 @@ const swaggerDefinition = {
         properties: {
           created: { type: "boolean" },
           invoice: { $ref: "#/components/schemas/PaymentInvoice" },
+          bankAccount: { $ref: "#/components/schemas/BankTransferAccount" },
+          mockOtp: { type: "string", description: "Non-production mock code for completing the OTP flow." },
         },
       }),
       NotificationListResponse: apiResponse({
@@ -5957,6 +6000,50 @@ const swaggerDefinition = {
         },
       },
     },
+    "/api/v1/admin/payments/invoices": {
+      get: {
+        tags: ["Admin"],
+        summary: "List bank transfer invoices for review",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "status", in: "query", schema: { type: "string", enum: ["PENDING_VERIFICATION", "PAID", "FAILED"], default: "PENDING_VERIFICATION" } },
+          { name: "skip", in: "query", schema: { type: "integer", minimum: 0, default: 0 } },
+          { name: "take", in: "query", schema: { type: "integer", minimum: 1, maximum: 50, default: 20 } },
+        ],
+        responses: {
+          200: { description: "Bank transfer invoices with user, package, reference, and short-lived signed receipt URL." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+        },
+      },
+    },
+    "/api/v1/admin/payments/invoices/{id}/approve": {
+      post: {
+        tags: ["Admin"],
+        summary: "Approve a bank transfer invoice",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        responses: { 200: { description: "Invoice paid, wallet credited once, and user notified." }, 403: { $ref: "#/components/responses/Forbidden" }, 404: errorResponse("Bank transfer invoice was not found."), 409: errorResponse("Invoice has already been reviewed or has no receipt.") },
+      },
+    },
+    "/api/v1/admin/payments/invoices/{id}/reject": {
+      post: {
+        tags: ["Admin"],
+        summary: "Reject a bank transfer invoice",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: {
+            type: "object",
+            required: ["notes"],
+            additionalProperties: false,
+            properties: { notes: { type: "string", minLength: 3, maxLength: 500 } },
+          } } },
+        },
+        responses: { 200: { description: "Invoice failed, rejection note saved, and user notified." }, 400: { $ref: "#/components/responses/ValidationFailed" }, 403: { $ref: "#/components/responses/Forbidden" }, 404: errorResponse("Bank transfer invoice was not found."), 409: errorResponse("Invoice has already been reviewed or has no receipt.") },
+      },
+    },
     "/api/v1/admin/auth/login": {
       post: {
         tags: ["Admin Authentication"],
@@ -6812,12 +6899,37 @@ const swaggerDefinition = {
         },
       },
     },
-    "/api/v1/payments/invoices": {
+    "/api/v1/payments/invoices/{id}/receipt": {
       post: {
         tags: ["Payments"],
-        summary: "Create a QR token top-up invoice",
+        summary: "Upload a bank transfer receipt",
+        description: "Uploads one private PNG, JPG, or PDF receipt up to 5 MB for an owned bank transfer invoice awaiting verification.",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        requestBody: {
+          required: true,
+          content: { "multipart/form-data": { schema: {
+            type: "object",
+            required: ["receipt"],
+            properties: { receipt: { type: "string", format: "binary" } },
+          } } },
+        },
+        responses: {
+          200: { description: "Receipt uploaded; invoice is awaiting admin review." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: errorResponse("Invoice was not found."),
+          409: errorResponse("Invoice is not awaiting transfer verification."),
+          503: errorResponse("Payment receipt storage is not configured."),
+        },
+      },
+    },
+        "/api/v1/payments/invoices": {
+      post: {
+        tags: ["Payments"],
+        summary: "Create a token top-up invoice using QR, OTP, or bank transfer",
         description:
-          "Creates a 15-minute PENDING invoice using an active package snapshot when the mock flow is explicitly enabled. Reusing the same clientRequestKey with the same package returns the original invoice; reusing it with another package returns 409. Creating an invoice never credits the wallet.",
+          "Creates an invoice using QR, OTP, or BANK_TRANSFER and snapshots the active package. Bank transfer returns bank details and a unique referenceCode, remains PENDING_VERIFICATION, and requires a receipt upload before admin review. OTP requires paymentPhone. Reusing a clientRequestKey with different payment details returns 409. Creating an invoice never credits the wallet.",
         security: [{ bearerAuth: [] }],
         requestBody: {
           required: true,
@@ -6835,6 +6947,8 @@ const swaggerDefinition = {
                     description:
                       "A fresh UUID generated once by the client and reused only when retrying this request.",
                   },
+                  paymentMethod: { type: "string", enum: ["QR", "OTP", "BANK_TRANSFER"], default: "QR" },
+                  paymentPhone: { type: "string", minLength: 8, maxLength: 20, description: "Required when paymentMethod is OTP; omitted for QR and BANK_TRANSFER." },
                 },
               },
             },
@@ -6865,7 +6979,7 @@ const swaggerDefinition = {
           401: { $ref: "#/components/responses/Unauthorized" },
           404: errorResponse("Active token package was not found."),
           409: errorResponse(
-            "Client request key was already used for a different token package.",
+            "Client request key was already used with different package or payment data.",
           ),
         },
       },
@@ -6879,7 +6993,7 @@ const swaggerDefinition = {
             in: "query",
             schema: {
               type: "string",
-              enum: ["PENDING", "PAID", "FAILED", "EXPIRED"],
+              enum: ["PENDING", "PENDING_VERIFICATION", "PAID", "FAILED", "EXPIRED"],
             },
           },
           {
@@ -6930,12 +7044,75 @@ const swaggerDefinition = {
         },
       },
     },
+    "/api/v1/payments/invoices/{id}/otp/resend": {
+      post: {
+        tags: ["Payments"],
+        summary: "Resend a simulated payment OTP",
+        description:
+          "Local/staging mock only. Resends an OTP for an owned pending OTP invoice; the code expires after five minutes, resend is rate-limited, and the code is returned as mockOtp only outside production.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: { description: "Mock OTP resent." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: errorResponse("Mock payment flow or invoice was not found."),
+          409: errorResponse("Invoice is not a pending OTP invoice."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+        },
+      },
+    },
+    "/api/v1/payments/invoices/{id}/otp/verify": {
+      post: {
+        tags: ["Payments"],
+        summary: "Verify a simulated payment OTP",
+        description:
+          "Local/staging mock only. A valid six-digit code completes the payment and credits the wallet exactly once.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["otp"],
+                additionalProperties: false,
+                properties: { otp: { type: "string", pattern: "^\\d{6}$" } },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: "OTP payment completed." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: errorResponse("Invalid payment OTP."),
+          404: errorResponse("Mock payment flow or invoice was not found."),
+          409: errorResponse("Invoice is not a pending OTP invoice."),
+          410: errorResponse("Payment OTP has expired."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+        },
+      },
+    },
     "/api/v1/payments/mock/invoices/{id}/pay": {
       post: {
         tags: ["Payments"],
         summary: "Simulate payment for an owned invoice",
         description:
-          "Local/staging-only helper that emits a correctly signed successful mock webhook. It returns 404 when MOCK_PAYMENT_ENABLED is not true and must never be enabled in production.",
+          "Local/staging-only QR helper that emits a correctly signed successful mock webhook. It only accepts QR invoices, returns 404 when MOCK_PAYMENT_ENABLED is not true, and is blocked in production.",
         security: [{ bearerAuth: [] }],
         parameters: [
           {
@@ -7050,13 +7227,15 @@ const swaggerDefinition = {
         tags: ["Wallet"],
         summary: "List wallet transactions",
         description:
-          "Returns the authenticated user's wallet transaction history ordered from newest to oldest.",
+          "Returns committed wallet movements and unpaid payment invoices, newest first. Paid invoices appear only as their ledger entry. Invoice rows have null balances and do not affect wallet totals. Filters combine with AND; pagination totals respect both filters.",
         security: [
           {
             bearerAuth: [],
           },
         ],
         parameters: [
+          { name: "status", in: "query", schema: { type: "string", enum: ["SUCCESS", "PENDING", "PENDING_VERIFICATION", "FAILED", "EXPIRED"] } },
+          { name: "transactionType", in: "query", schema: { type: "string", enum: ["TOKEN_TOP_UP", "ERRAND_POST_DEBIT", "TRIP_POST_DEBIT", "ERRAND_ACCEPT_DEBIT", "ADMIN_CREDIT", "ADMIN_DEBIT", "REFUND", "SIGNUP_BONUS"] } },
           {
             name: "skip",
             in: "query",

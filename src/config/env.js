@@ -42,6 +42,16 @@ if (
 }
 
 const mockPaymentEnabled = process.env.MOCK_PAYMENT_ENABLED === "true";
+const mockPaymentOtpTestPhone =
+  process.env.MOCK_PAYMENT_OTP_TEST_PHONE || "+970599000000";
+const mockPaymentOtpTestCode =
+  process.env.MOCK_PAYMENT_OTP_TEST_CODE || "123456";
+const mockPaymentProductionOtpTestEnabled =
+  process.env.MOCK_PAYMENT_PRODUCTION_OTP_TEST_ENABLED === "true";
+
+if (!/^\d{6}$/.test(mockPaymentOtpTestCode)) {
+  throw new Error("MOCK_PAYMENT_OTP_TEST_CODE must contain exactly 6 digits");
+}
 const accountDeletionRetentionDays = Number(
   process.env.ACCOUNT_DELETION_RETENTION_DAYS || 30,
 );
@@ -83,7 +93,15 @@ module.exports = {
   identityVerificationsBucket:
     process.env.IDENTITY_VERIFICATIONS_BUCKET || "identity-verifications",
   mockPaymentEnabled,
+  mockPaymentOtpTestPhone,
+  mockPaymentOtpTestCode,
+  mockPaymentProductionOtpTestEnabled,
   mockPaymentWebhookSecret: process.env.MOCK_PAYMENT_WEBHOOK_SECRET || null,
+  bankTransferBeneficiaryName: process.env.BANK_TRANSFER_BENEFICIARY_NAME || null,
+  bankTransferAccountNumber: process.env.BANK_TRANSFER_ACCOUNT_NUMBER || null,
+  bankTransferIban: process.env.BANK_TRANSFER_IBAN || null,
+  bankTransferBankName: process.env.BANK_TRANSFER_BANK_NAME || null,
+  paymentReceiptsBucket: process.env.PAYMENT_RECEIPTS_BUCKET || "payment-receipts",
   supportEmail: process.env.SUPPORT_EMAIL || "support@wasel.ps",
   supportPhones,
   supportWorkingHours: {

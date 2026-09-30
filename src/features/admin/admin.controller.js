@@ -1,6 +1,39 @@
 const ApiResponse = require("../../utils/ApiResponse");
 const service = require("./admin.service");
 
+const paymentsService = require("../payments/payments.service");
+
+const listPaymentInvoices = async (req, res, next) => {
+  try {
+    const result = await paymentsService.listBankTransferInvoices(req.validatedData.query);
+    return res.status(200).json(new ApiResponse(200, "Bank transfer invoices retrieved successfully.", result));
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const approvePaymentInvoice = async (req, res, next) => {
+  try {
+    const invoice = await paymentsService.approveBankTransferInvoice(req.user.id, req.validatedData.params.id);
+    return res.status(200).json(new ApiResponse(200, "Bank transfer approved and wallet credited.", { invoice }));
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const rejectPaymentInvoice = async (req, res, next) => {
+  try {
+    const invoice = await paymentsService.rejectBankTransferInvoice(
+      req.user.id,
+      req.validatedData.params.id,
+      req.validatedData.body.notes,
+    );
+    return res.status(200).json(new ApiResponse(200, "Bank transfer rejected.", { invoice }));
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const listVerifications = async (req, res, next) => {
   try {
     const result = await service.listVerifications(req.validatedData.query);
@@ -125,6 +158,9 @@ const reorderFaqs = async (req, res, next) => {
 };
 
 module.exports = {
+  listPaymentInvoices,
+  approvePaymentInvoice,
+  rejectPaymentInvoice,
   listVerifications,
   getVerification,
   approveVerification,
