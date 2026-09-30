@@ -364,6 +364,20 @@ describe("Errands create", () => {
     });
   });
 
+  test("email-era user cannot post before email verification", async () => {
+    repository.findRequesterForPosting.mockResolvedValue({
+      ...requester,
+      email: "requester@example.com",
+      emailVerifiedAt: null,
+      phoneVerifiedAt: new Date(),
+    });
+
+    await expect(
+      service.createErrand(userId, createPayload),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    expect(repository.createErrand).not.toHaveBeenCalled();
+  });
+
   test("invalid item size is rejected", async () => {
     const response = await request(app)
       .post("/api/v1/errands")

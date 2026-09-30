@@ -1,5 +1,6 @@
 const ApiError = require("../../utils/ApiError");
 const walletService = require("../wallet/wallet.service");
+const { isAccountVerifiedForAccess } = require("../auth/accountVerification");
 const repository = require("./errands.repository");
 const {
   ERRAND_POST_TOKEN_COST,
@@ -146,8 +147,8 @@ const assertRequesterCanPost = (requester) => {
     throw new ApiError(404, "Requester not found.");
   }
 
-  if (!requester.phoneVerifiedAt) {
-    throw new ApiError(403, "Phone number is not verified.");
+  if (!isAccountVerifiedForAccess(requester)) {
+    throw new ApiError(403, "Account email is not verified.");
   }
 
   if (!requester.profileCompleted || !requester.neighborhoodId) {

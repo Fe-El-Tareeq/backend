@@ -10,14 +10,15 @@ const findLatestOtpByPhone = async (
   client = prisma,
 ) => {
   return client.otpVerification.findFirst({
-    where: { phone, purpose },
-    orderBy: { createdAt: "desc" },
+    where: { phone, purpose, deliveredAt: { not: null } },
+    orderBy: [{ deliveredAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
   });
 };
 
 const createOtpVerification = async (
   {
     phone,
+    email,
     otpHash,
     channel,
     purpose = "PHONE_VERIFICATION",
@@ -29,6 +30,7 @@ const createOtpVerification = async (
   return client.otpVerification.create({
     data: {
       phone,
+      email,
       otpHash,
       channel,
       purpose,
@@ -58,6 +60,7 @@ const claimOtpVerification = async (id, now, maxAttempts, client = prisma) => {
   return client.otpVerification.updateMany({
     where: {
       id,
+      deliveredAt: { not: null },
       verifiedAt: null,
       expiresAt: { gt: now },
       attemptCount: { lt: maxAttempts },
@@ -68,6 +71,42 @@ const claimOtpVerification = async (id, now, maxAttempts, client = prisma) => {
   });
 };
 
+const invalidateOtpVerification = async (id, now = new Date(), client = prisma) =>
+  client.otpVerification.updateMany({
+    where: { id, verifiedAt: null },
+    data: { verifiedAt: now },
+  });
+
+const markOtpDelivered = async (id, deliveredAt, client = prisma) =>
+  client.otpVerification.updateMany({
+    where: { id, deliveredAt: null, verifiedAt: null },
+    data: { deliveredAt },
+  });
+
+const invalidateSupersededOtps = async (
+  phone,
+  purpose,
+  authoritativeOtp,
+  now = new Date(),
+  client = prisma,
+) =>
+  client.otpVerification.updateMany({
+    where: {
+      phone,
+      purpose,
+      verifiedAt: null,
+      expiresAt: { gt: now },
+      OR: [
+        { createdAt: { lt: authoritativeOtp.createdAt } },
+        {
+          createdAt: authoritativeOtp.createdAt,
+          id: { lt: authoritativeOtp.id },
+        },
+      ],
+    },
+    data: { verifiedAt: now },
+  });
+
 const findUserByPhone = async (phone, client = prisma) => {
   return client.user.findUnique({
     where: { phone },
@@ -76,6 +115,9 @@ const findUserByPhone = async (phone, client = prisma) => {
     },
   });
 };
+
+const findUserByEmail = (email, client = prisma) =>
+  client.user.findUnique({ where: { email } });
 
 const findUserWithPasswordByPhone = async (phone, client = prisma) => {
   return client.user.findUnique({
@@ -89,11 +131,15 @@ const findUserWithPasswordByPhone = async (phone, client = prisma) => {
 const findPendingRegistrationByPhone = (phone, client = prisma) =>
   client.pendingRegistration.findUnique({ where: { phone } });
 
+const findPendingRegistrationByEmail = (email, client = prisma) =>
+  client.pendingRegistration.findUnique({ where: { email } });
+
 const upsertPendingRegistration = (data, client = prisma) =>
   client.pendingRegistration.upsert({
     where: { phone: data.phone },
     create: data,
     update: {
+      email: data.email,
       fullName: data.fullName,
       passwordHash: data.passwordHash,
       neighborhoodId: data.neighborhoodId,
@@ -111,10 +157,11 @@ const createVerifiedUserFromPending = (pending, client = prisma) =>
     data: {
       fullName: pending.fullName,
       phone: pending.phone,
+      email: pending.email,
       passwordHash: pending.passwordHash,
       neighborhoodId: pending.neighborhoodId,
       profileCompleted: true,
-      phoneVerifiedAt: new Date(),
+      emailVerifiedAt: new Date(),
     },
     include: { wallet: true },
   });
@@ -301,10 +348,15 @@ module.exports = {
   createOtpVerification,
   incrementOtpAttempts,
   claimOtpVerification,
+  invalidateOtpVerification,
+  markOtpDelivered,
+  invalidateSupersededOtps,
   findUserByPhone,
+  findUserByEmail,
   findUserWithPasswordByPhone,
   findUserByIdWithPassword,
   findPendingRegistrationByPhone,
+  findPendingRegistrationByEmail,
   upsertPendingRegistration,
   deletePendingRegistration,
   createVerifiedUserFromPending,

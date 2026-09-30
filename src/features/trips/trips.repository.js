@@ -20,6 +20,8 @@ const findTravelerForPosting = async (travelerId, client = prisma) => {
     select: {
       id: true,
       phone: true,
+      email: true,
+      emailVerifiedAt: true,
       phoneVerifiedAt: true,
       profileCompleted: true,
       status: true,

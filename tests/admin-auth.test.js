@@ -114,6 +114,20 @@ describe("Admin dashboard login", () => {
     );
   });
 
+  test("configured email-era admin uses email verification eligibility", async () => {
+    authRepository.findUserWithPasswordByPhone.mockResolvedValue({
+      ...admin,
+      email: "admin@example.com",
+      emailVerifiedAt: new Date(),
+      phoneVerifiedAt: null,
+    });
+
+    await request(app)
+      .post("/api/v1/admin/auth/login")
+      .send({ phone: admin.phone, password })
+      .expect(200);
+  });
+
   test.each([
     ["wrong password", admin.phone, "Wrong1!"],
     ["unknown phone", "+970599000099", password],

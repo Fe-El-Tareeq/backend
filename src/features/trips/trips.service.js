@@ -1,4 +1,5 @@
 const ApiError = require("../../utils/ApiError");
+const { isAccountVerifiedForAccess } = require("../auth/accountVerification");
 
 const repository = require("./trips.repository");
 const deliveryPricingService = require("../deliveryPricing/deliveryPricing.service");
@@ -123,10 +124,10 @@ const validateTravelerForPosting = (traveler) => {
     throw error;
   }
 
-  if (!traveler.phoneVerifiedAt) {
+  if (!isAccountVerifiedForAccess(traveler)) {
     throw new ApiError(
       403,
-      "Phone number must be verified before creating a trip.",
+      "Account email must be verified before creating a trip.",
     );
   }
 

@@ -19,16 +19,27 @@ if (!Number.isInteger(port) || port <= 0) {
   throw new Error("PORT must be a positive integer");
 }
 
-const otpFixedCode = process.env.OTP_FIXED_CODE || null;
+const testOtpCode = process.env.TEST_OTP_CODE?.trim() || null;
+const testOtpEmail = process.env.TEST_OTP_EMAIL?.trim().toLowerCase() || null;
 
-if (otpFixedCode && !/^\d{6}$/.test(otpFixedCode)) {
-  throw new Error("OTP_FIXED_CODE must contain exactly 6 digits");
+if (testOtpCode && !/^\d{6}$/.test(testOtpCode)) {
+  throw new Error("TEST_OTP_CODE must contain exactly 6 digits");
 }
 
-const otpTestPhones = (process.env.OTP_TEST_PHONES || "")
-  .split(",")
-  .map((phone) => phone.trim())
-  .filter(Boolean);
+if ((testOtpCode && !testOtpEmail) || (!testOtpCode && testOtpEmail)) {
+  throw new Error("TEST_OTP_EMAIL and TEST_OTP_CODE must be configured together");
+}
+
+if (
+  testOtpEmail &&
+  (testOtpEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(testOtpEmail))
+) {
+  throw new Error("TEST_OTP_EMAIL must be a valid email address");
+}
+
+if (process.env.NODE_ENV === "production" && (testOtpCode || testOtpEmail)) {
+  throw new Error("Fixed test OTP configuration is prohibited in production");
+}
 
 const adminUserId = process.env.ADMIN_USER_ID?.trim() || null;
 
@@ -100,8 +111,8 @@ module.exports = {
   jwtAccessSecret: process.env.JWT_ACCESS_SECRET,
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET,
   adminUserId,
-  otpFixedCode,
-  otpTestPhones,
+  testOtpCode,
+  testOtpEmail,
   supabaseUrl: process.env.SUPABASE_URL || null,
   supabaseSecretKey: process.env.SUPABASE_SECRET_KEY || null,
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || null,

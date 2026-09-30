@@ -146,7 +146,7 @@ const swaggerDefinition = {
     {
       name: "Authentication",
       description:
-        "Password registration/login, phone verification OTP, access-token refresh, and logout.",
+        "Phone/password login, email-delivered verification and recovery OTPs, access-token refresh, and logout.",
     },
     {
       name: "Admin Authentication",
@@ -326,6 +326,7 @@ const swaggerDefinition = {
         required: [
           "fullName",
           "phone",
+          "email",
           "password",
           "neighborhoodId",
           "termsAccepted",
@@ -345,6 +346,13 @@ const swaggerDefinition = {
             description:
               "Dedicated frontend test phone. Use the exact local format shown; phone values are not normalized automatically.",
             example: "0599000000",
+          },
+          email: {
+            type: "string",
+            format: "email",
+            maxLength: 254,
+            description: "Trimmed and lowercased before persistence.",
+            example: "test-user@example.com",
           },
           password: {
             type: "string",
@@ -454,21 +462,14 @@ const swaggerDefinition = {
       },
       OtpRequest: {
         type: "object",
+        additionalProperties: false,
         required: ["phone"],
         properties: {
           phone: {
             type: "string",
             minLength: 8,
             maxLength: 20,
-            description:
-              "For frontend testing, 0599000000 receives the fixed code only when the server allowlist is configured.",
             example: "0599000000",
-          },
-          channel: {
-            type: "string",
-            enum: ["SMS", "WHATSAPP"],
-            default: "SMS",
-            example: "SMS",
           },
         },
       },
@@ -487,8 +488,6 @@ const swaggerDefinition = {
             minLength: 6,
             maxLength: 6,
             pattern: "^\\d{6}$",
-            description:
-              "Use 000000 only for the allowlisted frontend test phone 0599000000. Other phones require their generated OTP.",
             example: "000000",
           },
         },
@@ -692,6 +691,13 @@ const swaggerDefinition = {
             type: "string",
             example: "+970599123456",
           },
+          email: {
+            type: "string",
+            format: "email",
+            nullable: true,
+            readOnly: true,
+            example: "test-user@example.com",
+          },
           fullName: {
             type: "string",
             nullable: true,
@@ -729,6 +735,12 @@ const swaggerDefinition = {
             format: "date-time",
             nullable: true,
             example: "2026-08-17T09:15:00.000Z",
+          },
+          emailVerifiedAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+            example: "2026-09-30T09:15:00.000Z",
           },
           status: {
             type: "string",
@@ -3073,7 +3085,7 @@ const swaggerDefinition = {
         },
         {
           success: true,
-          message: "Registration OTP sent successfully",
+          message: "Registration verification code sent successfully",
           data: {
             expiresInMinutes: 2,
           },
@@ -3130,7 +3142,7 @@ const swaggerDefinition = {
         },
         {
           success: true,
-          message: "OTP sent successfully",
+          message: "Verification code sent successfully",
           data: {
             expiresInMinutes: 2,
           },
@@ -3363,9 +3375,9 @@ const swaggerDefinition = {
     "/api/v1/auth/register": {
       post: {
         tags: ["Authentication"],
-        summary: "Register and request phone verification",
+        summary: "Register and request email verification",
         description:
-          "Requires termsAccepted=true, snapshots the current terms and privacy versions, stores an expiring pending registration, and sends a phone verification OTP; it does not create a users row or issue tokens. The user, wallet, and legal acceptance are created atomically only after successful OTP verification. For frontend testing, the dedicated phone 0599000000 uses OTP 000000 only when OTP_FIXED_CODE and OTP_TEST_PHONES are configured on the running server. neighborhoodId must be selected from an existing active neighborhood returned by GET /api/v1/locations/neighborhoods. Passwords must be at least 8 characters and include one uppercase letter, one number, and one special character.",
+          "Requires a normalized email and termsAccepted=true, snapshots the current legal versions, stores an expiring pending registration, and sends an email verification code through Resend. No user row or tokens are created until phone plus OTP verification succeeds. The user, wallet, and legal acceptance are then created atomically. Phone remains the login identifier.",
         requestBody: {
           required: true,
           content: {
@@ -3422,6 +3434,7 @@ const swaggerDefinition = {
             },
           },
           409: errorResponse("A user with this phone already exists."),
+          503: errorResponse("Unable to deliver the verification code."),
           429: {
             $ref: "#/components/responses/TooManyRequests",
           },
@@ -3436,7 +3449,7 @@ const swaggerDefinition = {
         tags: ["Authentication"],
         summary: "Log in with phone and password",
         description:
-          "Authenticates a verified ACTIVE user with phone and password only. Normal login never accepts or requires OTP. OTP is used only for initial phone verification and password reset. Wrong phone, missing password support on a legacy user, and wrong password all return a generic invalid-credentials response. Users whose phoneVerifiedAt is null are rejected until initial OTP verification succeeds.",
+          "Authenticates with phone and password. Email-era users require emailVerifiedAt. As temporary migration compatibility, legacy users with no email may use their historical phoneVerifiedAt state. A user with an unverified email cannot use phoneVerifiedAt as a bypass.",
         requestBody: {
           required: true,
           content: {
@@ -3464,7 +3477,7 @@ const swaggerDefinition = {
           401: errorResponse("Invalid phone or password."),
           403: {
             description:
-              "Phone number is not verified, or the user is suspended or banned.",
+              "Account email is not verified, or the user is suspended or banned.",
             content: {
               "application/json": {
                 schema: {
@@ -3474,7 +3487,7 @@ const swaggerDefinition = {
                   unverified: {
                     value: {
                       success: false,
-                      message: "Phone number is not verified.",
+                      message: "Account email is not verified.",
                       errors: [],
                     },
                   },
@@ -3501,9 +3514,9 @@ const swaggerDefinition = {
     "/api/v1/auth/request-otp": {
       post: {
         tags: ["Authentication"],
-        summary: "Request a phone verification OTP",
+        summary: "Resend the registration email OTP",
         description:
-          "Creates a six-digit PHONE_VERIFICATION OTP for the provided phone number. It supports initial registration verification and is not part of normal login. For frontend testing, 0599000000 uses 000000 only when explicitly allowlisted by the running server. Request a new code after changing OTP environment settings because existing OTP rows keep their original hash. The code expires after two minutes and allows at most three attempts.",
+          "Resends a six-digit EMAIL_VERIFICATION code to the normalized email already stored with the pending phone registration. Clients cannot choose SMS or WhatsApp. A 60-second cooldown applies; after successful delivery, older usable registration codes are invalidated. The code expires after two minutes and allows at most three attempts.",
         requestBody: {
           required: true,
           content: {
@@ -3516,7 +3529,7 @@ const swaggerDefinition = {
         },
         responses: {
           200: {
-            description: "OTP created successfully.",
+            description: "Verification code delivered successfully.",
             content: {
               "application/json": {
                 schema: {
@@ -3531,6 +3544,7 @@ const swaggerDefinition = {
           429: {
             $ref: "#/components/responses/TooManyRequests",
           },
+          503: errorResponse("Unable to deliver the verification code."),
           500: {
             $ref: "#/components/responses/InternalServerError",
           },
@@ -3540,9 +3554,9 @@ const swaggerDefinition = {
     "/api/v1/auth/verify-otp": {
       post: {
         tags: ["Authentication"],
-        summary: "Verify phone OTP and receive tokens",
+        summary: "Verify registration email OTP and receive tokens",
         description:
-          "Verifies the latest PHONE_VERIFICATION OTP for initial account activation. For the allowlisted frontend test phone 0599000000, use 000000. On success, the backend atomically creates the user and wallet, records the legal acceptance for the terms and privacy versions captured during registration, marks the OTP used, and returns access and refresh tokens. If legal-version consent is missing or stale, verification is rejected and the transaction is rolled back. Later logins use phone and password without OTP.",
+          "Accepts phone plus OTP and verifies the latest EMAIL_VERIFICATION code bound to that phone's pending normalized email. Success atomically consumes the code, creates the user with emailVerifiedAt, creates the wallet, records legal acceptance, deletes pending registration, and returns tokens. It does not set phoneVerifiedAt.",
         requestBody: {
           required: true,
           content: {
@@ -3718,7 +3732,7 @@ const swaggerDefinition = {
         tags: ["Authentication"],
         summary: "Request a password-reset OTP",
         description:
-          "Creates a purpose-scoped PASSWORD_RESET OTP when the account exists. The response is intentionally identical for existing and missing accounts. For frontend testing, 0599000000 uses 000000 only when explicitly allowlisted through server environment configuration. This flow is separate from normal login.",
+          "Accepts phone and, only when the account has a verified email, sends a purpose-scoped PASSWORD_RESET code to that stored email. Existing, missing, legacy no-email, and ineligible accounts receive the same generic response; no full email or verification state is exposed.",
         requestBody: {
           required: true,
           content: {
@@ -3757,7 +3771,7 @@ const swaggerDefinition = {
         tags: ["Authentication"],
         summary: "Reset a password using a password-reset OTP",
         description:
-          "Validates the latest unused PASSWORD_RESET OTP for the same phone, replaces the stored bcrypt password hash, marks the OTP used, and revokes every active refresh token for the user. The allowlisted test phone 0599000000 uses 000000; after reset, the user logs in normally with phone and the new password without OTP.",
+          "Validates the latest unused PASSWORD_RESET code for the same phone and its current verified email, replaces the password hash, consumes the code, and revokes every active refresh token. Login remains phone plus the new password.",
         requestBody: {
           required: true,
           content: {
@@ -3843,7 +3857,15 @@ const swaggerDefinition = {
         tags: ["Authentication"],
         summary: "Request an OTP to cancel scheduled account deletion",
         description:
-          "Returns a generic response. A purpose-scoped OTP is sent only when the account is deactivated and still inside its recovery window.",
+          "Accepts phone and always returns a generic response. A purpose-scoped code is emailed only when the account is deactivated, inside its recovery window, and already has a verified email. A replacement email is never accepted.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/OtpRequest" },
+            },
+          },
+        },
         responses: {
           200: { description: "Generic account recovery response." },
           400: { $ref: "#/components/responses/ValidationFailed" },
@@ -3855,7 +3877,7 @@ const swaggerDefinition = {
         tags: ["Authentication"],
         summary: "Cancel account deletion and reactivate the account",
         description:
-          "Requires the phone, current password, and a valid ACCOUNT_REACTIVATION OTP. It clears the deletion dates, restores ACTIVE status, and issues fresh tokens.",
+          "Requires phone, current password, and an ACCOUNT_REACTIVATION code delivered to the account's existing verified email. It clears deletion dates, restores ACTIVE status, and issues fresh tokens.",
         responses: {
           200: { description: "Account reactivated and fresh tokens issued." },
           400: errorResponse("Account recovery request is invalid or expired."),
@@ -6184,7 +6206,7 @@ const swaggerDefinition = {
         tags: ["Admin Authentication"],
         summary: "Log in to the admin dashboard",
         description:
-          "Password-only login for the one ACTIVE, phone-verified SUPER_ADMIN whose user ID matches the backend-configured dashboard administrator. All identity, password, status, role, and allowlist failures use the same invalid-credentials response. Limited to five failed attempts per client IP in 15 minutes regardless of the submitted phone; successful logins are not counted.",
+          "Password-only login for the one ACTIVE, appropriately verified SUPER_ADMIN whose user ID exactly matches ADMIN_USER_ID. Email-era admins require emailVerifiedAt; legacy admins without email may temporarily use phoneVerifiedAt. All identity, password, verification, status, role, and allowlist failures use the same response.",
         requestBody: {
           required: true,
           content: {

@@ -101,6 +101,8 @@ const findRequesterForPosting = async (userId, client = prisma) => {
       verificationStatus: true,
       neighborhoodId: true,
       profileCompleted: true,
+      email: true,
+      emailVerifiedAt: true,
       phoneVerifiedAt: true,
       status: true,
     },
