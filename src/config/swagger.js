@@ -2580,7 +2580,15 @@ const swaggerDefinition = {
       },
       Wallet: {
         type: "object",
-        required: ["id", "userId", "tokenBalance", "totalTokensPurchased", "totalTokensSpent", "createdAt", "updatedAt"],
+        required: [
+          "id",
+          "userId",
+          "tokenBalance",
+          "totalTokensPurchased",
+          "totalTokensSpent",
+          "createdAt",
+          "updatedAt",
+        ],
         properties: {
           id: {
             type: "string",
@@ -2592,8 +2600,18 @@ const swaggerDefinition = {
             format: "uuid",
             example: "0f46f56f-32d1-4fd4-84d2-69bc2b077d8f",
           },
-          totalTokensPurchased: { type: "integer", minimum: 0, description: "Completed TOKEN_TOP_UP tokens, including package bonuses; excludes signup bonuses, refunds and admin credits." },
-          totalTokensSpent: { type: "integer", minimum: 0, description: "Gross tokens debited for errands, trips, acceptance and admin debits; refunds do not reduce this total." },
+          totalTokensPurchased: {
+            type: "integer",
+            minimum: 0,
+            description:
+              "Completed TOKEN_TOP_UP tokens, including package bonuses; excludes signup bonuses, refunds and admin credits.",
+          },
+          totalTokensSpent: {
+            type: "integer",
+            minimum: 0,
+            description:
+              "Gross tokens debited for errands, trips, acceptance and admin debits; refunds do not reduce this total.",
+          },
           tokenBalance: {
             type: "integer",
             example: 3,
@@ -2626,11 +2644,28 @@ const swaggerDefinition = {
             format: "uuid",
             example: "17268c0e-0748-4108-a486-dce6d1da412e",
           },
-          status: { type: "string", enum: ["SUCCESS", "PENDING", "PENDING_VERIFICATION", "FAILED", "EXPIRED"], description: "SUCCESS for committed ledger entries; otherwise the payment invoice status." },
-          source: { type: "string", enum: ["WALLET_TRANSACTION", "PAYMENT_INVOICE"] },
+          status: {
+            type: "string",
+            enum: [
+              "SUCCESS",
+              "PENDING",
+              "PENDING_VERIFICATION",
+              "FAILED",
+              "EXPIRED",
+            ],
+            description:
+              "SUCCESS for committed ledger entries; otherwise the payment invoice status.",
+          },
+          source: {
+            type: "string",
+            enum: ["WALLET_TRANSACTION", "PAYMENT_INVOICE"],
+          },
           paymentInvoiceId: { type: "string", format: "uuid", nullable: true },
           rejectionNotes: { type: "string", nullable: true },
-          paymentMethod: { type: "string", enum: ["QR", "OTP", "BANK_TRANSFER"] },
+          paymentMethod: {
+            type: "string",
+            enum: ["QR", "OTP", "BANK_TRANSFER"],
+          },
           referenceCode: { type: "string", nullable: true },
           transactionType: {
             type: "string",
@@ -2797,15 +2832,33 @@ const swaggerDefinition = {
           totalTokens: { type: "integer", example: 28 },
           amountNis: { type: "number", format: "double", example: 12 },
           currency: { type: "string", enum: ["NIS"] },
-          paymentProvider: { type: "string", enum: ["MOCK", "JAWWAL_PAY", "BANK_TRANSFER"] },
-          paymentMethod: { type: "string", enum: ["QR", "OTP", "BANK_TRANSFER"] },
-          referenceCode: { type: "string", nullable: true, example: "ORD-MT06H0QG-6D8F1A0B42" },
+          paymentProvider: {
+            type: "string",
+            enum: ["MOCK", "JAWWAL_PAY", "BANK_TRANSFER"],
+          },
+          paymentMethod: {
+            type: "string",
+            enum: ["QR", "OTP", "BANK_TRANSFER"],
+          },
+          referenceCode: {
+            type: "string",
+            nullable: true,
+            example: "ORD-MT06H0QG-6D8F1A0B42",
+          },
           hasTransferReceipt: { type: "boolean" },
           rejectionNotes: { type: "string", nullable: true },
           reviewedAt: { type: "string", format: "date-time", nullable: true },
-          paymentPhone: { type: "string", nullable: true, description: "Masked phone number used by the OTP mock flow." },
+          paymentPhone: {
+            type: "string",
+            nullable: true,
+            description: "Masked phone number used by the OTP mock flow.",
+          },
           otpExpiresAt: { type: "string", format: "date-time", nullable: true },
-          otpResendAvailableAt: { type: "string", format: "date-time", nullable: true },
+          otpResendAvailableAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+          },
           providerInvoiceId: {
             type: "string",
             nullable: true,
@@ -2819,7 +2872,13 @@ const swaggerDefinition = {
           paymentUrl: { type: "string", nullable: true },
           status: {
             type: "string",
-            enum: ["PENDING", "PENDING_VERIFICATION", "PAID", "FAILED", "EXPIRED"],
+            enum: [
+              "PENDING",
+              "PENDING_VERIFICATION",
+              "PAID",
+              "FAILED",
+              "EXPIRED",
+            ],
           },
           createdAt: { type: "string", format: "date-time" },
           expiresAt: { type: "string", format: "date-time" },
@@ -3233,7 +3292,11 @@ const swaggerDefinition = {
           created: { type: "boolean" },
           invoice: { $ref: "#/components/schemas/PaymentInvoice" },
           bankAccount: { $ref: "#/components/schemas/BankTransferAccount" },
-          mockOtp: { type: "string", description: "Non-production mock code for completing the OTP flow." },
+          mockOtp: {
+            type: "string",
+            description:
+              "Non-production mock code for completing the OTP flow.",
+          },
         },
       }),
       NotificationListResponse: apiResponse({
@@ -3748,10 +3811,19 @@ const swaggerDefinition = {
             "application/json": {
               schema: {
                 type: "object",
-                required: ["currentPassword", "newPassword", "confirmNewPassword", "refreshToken"],
+                required: [
+                  "currentPassword",
+                  "newPassword",
+                  "confirmNewPassword",
+                  "refreshToken",
+                ],
                 properties: {
                   currentPassword: { type: "string", format: "password" },
-                  newPassword: { type: "string", format: "password", minLength: 8 },
+                  newPassword: {
+                    type: "string",
+                    format: "password",
+                    minLength: 8,
+                  },
                   confirmNewPassword: { type: "string", format: "password" },
                   refreshToken: { type: "string" },
                 },
@@ -3822,7 +3894,8 @@ const swaggerDefinition = {
             name: "zoneKey",
             in: "query",
             required: false,
-            description: "Canonical stable zone key returned by the cities endpoint.",
+            description:
+              "Canonical stable zone key returned by the cities endpoint.",
             schema: zoneKeyReference,
           },
           {
@@ -5995,7 +6068,9 @@ const swaggerDefinition = {
         responses: {
           201: { description: "Identity verification submitted for review." },
           400: errorResponse("All three valid images up to 5 MB are required."),
-          409: errorResponse("Identity is verified or a request is already pending."),
+          409: errorResponse(
+            "Identity is verified or a request is already pending.",
+          ),
           503: errorResponse("Identity document storage is not configured."),
         },
       },
@@ -6006,12 +6081,31 @@ const swaggerDefinition = {
         summary: "List bank transfer invoices for review",
         security: [{ bearerAuth: [] }],
         parameters: [
-          { name: "status", in: "query", schema: { type: "string", enum: ["PENDING_VERIFICATION", "PAID", "FAILED"], default: "PENDING_VERIFICATION" } },
-          { name: "skip", in: "query", schema: { type: "integer", minimum: 0, default: 0 } },
-          { name: "take", in: "query", schema: { type: "integer", minimum: 1, maximum: 50, default: 20 } },
+          {
+            name: "status",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: ["PENDING_VERIFICATION", "PAID", "FAILED"],
+              default: "PENDING_VERIFICATION",
+            },
+          },
+          {
+            name: "skip",
+            in: "query",
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
         ],
         responses: {
-          200: { description: "Bank transfer invoices with user, package, reference, and short-lived signed receipt URL." },
+          200: {
+            description:
+              "Bank transfer invoices with user, package, reference, and short-lived signed receipt URL.",
+          },
           401: { $ref: "#/components/responses/Unauthorized" },
           403: { $ref: "#/components/responses/Forbidden" },
         },
@@ -6022,8 +6116,25 @@ const swaggerDefinition = {
         tags: ["Admin"],
         summary: "Approve a bank transfer invoice",
         security: [{ bearerAuth: [] }],
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
-        responses: { 200: { description: "Invoice paid, wallet credited once, and user notified." }, 403: { $ref: "#/components/responses/Forbidden" }, 404: errorResponse("Bank transfer invoice was not found."), 409: errorResponse("Invoice has already been reviewed or has no receipt.") },
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: {
+            description:
+              "Invoice paid, wallet credited once, and user notified.",
+          },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: errorResponse("Bank transfer invoice was not found."),
+          409: errorResponse(
+            "Invoice has already been reviewed or has no receipt.",
+          ),
+        },
       },
     },
     "/api/v1/admin/payments/invoices/{id}/reject": {
@@ -6031,17 +6142,41 @@ const swaggerDefinition = {
         tags: ["Admin"],
         summary: "Reject a bank transfer invoice",
         security: [{ bearerAuth: [] }],
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
         requestBody: {
           required: true,
-          content: { "application/json": { schema: {
-            type: "object",
-            required: ["notes"],
-            additionalProperties: false,
-            properties: { notes: { type: "string", minLength: 3, maxLength: 500 } },
-          } } },
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["notes"],
+                additionalProperties: false,
+                properties: {
+                  notes: { type: "string", minLength: 3, maxLength: 500 },
+                },
+              },
+            },
+          },
         },
-        responses: { 200: { description: "Invoice failed, rejection note saved, and user notified." }, 400: { $ref: "#/components/responses/ValidationFailed" }, 403: { $ref: "#/components/responses/Forbidden" }, 404: errorResponse("Bank transfer invoice was not found."), 409: errorResponse("Invoice has already been reviewed or has no receipt.") },
+        responses: {
+          200: {
+            description:
+              "Invoice failed, rejection note saved, and user notified.",
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: errorResponse("Bank transfer invoice was not found."),
+          409: errorResponse(
+            "Invoice has already been reviewed or has no receipt.",
+          ),
+        },
       },
     },
     "/api/v1/admin/auth/login": {
@@ -6156,22 +6291,73 @@ const swaggerDefinition = {
       get: {
         tags: ["Admin"],
         summary: "List identity verification submissions",
+        description:
+          "Defaults to ALL. Search matches user name (case-insensitive) or phone. Statistics count every status within the search, independent of the selected status and page. Items include documentCount=3, availableDocumentCount, documentsStatus (AVAILABLE/PENDING_DELETION/DELETED) and nullable documentsDeletedAt.",
         security: [{ bearerAuth: [] }],
         parameters: [
-          { name: "status", in: "query", schema: { type: "string", enum: ["UNVERIFIED", "PENDING_REVIEW", "VERIFIED", "REJECTED"], default: "PENDING_REVIEW" } },
-          { name: "skip", in: "query", schema: { type: "integer", minimum: 0, default: 0 } },
-          { name: "take", in: "query", schema: { type: "integer", minimum: 1, maximum: 50, default: 20 } },
+          {
+            name: "search",
+            in: "query",
+            schema: { type: "string", minLength: 1, maxLength: 100 },
+            description: "Search by name or phone.",
+          },
+          {
+            name: "status",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: [
+                "ALL",
+                "UNVERIFIED",
+                "PENDING_REVIEW",
+                "VERIFIED",
+                "REJECTED",
+              ],
+              default: "ALL",
+            },
+          },
+          {
+            name: "skip",
+            in: "query",
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
         ],
-        responses: { 200: { description: "Verification submissions retrieved." }, 401: { $ref: "#/components/responses/Unauthorized" }, 403: { $ref: "#/components/responses/Forbidden" } },
+        responses: {
+          200: {
+            description:
+              "Returns data.verifications, data.pagination (skip, take, total) and data.statistics (total, PENDING_REVIEW, VERIFIED, REJECTED, UNVERIFIED).",
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+        },
       },
     },
     "/api/v1/admin/verifications/{id}": {
       get: {
         tags: ["Admin"],
-        summary: "Get a verification with five-minute signed document URLs",
+        summary: "Get an identity verification",
+        description:
+          "Pending and approved requests include five-minute signed document URLs. Rejected requests return documents=null, including while deletion is pending. DELETED and documentsDeletedAt are set only after storage deletion succeeds. Request history and rejectionReason remain available.",
         security: [{ bearerAuth: [] }],
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
-        responses: { 200: { description: "Verification retrieved." }, 401: { $ref: "#/components/responses/Unauthorized" }, 403: { $ref: "#/components/responses/Forbidden" }, 404: errorResponse("Identity verification not found.") },
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: { description: "Verification retrieved." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: errorResponse("Identity verification not found."),
+        },
       },
     },
     "/api/v1/admin/verifications/{id}/approve": {
@@ -6179,8 +6365,20 @@ const swaggerDefinition = {
         tags: ["Admin"],
         summary: "Approve an identity verification",
         security: [{ bearerAuth: [] }],
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
-        responses: { 200: { description: "Verification approved and user notified." }, 401: { $ref: "#/components/responses/Unauthorized" }, 403: { $ref: "#/components/responses/Forbidden" }, 409: errorResponse("Verification was already reviewed.") },
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: { description: "Verification approved and user notified." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          409: errorResponse("Verification was already reviewed."),
+        },
       },
     },
     "/api/v1/admin/verifications/{id}/reject": {
@@ -6188,9 +6386,37 @@ const swaggerDefinition = {
         tags: ["Admin"],
         summary: "Reject an identity verification",
         security: [{ bearerAuth: [] }],
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
-        requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["reason"], properties: { reason: { type: "string", minLength: 3, maxLength: 500 } } } } } },
-        responses: { 200: { description: "Verification rejected and user notified." }, 401: { $ref: "#/components/responses/Unauthorized" }, 403: { $ref: "#/components/responses/Forbidden" }, 409: errorResponse("Verification was already reviewed.") },
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["reason"],
+                properties: {
+                  reason: { type: "string", minLength: 3, maxLength: 500 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description:
+              "Verification rejected and user notified with the reason. Document deletion is durably queued; response documentsStatus=PENDING_DELETION. The worker retries failures. Re-submission creates a separate request.",
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          409: errorResponse("Verification was already reviewed."),
+        },
       },
     },
     "/api/v1/admin/faqs": {
@@ -6200,8 +6426,16 @@ const swaggerDefinition = {
         security: [{ bearerAuth: [] }],
         parameters: [
           { name: "isActive", in: "query", schema: { type: "boolean" } },
-          { name: "skip", in: "query", schema: { type: "integer", minimum: 0, default: 0 } },
-          { name: "take", in: "query", schema: { type: "integer", minimum: 1, maximum: 50, default: 20 } },
+          {
+            name: "skip",
+            in: "query",
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
         ],
         responses: {
           200: { description: "FAQs retrieved successfully." },
@@ -6282,7 +6516,14 @@ const swaggerDefinition = {
         tags: ["Admin", "Support"],
         summary: "Update or activate/deactivate an FAQ",
         security: [{ bearerAuth: [] }],
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
         requestBody: {
           required: true,
           content: {
@@ -6311,7 +6552,14 @@ const swaggerDefinition = {
         tags: ["Admin", "Support"],
         summary: "Soft-delete an FAQ by deactivating it",
         security: [{ bearerAuth: [] }],
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
         responses: {
           200: { description: "FAQ deactivated successfully." },
           403: { $ref: "#/components/responses/Forbidden" },
@@ -6544,13 +6792,16 @@ const swaggerDefinition = {
           required: true,
           content: {
             "application/json": {
-              schema: { $ref: "#/components/schemas/SupportReportCreateRequest" },
+              schema: {
+                $ref: "#/components/schemas/SupportReportCreateRequest",
+              },
               examples: {
                 withoutChat: {
                   value: {
                     clientRequestKey: "750e8400-e29b-41d4-a716-446655440001",
                     type: "TECHNICAL_ISSUE",
-                    description: "The application stopped while creating an errand.",
+                    description:
+                      "The application stopped while creating an errand.",
                     attachChatHistory: false,
                   },
                 },
@@ -6558,7 +6809,8 @@ const swaggerDefinition = {
                   value: {
                     clientRequestKey: "750e8400-e29b-41d4-a716-446655440002",
                     type: "ABUSE_OR_THREAT",
-                    description: "The other participant sent threatening messages.",
+                    description:
+                      "The other participant sent threatening messages.",
                     reportedUserId: "550e8400-e29b-41d4-a716-446655440002",
                     attachChatHistory: true,
                     chatRoomId: "650e8400-e29b-41d4-a716-446655440004",
@@ -6573,7 +6825,9 @@ const swaggerDefinition = {
           400: { $ref: "#/components/responses/ValidationFailed" },
           401: { $ref: "#/components/responses/Unauthorized" },
           404: errorResponse("Report context not found."),
-          409: errorResponse("The idempotency key was reused with different data."),
+          409: errorResponse(
+            "The idempotency key was reused with different data.",
+          ),
         },
       },
     },
@@ -6903,19 +7157,33 @@ const swaggerDefinition = {
       post: {
         tags: ["Payments"],
         summary: "Upload a bank transfer receipt",
-        description: "Uploads one private PNG, JPG, or PDF receipt up to 5 MB for an owned bank transfer invoice awaiting verification.",
+        description:
+          "Uploads one private PNG, JPG, or PDF receipt up to 5 MB for an owned bank transfer invoice awaiting verification.",
         security: [{ bearerAuth: [] }],
-        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
         requestBody: {
           required: true,
-          content: { "multipart/form-data": { schema: {
-            type: "object",
-            required: ["receipt"],
-            properties: { receipt: { type: "string", format: "binary" } },
-          } } },
+          content: {
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                required: ["receipt"],
+                properties: { receipt: { type: "string", format: "binary" } },
+              },
+            },
+          },
         },
         responses: {
-          200: { description: "Receipt uploaded; invoice is awaiting admin review." },
+          200: {
+            description: "Receipt uploaded; invoice is awaiting admin review.",
+          },
           400: { $ref: "#/components/responses/ValidationFailed" },
           401: { $ref: "#/components/responses/Unauthorized" },
           404: errorResponse("Invoice was not found."),
@@ -6924,10 +7192,11 @@ const swaggerDefinition = {
         },
       },
     },
-        "/api/v1/payments/invoices": {
+    "/api/v1/payments/invoices": {
       post: {
         tags: ["Payments"],
-        summary: "Create a token top-up invoice using QR, OTP, or bank transfer",
+        summary:
+          "Create a token top-up invoice using QR, OTP, or bank transfer",
         description:
           "Creates an invoice using QR, OTP, or BANK_TRANSFER and snapshots the active package. Bank transfer returns bank details and a unique referenceCode, remains PENDING_VERIFICATION, and requires a receipt upload before admin review. OTP requires paymentPhone. Reusing a clientRequestKey with different payment details returns 409. Creating an invoice never credits the wallet.",
         security: [{ bearerAuth: [] }],
@@ -6947,8 +7216,18 @@ const swaggerDefinition = {
                     description:
                       "A fresh UUID generated once by the client and reused only when retrying this request.",
                   },
-                  paymentMethod: { type: "string", enum: ["QR", "OTP", "BANK_TRANSFER"], default: "QR" },
-                  paymentPhone: { type: "string", minLength: 8, maxLength: 20, description: "Required when paymentMethod is OTP; omitted for QR and BANK_TRANSFER." },
+                  paymentMethod: {
+                    type: "string",
+                    enum: ["QR", "OTP", "BANK_TRANSFER"],
+                    default: "QR",
+                  },
+                  paymentPhone: {
+                    type: "string",
+                    minLength: 8,
+                    maxLength: 20,
+                    description:
+                      "Required when paymentMethod is OTP; omitted for QR and BANK_TRANSFER.",
+                  },
                 },
               },
             },
@@ -6993,7 +7272,13 @@ const swaggerDefinition = {
             in: "query",
             schema: {
               type: "string",
-              enum: ["PENDING", "PENDING_VERIFICATION", "PAID", "FAILED", "EXPIRED"],
+              enum: [
+                "PENDING",
+                "PENDING_VERIFICATION",
+                "PAID",
+                "FAILED",
+                "EXPIRED",
+              ],
             },
           },
           {
@@ -7234,8 +7519,37 @@ const swaggerDefinition = {
           },
         ],
         parameters: [
-          { name: "status", in: "query", schema: { type: "string", enum: ["SUCCESS", "PENDING", "PENDING_VERIFICATION", "FAILED", "EXPIRED"] } },
-          { name: "transactionType", in: "query", schema: { type: "string", enum: ["TOKEN_TOP_UP", "ERRAND_POST_DEBIT", "TRIP_POST_DEBIT", "ERRAND_ACCEPT_DEBIT", "ADMIN_CREDIT", "ADMIN_DEBIT", "REFUND", "SIGNUP_BONUS"] } },
+          {
+            name: "status",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: [
+                "SUCCESS",
+                "PENDING",
+                "PENDING_VERIFICATION",
+                "FAILED",
+                "EXPIRED",
+              ],
+            },
+          },
+          {
+            name: "transactionType",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: [
+                "TOKEN_TOP_UP",
+                "ERRAND_POST_DEBIT",
+                "TRIP_POST_DEBIT",
+                "ERRAND_ACCEPT_DEBIT",
+                "ADMIN_CREDIT",
+                "ADMIN_DEBIT",
+                "REFUND",
+                "SIGNUP_BONUS",
+              ],
+            },
+          },
           {
             name: "skip",
             in: "query",

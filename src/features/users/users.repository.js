@@ -40,6 +40,7 @@ const findUserById = async (userId) => {
           submittedAt: true,
           reviewedAt: true,
           rejectionReason: true,
+          documentsDeletedAt: true,
         },
         orderBy: { submittedAt: "desc" },
         take: 1,
@@ -131,8 +132,36 @@ const findPendingIdentityVerification = (userId, client = prisma) =>
     select: { id: true, submittedAt: true },
   });
 
-const submitIdentityVerification = (userId, paths) =>
+const findIdentityByPaths = (userId, paths) =>
+  prisma.identityVerification.findFirst({
+    where: {
+      userId,
+      OR: [
+        { idFrontImagePath: { in: paths } },
+        { idBackImagePath: { in: paths } },
+        { selfieImagePath: { in: paths } },
+      ],
+    },
+    select: { id: true, status: true, submittedAt: true },
+  });
+
+const stageIdentityCleanup = (paths) =>
+  prisma.identityDocumentCleanup.create({
+    data: { paths, nextAttemptAt: new Date(Date.now() + 60 * 60 * 1000) },
+  });
+const activateIdentityCleanup = (id) =>
+  prisma.identityDocumentCleanup.update({
+    where: { id },
+    data: { nextAttemptAt: new Date() },
+  });
+
+const submitIdentityVerification = (userId, paths, cleanupId) =>
   prisma.$transaction(async (tx) => {
+    if (!cleanupId)
+      throw new Error("Identity upload cleanup reservation is required.");
+    const users =
+      await tx.$queryRaw`SELECT verification_status FROM users WHERE id = ${userId}::uuid FOR UPDATE`;
+    if (users[0]?.verification_status === "VERIFIED") return { conflict: true };
     const pending = await findPendingIdentityVerification(userId, tx);
     if (pending) return { conflict: pending };
     const verification = await tx.identityVerification.create({
@@ -143,6 +172,7 @@ const submitIdentityVerification = (userId, paths) =>
       where: { id: userId },
       data: { verificationStatus: "PENDING_REVIEW" },
     });
+    await tx.identityDocumentCleanup.deleteMany({ where: { id: cleanupId } });
     return { verification };
   });
 
@@ -200,6 +230,9 @@ const revokeSessions = (userId, client = prisma) =>
   });
 
 module.exports = {
+  findIdentityByPaths,
+  stageIdentityCleanup,
+  activateIdentityCleanup,
   findUserById,
   findActiveNeighborhoodById,
   updateUserProfile,

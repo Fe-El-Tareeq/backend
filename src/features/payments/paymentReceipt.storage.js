@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const ApiError = require("../../utils/ApiError");
 const env = require("../../config/env");
+const { storageAuthHeaders } = require("../../utils/supabaseStorageAuth");
 
 const extensions = {
   "image/jpeg": "jpg",
@@ -11,12 +12,12 @@ const encodePath = (value) =>
   value.split("/").map(encodeURIComponent).join("/");
 
 const getConfig = () => {
-  if (!env.supabaseUrl || !env.supabaseServiceRoleKey) {
+  if (!env.supabaseUrl) {
     throw new ApiError(503, "Payment receipt storage is not configured.");
   }
   return {
     baseUrl: env.supabaseUrl.replace(/\/$/, ""),
-    key: env.supabaseServiceRoleKey,
+    headers: storageAuthHeaders(),
     bucket: env.paymentReceiptsBucket,
   };
 };
@@ -61,8 +62,7 @@ const upload = async (userId, invoiceId, file) => {
     {
       method: "POST",
       headers: {
-        apikey: config.key,
-        Authorization: "Bearer " + config.key,
+        ...config.headers,
         "Content-Type": file.mimetype,
         "x-upsert": "false",
       },
@@ -85,7 +85,7 @@ const remove = async (path) => {
     url,
     {
       method: "DELETE",
-      headers: { apikey: config.key, Authorization: "Bearer " + config.key },
+      headers: { ...config.headers },
     },
     "Could not delete payment receipt.",
   );
@@ -104,8 +104,7 @@ const createSignedUrl = async (path, expiresIn = 300) => {
     {
       method: "POST",
       headers: {
-        apikey: config.key,
-        Authorization: "Bearer " + config.key,
+        ...config.headers,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ expiresIn }),

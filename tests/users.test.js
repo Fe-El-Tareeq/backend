@@ -17,6 +17,7 @@ describe("User Profile Service Tests", () => {
     jest.clearAllMocks();
     profileImageStorage.remove.mockResolvedValue(undefined);
     identityStorage.remove.mockResolvedValue(undefined);
+    repository.stageIdentityCleanup.mockResolvedValue({ id: "cleanup-1" });
   });
 
   // Verifies that the authenticated user's profile can be retrieved.
@@ -42,13 +43,15 @@ describe("User Profile Service Tests", () => {
     const result = await service.getCurrentUserProfile("user-1");
 
     expect(repository.findUserById).toHaveBeenCalledWith("user-1");
-    expect(result).toEqual(expect.objectContaining({
-      ...mockUser,
-      city: null,
-      isVerified: false,
-      verification: null,
-      statistics: expect.objectContaining({ tokenBalance: 10 }),
-    }));
+    expect(result).toEqual(
+      expect.objectContaining({
+        ...mockUser,
+        city: null,
+        isVerified: false,
+        verification: null,
+        statistics: expect.objectContaining({ tokenBalance: 10 }),
+      }),
+    );
   });
 
   // Verifies that a missing user returns a 404 error.
@@ -166,33 +169,68 @@ describe("User Profile Service Tests", () => {
   });
 
   test("Should upload a new profile image and persist its URL and path", async () => {
-    repository.findUserById.mockResolvedValue({ id: "user-1", profileImagePath: null });
-    profileImageStorage.upload.mockResolvedValue({ path: "user-1/new.jpg", url: "https://example.com/new.jpg" });
-    repository.updateProfileImage.mockResolvedValue({ id: "user-1", profileImageUrl: "https://example.com/new.jpg" });
+    repository.findUserById.mockResolvedValue({
+      id: "user-1",
+      profileImagePath: null,
+    });
+    profileImageStorage.upload.mockResolvedValue({
+      path: "user-1/new.jpg",
+      url: "https://example.com/new.jpg",
+    });
+    repository.updateProfileImage.mockResolvedValue({
+      id: "user-1",
+      profileImageUrl: "https://example.com/new.jpg",
+    });
 
-    const image = { mimetype: "image/jpeg", buffer: Buffer.from([0xff, 0xd8, 0xff]) };
+    const image = {
+      mimetype: "image/jpeg",
+      buffer: Buffer.from([0xff, 0xd8, 0xff]),
+    };
     const result = await service.updateCurrentUserProfileImage("user-1", image);
 
     expect(profileImageStorage.upload).toHaveBeenCalledWith("user-1", image);
-    expect(repository.updateProfileImage).toHaveBeenCalledWith("user-1", "https://example.com/new.jpg", "user-1/new.jpg");
+    expect(repository.updateProfileImage).toHaveBeenCalledWith(
+      "user-1",
+      "https://example.com/new.jpg",
+      "user-1/new.jpg",
+    );
     expect(result.profileImageUrl).toBe("https://example.com/new.jpg");
   });
 
   test("Should remove the old stored image after replacing it", async () => {
-    repository.findUserById.mockResolvedValue({ id: "user-1", profileImagePath: "user-1/old.jpg" });
-    profileImageStorage.upload.mockResolvedValue({ path: "user-1/new.jpg", url: "https://example.com/new.jpg" });
+    repository.findUserById.mockResolvedValue({
+      id: "user-1",
+      profileImagePath: "user-1/old.jpg",
+    });
+    profileImageStorage.upload.mockResolvedValue({
+      path: "user-1/new.jpg",
+      url: "https://example.com/new.jpg",
+    });
     repository.updateProfileImage.mockResolvedValue({ id: "user-1" });
 
-    await service.updateCurrentUserProfileImage("user-1", { mimetype: "image/jpeg", buffer: Buffer.alloc(3) });
+    await service.updateCurrentUserProfileImage("user-1", {
+      mimetype: "image/jpeg",
+      buffer: Buffer.alloc(3),
+    });
     expect(profileImageStorage.remove).toHaveBeenCalledWith("user-1/old.jpg");
   });
 
   test("Should clear the database image and remove the stored object", async () => {
-    repository.findUserById.mockResolvedValue({ id: "user-1", profileImagePath: "user-1/old.jpg" });
-    repository.updateProfileImage.mockResolvedValue({ id: "user-1", profileImageUrl: null });
+    repository.findUserById.mockResolvedValue({
+      id: "user-1",
+      profileImagePath: "user-1/old.jpg",
+    });
+    repository.updateProfileImage.mockResolvedValue({
+      id: "user-1",
+      profileImageUrl: null,
+    });
 
     const result = await service.deleteCurrentUserProfileImage("user-1");
-    expect(repository.updateProfileImage).toHaveBeenCalledWith("user-1", null, null);
+    expect(repository.updateProfileImage).toHaveBeenCalledWith(
+      "user-1",
+      null,
+      null,
+    );
     expect(profileImageStorage.remove).toHaveBeenCalledWith("user-1/old.jpg");
     expect(result.profileImageUrl).toBeNull();
   });
@@ -210,7 +248,10 @@ describe("User Profile Service Tests", () => {
     repository.submitIdentityVerification.mockResolvedValue({
       verification: { id: "verification-1", status: "PENDING_REVIEW" },
     });
-    const file = { mimetype: "image/jpeg", buffer: Buffer.from([0xff, 0xd8, 0xff]) };
+    const file = {
+      mimetype: "image/jpeg",
+      buffer: Buffer.from([0xff, 0xd8, 0xff]),
+    };
     const result = await service.submitIdentityVerification("user-1", {
       idFrontImage: [file],
       idBackImage: [file],
@@ -224,6 +265,7 @@ describe("User Profile Service Tests", () => {
         idBackImagePath: "user-1/back.jpg",
         selfieImagePath: "user-1/selfie.jpg",
       },
+      "cleanup-1",
     );
   });
 
@@ -232,7 +274,9 @@ describe("User Profile Service Tests", () => {
       id: "user-1",
       verificationStatus: "PENDING_REVIEW",
     });
-    repository.findPendingIdentityVerification.mockResolvedValue({ id: "pending" });
+    repository.findPendingIdentityVerification.mockResolvedValue({
+      id: "pending",
+    });
     await expect(
       service.submitIdentityVerification("user-1", {}),
     ).rejects.toMatchObject({ statusCode: 409 });

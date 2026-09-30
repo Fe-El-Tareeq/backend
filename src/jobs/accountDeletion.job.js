@@ -12,7 +12,9 @@ const permanentlyDeleteAccount = async (user) => {
     record.idBackImagePath,
     record.selfieImagePath,
   ]);
-  await Promise.all(identityPaths.map((path) => identityStorage.remove(path)));
+  await Promise.all(
+    identityPaths.filter(Boolean).map((path) => identityStorage.remove(path)),
+  );
 
   return prisma.$transaction((tx) =>
     tx.user.delete({

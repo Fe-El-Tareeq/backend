@@ -15,9 +15,10 @@ const runRegistrationCleanup = () => {
 };
 
 const startRegistrationCleanup = () => {
-  const run = () => runRegistrationCleanup().catch((error) => {
-    console.error("Registration cleanup failed:", error.message);
-  });
+  const run = () =>
+    runRegistrationCleanup().catch((error) => {
+      console.error("Registration cleanup failed:", error.message);
+    });
   run();
   const timer = setInterval(run, env.registrationCleanupIntervalMs);
   timer.unref();

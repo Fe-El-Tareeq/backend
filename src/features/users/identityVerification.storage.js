@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const ApiError = require("../../utils/ApiError");
 const env = require("../../config/env");
+const { storageAuthHeaders } = require("../../utils/supabaseStorageAuth");
 
 const extensions = {
   "image/jpeg": "jpg",
@@ -11,12 +12,12 @@ const encodePath = (value) =>
   value.split("/").map(encodeURIComponent).join("/");
 
 const getConfig = () => {
-  if (!env.supabaseUrl || !env.supabaseServiceRoleKey) {
+  if (!env.supabaseUrl) {
     throw new ApiError(503, "Identity document storage is not configured.");
   }
   return {
     baseUrl: env.supabaseUrl.replace(/\/$/, ""),
-    key: env.supabaseServiceRoleKey,
+    headers: storageAuthHeaders(),
     bucket: env.identityVerificationsBucket,
   };
 };
@@ -24,10 +25,14 @@ const getConfig = () => {
 const storageRequest = async (url, options, message, parseJson = false) => {
   let response;
   try {
-    response = await fetch(url, options);
+    response = await fetch(url, {
+      ...options,
+      signal: AbortSignal.timeout(30000),
+    });
   } catch {
     throw new ApiError(502, `${message} Storage service is unavailable.`);
   }
+  if (options.method === "DELETE" && response.status === 404) return;
   if (!response.ok) {
     const details = await response.text().catch(() => "");
     console.error("Supabase identity storage error:", response.status, details);
@@ -36,17 +41,18 @@ const storageRequest = async (url, options, message, parseJson = false) => {
   return parseJson ? response.json() : undefined;
 };
 
-const upload = async (userId, label, file) => {
+const upload = async (userId, label, file, reservedPath = null) => {
   const config = getConfig();
-  const path = `${userId}/${crypto.randomUUID()}-${label}.${extensions[file.mimetype]}`;
+  const path =
+    reservedPath ||
+    `${userId}/${crypto.randomUUID()}-${label}.${extensions[file.mimetype]}`;
   const objectUrl = `${config.baseUrl}/storage/v1/object/${encodeURIComponent(config.bucket)}/${encodePath(path)}`;
   await storageRequest(
     objectUrl,
     {
       method: "POST",
       headers: {
-        apikey: config.key,
-        Authorization: `Bearer ${config.key}`,
+        ...config.headers,
         "Content-Type": file.mimetype,
         "x-upsert": "false",
       },
@@ -64,7 +70,7 @@ const remove = async (path) => {
     objectUrl,
     {
       method: "DELETE",
-      headers: { apikey: config.key, Authorization: `Bearer ${config.key}` },
+      headers: { ...config.headers },
     },
     "Could not delete identity document.",
   );
@@ -78,8 +84,7 @@ const createSignedUrl = async (path, expiresIn = 300) => {
     {
       method: "POST",
       headers: {
-        apikey: config.key,
-        Authorization: `Bearer ${config.key}`,
+        ...config.headers,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ expiresIn }),

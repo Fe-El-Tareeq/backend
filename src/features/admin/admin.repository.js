@@ -8,15 +8,48 @@ const userSelect = {
   verificationStatus: true,
 };
 
-const listVerifications = ({ status, skip, take }) =>
+const verificationWhere = ({ status, search } = {}) => ({
+  ...(status && status !== "ALL" ? { status } : {}),
+  ...(search
+    ? {
+        user: {
+          is: {
+            OR: [
+              { fullName: { contains: search, mode: "insensitive" } },
+              { phone: { contains: search } },
+            ],
+          },
+        },
+      }
+    : {}),
+});
+const verificationStatistics = (search) =>
+  prisma.identityVerification.groupBy({
+    by: ["status"],
+    where: verificationWhere({ search }),
+    _count: { _all: true },
+  });
+const enqueueVerificationCleanup = (verification, client) =>
+  client.identityDocumentCleanup.create({
+    data: {
+      verificationId: verification.id,
+      paths: [
+        verification.idFrontImagePath,
+        verification.idBackImagePath,
+        verification.selfieImagePath,
+      ].filter(Boolean),
+    },
+  });
+const listVerifications = ({ status, search, skip, take }) =>
   prisma.identityVerification.findMany({
-    where: { status },
+    where: verificationWhere({ status, search }),
     select: {
       id: true,
       status: true,
       submittedAt: true,
       reviewedAt: true,
       rejectionReason: true,
+      documentsDeletedAt: true,
       user: { select: userSelect },
       reviewedByAdmin: { select: { id: true, fullName: true } },
     },
@@ -25,8 +58,8 @@ const listVerifications = ({ status, skip, take }) =>
     take,
   });
 
-const countVerifications = (status) =>
-  prisma.identityVerification.count({ where: { status } });
+const countVerifications = (filters) =>
+  prisma.identityVerification.count({ where: verificationWhere(filters) });
 
 const findVerificationById = (id, client = prisma) =>
   client.identityVerification.findUnique({
@@ -41,6 +74,7 @@ const findVerificationById = (id, client = prisma) =>
       submittedAt: true,
       reviewedAt: true,
       rejectionReason: true,
+      documentsDeletedAt: true,
       user: { select: userSelect },
       reviewedByAdmin: { select: { id: true, fullName: true } },
     },
@@ -76,6 +110,8 @@ const updateFaq = (id, data, client = prisma) =>
   client.faq.update({ where: { id }, data });
 
 module.exports = {
+  verificationStatistics,
+  enqueueVerificationCleanup,
   listVerifications,
   countVerifications,
   findVerificationById,

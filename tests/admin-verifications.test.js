@@ -1,7 +1,9 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL || "postgresql://test";
 process.env.DIRECT_URL = process.env.DIRECT_URL || "postgresql://test";
-process.env.JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || "test-access-secret";
-process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || "test-refresh-secret";
+process.env.JWT_ACCESS_SECRET =
+  process.env.JWT_ACCESS_SECRET || "test-access-secret";
+process.env.JWT_REFRESH_SECRET =
+  process.env.JWT_REFRESH_SECRET || "test-refresh-secret";
 
 jest.mock("../src/features/admin/admin.repository");
 jest.mock("../src/features/users/identityVerification.storage");
@@ -28,7 +30,9 @@ const verification = {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  repository.runTransaction.mockImplementation((callback) => callback({ tx: true }));
+  repository.runTransaction.mockImplementation((callback) =>
+    callback({ tx: true }),
+  );
   repository.findVerificationById.mockResolvedValue(verification);
   repository.claimPendingVerification.mockResolvedValue({ count: 1 });
   repository.updateUserVerificationStatus.mockResolvedValue({});
@@ -55,7 +59,9 @@ test("approves a pending verification atomically and notifies the user", async (
     "VERIFIED",
     expect.anything(),
   );
-  expect(notifications.templates.identityVerificationApproved).toHaveBeenCalledWith(
+  expect(
+    notifications.templates.identityVerificationApproved,
+  ).toHaveBeenCalledWith(
     {
       userId: verification.userId,
       verificationId: verification.id,
@@ -84,6 +90,123 @@ test("rejects an already reviewed verification", async () => {
   await expect(
     service.rejectVerification("admin-id", verification.id, "Unclear image"),
   ).rejects.toMatchObject({ statusCode: 409 });
-  expect(notifications.templates.identityVerificationApproved).not.toHaveBeenCalled();
-  expect(notifications.templates.identityVerificationRejected).not.toHaveBeenCalled();
+  expect(
+    notifications.templates.identityVerificationApproved,
+  ).not.toHaveBeenCalled();
+  expect(
+    notifications.templates.identityVerificationRejected,
+  ).not.toHaveBeenCalled();
+});
+
+test("rejection queues all documents in the review transaction and keeps its audit trail", async () => {
+  const result = await service.rejectVerification(
+    "admin-id",
+    verification.id,
+    "  صورة غير واضحة  ",
+  );
+  expect(result).toMatchObject({
+    status: "REJECTED",
+    rejectionReason: "صورة غير واضحة",
+    documentsStatus: "PENDING_DELETION",
+  });
+  expect(repository.enqueueVerificationCleanup).toHaveBeenCalledWith(
+    verification,
+    { tx: true },
+  );
+  expect(repository.updateUserVerificationStatus).toHaveBeenCalledWith(
+    verification.userId,
+    "REJECTED",
+    { tx: true },
+  );
+  expect(
+    notifications.templates.identityVerificationRejected,
+  ).toHaveBeenCalledWith(
+    {
+      userId: verification.userId,
+      verificationId: verification.id,
+      rejectionReason: "صورة غير واضحة",
+    },
+    { tx: true },
+  );
+  expect(storage.remove).not.toHaveBeenCalled();
+});
+test("approval does not queue deletion", async () => {
+  await service.approveVerification("admin-id", verification.id);
+  expect(repository.enqueueVerificationCleanup).not.toHaveBeenCalled();
+});
+test("cleanup queue failure rejects the review transaction", async () => {
+  repository.enqueueVerificationCleanup.mockRejectedValueOnce(
+    new Error("queue unavailable"),
+  );
+  await expect(
+    service.rejectVerification("admin-id", verification.id, "Unclear image"),
+  ).rejects.toThrow("queue unavailable");
+  expect(
+    notifications.templates.identityVerificationRejected,
+  ).not.toHaveBeenCalled();
+});
+test.each([null, "", "  ", "ab", "x".repeat(501)])(
+  "requires a valid reason (%s)",
+  async (reason) => {
+    await expect(
+      service.rejectVerification("admin-id", verification.id, reason),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(repository.claimPendingVerification).not.toHaveBeenCalled();
+  },
+);
+test.each([null, new Date()])(
+  "rejected detail never exposes image URLs (deletedAt=%s)",
+  async (documentsDeletedAt) => {
+    repository.findVerificationById.mockResolvedValue({
+      ...verification,
+      status: "REJECTED",
+      documentsDeletedAt,
+    });
+    const result = await service.getVerification(verification.id);
+    expect(result.documents).toBeNull();
+    expect(result.documentsStatus).toBe(
+      documentsDeletedAt ? "DELETED" : "PENDING_DELETION",
+    );
+    expect(result.documentCount).toBe(3);
+    expect(result.availableDocumentCount).toBe(0);
+    expect(result).not.toHaveProperty("idFrontImagePath");
+    expect(storage.createSignedUrl).not.toHaveBeenCalled();
+  },
+);
+test("dashboard includes search-aware counters independent of the selected status", async () => {
+  repository.listVerifications.mockResolvedValue([verification]);
+  repository.countVerifications.mockResolvedValue(1);
+  repository.verificationStatistics.mockResolvedValue([
+    { status: "PENDING_REVIEW", _count: { _all: 1 } },
+    { status: "VERIFIED", _count: { _all: 3 } },
+    { status: "REJECTED", _count: { _all: 2 } },
+  ]);
+  const filters = {
+    status: "PENDING_REVIEW",
+    search: "Farah",
+    skip: 0,
+    take: 20,
+  };
+  const result = await service.listVerifications(filters);
+  expect(result.statistics).toEqual({
+    total: 6,
+    PENDING_REVIEW: 1,
+    VERIFIED: 3,
+    REJECTED: 2,
+    UNVERIFIED: 0,
+  });
+  expect(result.pagination.total).toBe(1);
+  expect(repository.countVerifications).toHaveBeenCalledWith(filters);
+  expect(repository.verificationStatistics).toHaveBeenCalledWith("Farah");
+  expect(result.verifications[0]).not.toHaveProperty("idFrontImagePath");
+});
+test("a concurrent decision cannot create a second notification or deletion task", async () => {
+  repository.claimPendingVerification.mockResolvedValue({ count: 0 });
+  await expect(
+    service.rejectVerification("admin-id", verification.id, "Unclear image"),
+  ).rejects.toMatchObject({ statusCode: 409 });
+  expect(repository.enqueueVerificationCleanup).not.toHaveBeenCalled();
+  expect(
+    notifications.templates.identityVerificationRejected,
+  ).not.toHaveBeenCalled();
 });

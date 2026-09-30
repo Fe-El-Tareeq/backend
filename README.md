@@ -551,3 +551,53 @@ Validation commands:
 - Local database tests: npm test -- --runInBand tests/wallet.concurrency.test.js tests/wallet.activity.integration.test.js tests/trips.repository.test.js
   The database tests require TEST_DATABASE_URL pointing to a running local wallet_test
   PostgreSQL database with the current migrations applied.
+
+### Supabase storage authentication
+Set SUPABASE_SECRET_KEY to a server-only sb_secret_ key. Identity documents,
+profile images and payment receipts send this key using the apikey header only.
+The explicit secret takes precedence over SUPABASE_SERVICE_ROLE_KEY.
+When no secret is set, a legacy service_role JWT is accepted as a fallback.
+Publishable/anon keys and malformed credentials fail with 503 before any request.
+Restart the backend after changing environment variables. Keep identity-verifications
+and payment-receipts private. Do not place server keys in frontend configuration.
+
+## Identity verification lifecycle
+
+The frontend retains the chosen front ID, back ID and selfie until final submission.
+POST /api/v1/users/me/identity-verification accepts all three files together using
+idFrontImage, idBackImage and selfieImage. Each is required, max 5 MB, JPEG/PNG/WebP.
+There is no server-side draft-upload endpoint or automatic face matching.
+
+A complete submission stores private bucket files and a PENDING_REVIEW record.
+Approval marks the user VERIFIED, retains documents and sends an Arabic notification.
+Rejection requires a 3-500-character reason, records the decision, notifies the user
+with the reason and queues document deletion in the same database transaction.
+A rejected user may submit a new request; the rejected history is retained.
+
+GET /api/v1/admin/verifications accepts status=ALL (default), PENDING_REVIEW,
+VERIFIED, REJECTED or UNVERIFIED; search matches name or phone; skip/take paginate.
+The response includes statistics with total and each status count. Statistics respect
+search but ignore the selected status and page. pagination.total respects all filters.
+Each item exposes documentCount=3 (submitted count), availableDocumentCount,
+documentsStatus=AVAILABLE|PENDING_DELETION|DELETED and documentsDeletedAt.
+Rejected details return documents=null immediately, even before background deletion.
+Other details return signed URLs valid for 300 seconds. Frontend refreshes them
+by requesting details again. No 72-hour review deadline is guaranteed by the API.
+
+Apply migration 20260930010000_identity_document_cleanup before deploying this code.
+It also queues document deletion for existing rejected requests.
+The server starts a durable cleanup worker every minute (20 tasks per batch).
+Storage failures retry after a ten-minute lease, with no terminal retry limit.
+The request history is preserved; paths are nulled and documentsDeletedAt set only
+after all deletions succeed. Storage DELETE 404 is treated as already deleted.
+
+Upload cleanup intentions are recorded before uploading, with a one-hour grace period.
+Successful submission cancels its intention atomically with saving the request.
+Failed submissions attempt immediate removal and retain the durable intention to
+handle crashes, storage outages or uploads whose responses were lost. Failed immediate
+removals make the task eligible immediately. Supabase requests time out after 30 seconds.
+Keep the backend worker running and the identity bucket private. Cleanup progress
+depends on storage/database availability; it does not promise immediate deletion.
+
+Verification commands:
+node node_modules/jest/bin/jest.js --runInBand tests/identity.api.test.js tests/identity.repository.test.js tests/identity-submission.test.js tests/identity-cleanup.test.js tests/admin-verifications.test.js tests/supabase-storage.test.js
