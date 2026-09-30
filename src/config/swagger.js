@@ -149,6 +149,11 @@ const swaggerDefinition = {
         "Password registration/login, phone verification OTP, access-token refresh, and logout.",
     },
     {
+      name: "Admin Authentication",
+      description:
+        "Password-only authentication for the single configured dashboard administrator.",
+    },
+    {
       name: "Users",
       description: "Authenticated current-user profile APIs.",
     },
@@ -384,6 +389,67 @@ const swaggerDefinition = {
             minLength: 1,
             example: "Strong1!",
           },
+        },
+      },
+      AdminLoginRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["phone", "password"],
+        properties: {
+          phone: {
+            type: "string",
+            minLength: 8,
+            maxLength: 20,
+            example: "0590000000",
+          },
+          password: {
+            type: "string",
+            format: "password",
+            minLength: 1,
+            example: "Example1!",
+          },
+        },
+      },
+      AdminRefreshTokenRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["refreshToken"],
+        properties: {
+          refreshToken: {
+            type: "string",
+            minLength: 1,
+            example: "<admin-refresh-token>",
+          },
+        },
+      },
+      AdminUserSummary: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "phone", "role"],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          phone: { type: "string", example: "0590000000" },
+          role: { type: "string", enum: ["SUPER_ADMIN"] },
+        },
+      },
+      AdminAuthTokens: {
+        type: "object",
+        required: [
+          "accessToken",
+          "refreshToken",
+          "tokenType",
+          "accessTokenExpiresIn",
+          "refreshTokenExpiresIn",
+        ],
+        properties: {
+          accessToken: { type: "string", description: "Opaque access JWT." },
+          refreshToken: {
+            type: "string",
+            description: "Opaque rotating refresh JWT.",
+          },
+          tokenType: { type: "string", enum: ["Bearer"] },
+          accessTokenExpiresIn: { type: "string", example: "15m" },
+          refreshTokenExpiresIn: { type: "string", example: "7d" },
         },
       },
       OtpRequest: {
@@ -1947,7 +2013,8 @@ const swaggerDefinition = {
       },
       SupportReportEvidence: {
         type: "object",
-        description: "Immutable last-50-message snapshot available only to SUPER_ADMIN.",
+        description:
+          "Immutable last-50-message snapshot available only to the configured dashboard administrator.",
         properties: {
           id: { type: "string", format: "uuid" },
           chatRoomId: { type: "string", format: "uuid", nullable: true },
@@ -2927,6 +2994,28 @@ const swaggerDefinition = {
             $ref: "#/components/schemas/AuthTokens",
           },
         ],
+      }),
+      AdminLoginResponse: apiResponse({
+        allOf: [
+          {
+            type: "object",
+            required: ["user"],
+            properties: {
+              user: { $ref: "#/components/schemas/AdminUserSummary" },
+            },
+          },
+          { $ref: "#/components/schemas/AdminAuthTokens" },
+        ],
+      }),
+      AdminRefreshResponse: apiResponse({
+        $ref: "#/components/schemas/AdminAuthTokens",
+      }),
+      AdminMeResponse: apiResponse({
+        type: "object",
+        required: ["user"],
+        properties: {
+          user: { $ref: "#/components/schemas/AdminUserSummary" },
+        },
       }),
       OtpRequestResponse: apiResponse(
         {
@@ -5868,6 +5957,114 @@ const swaggerDefinition = {
         },
       },
     },
+    "/api/v1/admin/auth/login": {
+      post: {
+        tags: ["Admin Authentication"],
+        summary: "Log in to the admin dashboard",
+        description:
+          "Password-only login for the one ACTIVE, phone-verified SUPER_ADMIN whose user ID matches the backend-configured dashboard administrator. All identity, password, status, role, and allowlist failures use the same invalid-credentials response. Limited to five failed attempts per client IP in 15 minutes regardless of the submitted phone; successful logins are not counted.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/AdminLoginRequest" },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Administrator login succeeded.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AdminLoginResponse" },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: errorResponse("Invalid phone or password."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+        },
+      },
+    },
+    "/api/v1/admin/auth/refresh": {
+      post: {
+        tags: ["Admin Authentication"],
+        summary: "Rotate admin dashboard tokens",
+        description:
+          "Validates and rotates the persisted hashed refresh token, then rechecks the user's current ACTIVE status, SUPER_ADMIN role, and exact backend-configured administrator identity before issuing new tokens.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/AdminRefreshTokenRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Admin tokens rotated successfully.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AdminRefreshResponse" },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: errorResponse("Invalid refresh token."),
+          403: errorResponse("Dashboard administrator access is required."),
+        },
+      },
+    },
+    "/api/v1/admin/auth/logout": {
+      post: {
+        tags: ["Admin Authentication"],
+        summary: "Log out an admin dashboard session",
+        description:
+          "Revokes the supplied refresh token using the shared refresh-token store.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/AdminRefreshTokenRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Admin dashboard session logged out.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LogoutResponse" },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+        },
+      },
+    },
+    "/api/v1/admin/auth/me": {
+      get: {
+        tags: ["Admin Authentication"],
+        summary: "Get the current dashboard administrator",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: "Safe dashboard identity data.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AdminMeResponse" },
+              },
+            },
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Dashboard administrator access is required."),
+        },
+      },
+    },
     "/api/v1/admin/verifications": {
       get: {
         tags: ["Admin"],
@@ -5878,7 +6075,7 @@ const swaggerDefinition = {
           { name: "skip", in: "query", schema: { type: "integer", minimum: 0, default: 0 } },
           { name: "take", in: "query", schema: { type: "integer", minimum: 1, maximum: 50, default: 20 } },
         ],
-        responses: { 200: { description: "Verification submissions retrieved." }, 403: { $ref: "#/components/responses/Forbidden" } },
+        responses: { 200: { description: "Verification submissions retrieved." }, 401: { $ref: "#/components/responses/Unauthorized" }, 403: { $ref: "#/components/responses/Forbidden" } },
       },
     },
     "/api/v1/admin/verifications/{id}": {
@@ -5887,7 +6084,7 @@ const swaggerDefinition = {
         summary: "Get a verification with five-minute signed document URLs",
         security: [{ bearerAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
-        responses: { 200: { description: "Verification retrieved." }, 403: { $ref: "#/components/responses/Forbidden" }, 404: errorResponse("Identity verification not found.") },
+        responses: { 200: { description: "Verification retrieved." }, 401: { $ref: "#/components/responses/Unauthorized" }, 403: { $ref: "#/components/responses/Forbidden" }, 404: errorResponse("Identity verification not found.") },
       },
     },
     "/api/v1/admin/verifications/{id}/approve": {
@@ -5896,7 +6093,7 @@ const swaggerDefinition = {
         summary: "Approve an identity verification",
         security: [{ bearerAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
-        responses: { 200: { description: "Verification approved and user notified." }, 409: errorResponse("Verification was already reviewed.") },
+        responses: { 200: { description: "Verification approved and user notified." }, 401: { $ref: "#/components/responses/Unauthorized" }, 403: { $ref: "#/components/responses/Forbidden" }, 409: errorResponse("Verification was already reviewed.") },
       },
     },
     "/api/v1/admin/verifications/{id}/reject": {
@@ -5906,7 +6103,7 @@ const swaggerDefinition = {
         security: [{ bearerAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
         requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["reason"], properties: { reason: { type: "string", minLength: 3, maxLength: 500 } } } } } },
-        responses: { 200: { description: "Verification rejected and user notified." }, 409: errorResponse("Verification was already reviewed.") },
+        responses: { 200: { description: "Verification rejected and user notified." }, 401: { $ref: "#/components/responses/Unauthorized" }, 403: { $ref: "#/components/responses/Forbidden" }, 409: errorResponse("Verification was already reviewed.") },
       },
     },
     "/api/v1/admin/faqs": {
@@ -6328,7 +6525,7 @@ const swaggerDefinition = {
         tags: ["Support"],
         summary: "Get a safety report with immutable chat evidence",
         description:
-          "SUPER_ADMIN only. The evidence snapshot is intentionally excluded from user report details and all list responses.",
+          "Configured dashboard administrator only. The evidence snapshot is intentionally excluded from user report details and all list responses.",
         security: [{ bearerAuth: [] }],
         parameters: [
           {
