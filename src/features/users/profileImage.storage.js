@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const ApiError = require("../../utils/ApiError");
 const env = require("../../config/env");
+const { storageAuthHeaders } = require("../../utils/supabaseStorageAuth");
 
 const extensions = {
   "image/jpeg": "jpg",
@@ -11,12 +12,12 @@ const encodePath = (value) =>
   value.split("/").map(encodeURIComponent).join("/");
 
 const getConfig = () => {
-  if (!env.supabaseUrl || !env.supabaseServiceRoleKey) {
+  if (!env.supabaseUrl) {
     throw new ApiError(503, "Profile image storage is not configured.");
   }
   return {
     baseUrl: env.supabaseUrl.replace(/\/$/, ""),
-    key: env.supabaseServiceRoleKey,
+    headers: storageAuthHeaders(),
     bucket: env.profileImagesBucket,
   };
 };
@@ -44,8 +45,7 @@ const upload = async (userId, image) => {
     {
       method: "POST",
       headers: {
-        apikey: config.key,
-        Authorization: `Bearer ${config.key}`,
+        ...config.headers,
         "Content-Type": image.mimetype,
         "x-upsert": "false",
       },
@@ -66,7 +66,7 @@ const remove = async (path) => {
     objectUrl,
     {
       method: "DELETE",
-      headers: { apikey: config.key, Authorization: `Bearer ${config.key}` },
+      headers: { ...config.headers },
     },
     "Could not delete profile image.",
   );

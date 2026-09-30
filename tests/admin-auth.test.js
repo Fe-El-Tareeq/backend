@@ -92,6 +92,7 @@ beforeEach(() => {
   adminRepository.countFaqs.mockResolvedValue(0);
   adminRepository.listVerifications.mockResolvedValue([]);
   adminRepository.countVerifications.mockResolvedValue(0);
+  adminRepository.verificationStatistics.mockResolvedValue([]);
 });
 describe("Admin dashboard login", () => {
   test("configured verified active admin receives tokens and safe identity data", async () => {
@@ -118,20 +119,24 @@ describe("Admin dashboard login", () => {
     ["unknown phone", "+970599000099", password],
     ["normal user", user.phone, password],
     ["non-allowlisted SUPER_ADMIN", otherAdmin.phone, password],
-  ])("rejects %s with the generic credentials response", async (label, phone, suppliedPassword) => {
-    const response = await request(app).post("/api/v1/admin/auth/login").send({
-      phone,
-      password: suppliedPassword,
-    });
+  ])(
+    "rejects %s with the generic credentials response",
+    async (label, phone, suppliedPassword) => {
+      const response = await request(app)
+        .post("/api/v1/admin/auth/login")
+        .send({
+          phone,
+          password: suppliedPassword,
+        });
 
-    expect(response.statusCode).toBe(401);
-    expect(response.body).toEqual({
-      success: false,
-      message: "Invalid phone or password.",
-      errors: [],
-    });
-  });
-
+      expect(response.statusCode).toBe(401);
+      expect(response.body).toEqual({
+        success: false,
+        message: "Invalid phone or password.",
+        errors: [],
+      });
+    },
+  );
 });
 
 describe("Admin dashboard authorization", () => {
@@ -143,7 +148,10 @@ describe("Admin dashboard authorization", () => {
       .expect(401);
     await request(app)
       .get("/api/v1/admin/auth/me")
-      .set("Authorization", `Bearer ${accessTokenFor(admin, { expiresIn: -1 })}`)
+      .set(
+        "Authorization",
+        `Bearer ${accessTokenFor(admin, { expiresIn: -1 })}`,
+      )
       .expect(401);
   });
 

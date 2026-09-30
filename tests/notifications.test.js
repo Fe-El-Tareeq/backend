@@ -199,22 +199,25 @@ describe("Notification listing", () => {
       ],
     ],
     ["messages", undefined, ["NEW_CHAT_MESSAGE"]],
-  ])("maps the %s tab to repository filters", async (tab, status, notificationTypes) => {
-    const response = await request(app)
-      .get(`/api/v1/notifications?tab=${tab}&take=1`)
-      .set("Authorization", `Bearer ${token}`)
-      .expect(200);
+  ])(
+    "maps the %s tab to repository filters",
+    async (tab, status, notificationTypes) => {
+      const response = await request(app)
+        .get(`/api/v1/notifications?tab=${tab}&take=1`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(200);
 
-    expect(repository.listForUser).toHaveBeenCalledWith({
-      userId,
-      skip: 0,
-      take: 1,
-      status,
-      notificationTypes,
-    });
-    expect(response.body.data.unreadCount).toBe(4);
-    expect(repository.countUnreadForUser).toHaveBeenCalledWith(userId);
-  });
+      expect(repository.listForUser).toHaveBeenCalledWith({
+        userId,
+        skip: 0,
+        take: 1,
+        status,
+        notificationTypes,
+      });
+      expect(response.body.data.unreadCount).toBe(4);
+      expect(repository.countUnreadForUser).toHaveBeenCalledWith(userId);
+    },
+  );
 
   test("rejects an unsupported notification tab", async () => {
     await request(app)
@@ -321,7 +324,11 @@ describe("Notification creation idempotency", () => {
           proposalType: "TRAVELER_OFFER",
         }),
       "NEW_PROPOSAL",
-      { proposalId: notificationId, tripId: invoiceId, proposalType: "TRAVELER_OFFER" },
+      {
+        proposalId: notificationId,
+        tripId: invoiceId,
+        proposalType: "TRAVELER_OFFER",
+      },
     ],
     [
       "accepted assignment",
@@ -347,7 +354,11 @@ describe("Notification creation idempotency", () => {
           actorUserId: otherNotificationId,
         }),
       "ASSIGNMENT_STATUS_CHANGED",
-      { tripId: invoiceId, status: "IN_TRANSIT", actorUserId: otherNotificationId },
+      {
+        tripId: invoiceId,
+        status: "IN_TRANSIT",
+        actorUserId: otherNotificationId,
+      },
     ],
     [
       "completed assignment",
@@ -361,11 +372,20 @@ describe("Notification creation idempotency", () => {
           actorUserId: otherNotificationId,
         }),
       "ASSIGNMENT_STATUS_CHANGED",
-      { tripId: invoiceId, status: "COMPLETED", actorUserId: otherNotificationId },
+      {
+        tripId: invoiceId,
+        status: "COMPLETED",
+        actorUserId: otherNotificationId,
+      },
     ],
     [
       "successful top-up",
-      () => service.templates.paymentSuccess({ userId, invoiceId, totalTokens: 28 }),
+      () =>
+        service.templates.paymentSuccess({
+          userId,
+          invoiceId,
+          totalTokens: 28,
+        }),
       "PAYMENT_SUCCESS",
       { invoiceId },
     ],
@@ -379,22 +399,25 @@ describe("Notification creation idempotency", () => {
       "IDENTITY_VERIFICATION_APPROVED",
       { verificationId: notificationId, verificationStatus: "VERIFIED" },
     ],
-  ])("creates one %s notification with stable metadata", async (_label, create, type, metadata) => {
-    repository.create.mockResolvedValue(makeNotification());
+  ])(
+    "creates one %s notification with stable metadata",
+    async (_label, create, type, metadata) => {
+      repository.create.mockResolvedValue(makeNotification());
 
-    await create();
+      await create();
 
-    expect(repository.create).toHaveBeenCalledTimes(1);
-    expect(repository.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        userId,
-        notificationType: type,
-        metadata,
-        idempotencyKey: expect.any(String),
-      }),
-      undefined,
-    );
-  });
+      expect(repository.create).toHaveBeenCalledTimes(1);
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId,
+          notificationType: type,
+          metadata,
+          idempotencyKey: expect.any(String),
+        }),
+        undefined,
+      );
+    },
+  );
 
   test("does not create a chat notification when chat notifications are disabled", async () => {
     repository.findUserPreference.mockResolvedValue({
@@ -481,46 +504,121 @@ describe("Notification creation idempotency", () => {
 describe("Bank transfer decision notifications", () => {
   test.each([
     ["approved", "PAYMENT_SUCCESS", "payment-success:", null],
-    ["rejected with a reason", "PAYMENT_FAILURE", "bank-transfer-rejected:", "Receipt amount is incorrect"],
-    ["rejected without a reason", "PAYMENT_FAILURE", "bank-transfer-rejected:", null],
-  ])("%s persists an in-app notification linked to the invoice and visible in the feed", async (scenario, type, prefix, rejectionNotes) => {
-    const tx = { transaction: "bank-transfer-notification" };
-    let saved;
-    repository.create.mockImplementation(async (data) => {
-      saved = makeNotification({ ...data, errandId: null, assignmentId: null });
-      return saved;
-    });
+    [
+      "rejected with a reason",
+      "PAYMENT_FAILURE",
+      "bank-transfer-rejected:",
+      "Receipt amount is incorrect",
+    ],
+    [
+      "rejected without a reason",
+      "PAYMENT_FAILURE",
+      "bank-transfer-rejected:",
+      null,
+    ],
+  ])(
+    "%s persists an in-app notification linked to the invoice and visible in the feed",
+    async (scenario, type, prefix, rejectionNotes) => {
+      const tx = { transaction: "bank-transfer-notification" };
+      let saved;
+      repository.create.mockImplementation(async (data) => {
+        saved = makeNotification({
+          ...data,
+          errandId: null,
+          assignmentId: null,
+        });
+        return saved;
+      });
 
-    if (scenario === "approved") {
-      await service.templates.paymentSuccess({ userId, invoiceId, totalTokens: 28 }, tx);
-    } else {
-      await service.templates.bankTransferRejected({ userId, invoiceId, rejectionNotes }, tx);
-    }
+      if (scenario === "approved") {
+        await service.templates.paymentSuccess(
+          { userId, invoiceId, totalTokens: 28 },
+          tx,
+        );
+      } else {
+        await service.templates.bankTransferRejected(
+          { userId, invoiceId, rejectionNotes },
+          tx,
+        );
+      }
 
-    expect(repository.create).toHaveBeenCalledTimes(1);
-    expect(repository.create).toHaveBeenCalledWith(expect.objectContaining({
-      userId, notificationType: type, channel: "IN_APP", status: "PENDING",
-      idempotencyKey: prefix + invoiceId,
-      metadata: scenario === "approved" ? { invoiceId } : { invoiceId, rejectionNotes },
-      message: scenario === "approved"
-        ? "28 tokens were added to your wallet."
-        : rejectionNotes
-          ? "Your bank transfer was rejected: " + rejectionNotes
-          : "Your bank transfer could not be verified.",
-    }), tx);
-    expect(repository.findUserPreference).not.toHaveBeenCalled();
+      expect(repository.create).toHaveBeenCalledTimes(1);
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId,
+          notificationType: type,
+          channel: "IN_APP",
+          status: "PENDING",
+          idempotencyKey: prefix + invoiceId,
+          metadata:
+            scenario === "approved"
+              ? { invoiceId }
+              : { invoiceId, rejectionNotes },
+          message:
+            scenario === "approved"
+              ? "28 tokens were added to your wallet."
+              : rejectionNotes
+                ? "Your bank transfer was rejected: " + rejectionNotes
+                : "Your bank transfer could not be verified.",
+        }),
+        tx,
+      );
+      expect(repository.findUserPreference).not.toHaveBeenCalled();
 
-    repository.listForUser.mockResolvedValue([saved]);
-    repository.countForUser.mockResolvedValue(1);
-    repository.countUnreadForUser.mockResolvedValue(1);
-    const response = await request(app)
-      .get("/api/v1/notifications")
-      .set("Authorization", `Bearer ${token}`);
-    expect(response.statusCode).toBe(200);
-    expect(response.body.data.unreadCount).toBe(1);
-    expect(response.body.data.notifications[0]).toMatchObject({
-      type, isRead: false, message: saved.message,
-      metadata: expect.objectContaining({ invoiceId }),
-    });
+      repository.listForUser.mockResolvedValue([saved]);
+      repository.countForUser.mockResolvedValue(1);
+      repository.countUnreadForUser.mockResolvedValue(1);
+      const response = await request(app)
+        .get("/api/v1/notifications")
+        .set("Authorization", `Bearer ${token}`);
+      expect(response.statusCode).toBe(200);
+      expect(response.body.data.unreadCount).toBe(1);
+      expect(response.body.data.notifications[0]).toMatchObject({
+        type,
+        isRead: false,
+        message: saved.message,
+        metadata: expect.objectContaining({ invoiceId }),
+      });
+    },
+  );
+});
+
+test("identity acceptance notification describes trip eligibility in Arabic", async () => {
+  repository.create.mockResolvedValue(makeNotification());
+  await service.templates.identityVerificationApproved({
+    userId,
+    verificationId: invoiceId,
   });
+  expect(repository.create).toHaveBeenCalledWith(
+    expect.objectContaining({
+      userId,
+      notificationType: "IDENTITY_VERIFICATION_APPROVED",
+      message:
+        "تم توثيق هويتك بنجاح. يمكنك الآن إنشاء رحلة، مع استيفاء باقي شروط النشر.",
+      metadata: { verificationId: invoiceId, verificationStatus: "VERIFIED" },
+    }),
+    undefined,
+  );
+});
+test("identity rejection notification contains the reason and invitation to retry", async () => {
+  repository.create.mockResolvedValue(makeNotification());
+  await service.templates.identityVerificationRejected({
+    userId,
+    verificationId: invoiceId,
+    rejectionReason: "الصورة غير واضحة",
+  });
+  expect(repository.create).toHaveBeenCalledWith(
+    expect.objectContaining({
+      userId,
+      notificationType: "IDENTITY_VERIFICATION_REJECTED",
+      message:
+        "تم رفض طلب توثيق هويتك بسبب: الصورة غير واضحة. يرجى إعادة المحاولة بصور جديدة.",
+      metadata: {
+        verificationId: invoiceId,
+        verificationStatus: "REJECTED",
+        rejectionReason: "الصورة غير واضحة",
+      },
+    }),
+    undefined,
+  );
 });

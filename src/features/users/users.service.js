@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const ApiError = require("../../utils/ApiError");
 const bcrypt = require("bcryptjs");
 const repository = require("./users.repository");
@@ -52,28 +53,42 @@ const submitIdentityVerification = async (userId, files) => {
     );
   }
 
-  const uploadedPaths = [];
+  const fields = ["idFrontImage", "idBackImage", "selfieImage"];
+  const extensions = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+  };
+  const paths = fields.map(
+    (field) =>
+      userId +
+      "/" +
+      crypto.randomUUID() +
+      "." +
+      extensions[files[field][0].mimetype],
+  );
+  // Persist cleanup intent before any network upload, including process crashes.
+  const cleanup = await repository.stageIdentityCleanup(paths);
   try {
     const uploads = await Promise.allSettled([
-      identityStorage.upload(userId, "front", files.idFrontImage[0]),
-      identityStorage.upload(userId, "back", files.idBackImage[0]),
-      identityStorage.upload(userId, "selfie", files.selfieImage[0]),
+      identityStorage.upload(userId, "front", files.idFrontImage[0], paths[0]),
+      identityStorage.upload(userId, "back", files.idBackImage[0], paths[1]),
+      identityStorage.upload(userId, "selfie", files.selfieImage[0], paths[2]),
     ]);
-    uploadedPaths.push(
-      ...uploads
-        .filter((result) => result.status === "fulfilled")
-        .map((result) => result.value),
-    );
     const failedUpload = uploads.find((result) => result.status === "rejected");
     if (failedUpload) throw failedUpload.reason;
     const [idFrontImagePath, idBackImagePath, selfieImagePath] = uploads.map(
       (result) => result.value,
     );
-    const result = await repository.submitIdentityVerification(userId, {
-      idFrontImagePath,
-      idBackImagePath,
-      selfieImagePath,
-    });
+    const result = await repository.submitIdentityVerification(
+      userId,
+      {
+        idFrontImagePath,
+        idBackImagePath,
+        selfieImagePath,
+      },
+      cleanup.id,
+    );
     if (result.conflict) {
       throw new ApiError(
         409,
@@ -82,9 +97,33 @@ const submitIdentityVerification = async (userId, files) => {
     }
     return result.verification;
   } catch (error) {
-    await Promise.allSettled(
-      uploadedPaths.map((path) => identityStorage.remove(path)),
+    // A commit can succeed even if its response is lost. Never erase linked files.
+    let committed;
+    try {
+      committed = await repository.findIdentityByPaths(userId, paths);
+    } catch {
+      // Defer cleanup until the worker can verify database ownership.
+      throw error;
+    }
+    if (committed) return committed;
+    const removed = await Promise.allSettled(
+      paths.map((path) => identityStorage.remove(path)),
     );
+    // A failed upload may have reached storage despite a lost response.
+    // Keep the delayed cleanup even after successful removal, in case an
+    // upload timed out locally but completes remotely after the delete.
+    try {
+      if (removed.some((result) => result.status === "rejected")) {
+        await repository.activateIdentityCleanup(cleanup.id);
+      }
+    } catch {
+      // The pre-existing delayed task still survives a database outage.
+    }
+    if (error.code === "P2002")
+      throw new ApiError(
+        409,
+        "An identity verification request is already pending review.",
+      );
     throw error;
   }
 };

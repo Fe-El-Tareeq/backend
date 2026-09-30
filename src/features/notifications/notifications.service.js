@@ -294,8 +294,9 @@ const identityVerificationApproved = ({ userId, verificationId }, client) =>
     {
       userId,
       type: NOTIFICATION_TYPES.IDENTITY_VERIFICATION_APPROVED,
-      title: "Identity verification approved",
-      message: "Your identity has been verified successfully.",
+      title: "تم توثيق الهوية",
+      message:
+        "تم توثيق هويتك بنجاح. يمكنك الآن إنشاء رحلة، مع استيفاء باقي شروط النشر.",
       metadata: { verificationId, verificationStatus: "VERIFIED" },
       idempotencyKey: `identity-verification-approved:${verificationId}`,
     },
@@ -310,8 +311,8 @@ const identityVerificationRejected = (
     {
       userId,
       type: NOTIFICATION_TYPES.IDENTITY_VERIFICATION_REJECTED,
-      title: "Identity verification needs attention",
-      message: "Your identity verification was rejected. You can submit new documents.",
+      title: "تم رفض طلب توثيق الهوية",
+      message: `تم رفض طلب توثيق هويتك بسبب: ${rejectionReason}. يرجى إعادة المحاولة بصور جديدة.`,
       metadata: {
         verificationId,
         verificationStatus: "REJECTED",

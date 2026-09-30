@@ -328,13 +328,25 @@ model User {
   @@map("users")
 }
 
+model IdentityDocumentCleanup {
+  id String @id @default(uuid()) @db.Uuid
+  paths String[]
+  verificationId String? @unique @map("verification_id") @db.Uuid
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now()) @map("next_attempt_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@index([nextAttemptAt])
+  @@map("identity_document_cleanup")
+}
+
 model IdentityVerification {
+  documentsDeletedAt DateTime? @map("documents_deleted_at") @db.Timestamptz(6)
   id                String             @id @default(uuid()) @db.Uuid
   userId            String             @map("user_id") @db.Uuid
   status            VerificationStatus @default(PENDING_REVIEW)
-  idFrontImagePath  String             @map("id_front_image_path") @db.VarChar(500)
-  idBackImagePath   String             @map("id_back_image_path") @db.VarChar(500)
-  selfieImagePath   String             @map("selfie_image_path") @db.VarChar(500)
+  idFrontImagePath  String?             @map("id_front_image_path") @db.VarChar(500)
+  idBackImagePath   String?             @map("id_back_image_path") @db.VarChar(500)
+  selfieImagePath   String?             @map("selfie_image_path") @db.VarChar(500)
   submittedAt       DateTime           @default(now()) @map("submitted_at") @db.Timestamptz(6)
   reviewedAt        DateTime?          @map("reviewed_at") @db.Timestamptz(6)
   reviewedByAdminId String?            @map("reviewed_by_admin_id") @db.Uuid

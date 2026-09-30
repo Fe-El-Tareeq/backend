@@ -7,11 +7,15 @@ const paymentInvoiceIdParams = z.object({
 const listPaymentInvoicesSchema = z.object({
   body: z.object({}).optional(),
   params: z.object({}).strict(),
-  query: z.object({
-    status: z.enum(["PENDING_VERIFICATION", "PAID", "FAILED"]).default("PENDING_VERIFICATION"),
-    skip: z.coerce.number().int().min(0).default(0),
-    take: z.coerce.number().int().min(1).max(50).default(20),
-  }).strict(),
+  query: z
+    .object({
+      status: z
+        .enum(["PENDING_VERIFICATION", "PAID", "FAILED"])
+        .default("PENDING_VERIFICATION"),
+      skip: z.coerce.number().int().min(0).default(0),
+      take: z.coerce.number().int().min(1).max(50).default(20),
+    })
+    .strict(),
 });
 
 const paymentInvoiceActionSchema = z.object({
@@ -35,8 +39,9 @@ const listVerificationsSchema = z.object({
   params: z.object({}).strict(),
   query: z.object({
     status: z
-      .enum(["UNVERIFIED", "PENDING_REVIEW", "VERIFIED", "REJECTED"])
-      .default("PENDING_REVIEW"),
+      .enum(["ALL", "UNVERIFIED", "PENDING_REVIEW", "VERIFIED", "REJECTED"])
+      .default("ALL"),
+    search: z.string().trim().min(1).max(100).optional(),
     skip: z.coerce.number().int().min(0).default(0),
     take: z.coerce.number().int().min(1).max(50).default(20),
   }),

@@ -121,7 +121,7 @@ const submitIdentityVerification = async (req, res, next) => {
       req.files,
     );
     return res.status(201).json(
-      new ApiResponse(201, "Identity verification submitted successfully.", {
+      new ApiResponse(201, "تم إرسال طلبك للمراجعة", {
         verification,
       }),
     );

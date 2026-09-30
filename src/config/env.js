@@ -61,19 +61,34 @@ const accountDeletionCleanupIntervalMs = Number(
 const registrationCleanupIntervalMs = Number(
   process.env.REGISTRATION_CLEANUP_INTERVAL_MS || 300000,
 );
-const supportPhones = (process.env.SUPPORT_PHONES || process.env.SUPPORT_PHONE || "059992735")
+const supportPhones = (
+  process.env.SUPPORT_PHONES ||
+  process.env.SUPPORT_PHONE ||
+  "059992735"
+)
   .split(",")
   .map((phone) => phone.trim())
   .filter(Boolean);
 
-if (!Number.isInteger(accountDeletionRetentionDays) || accountDeletionRetentionDays < 1) {
+if (
+  !Number.isInteger(accountDeletionRetentionDays) ||
+  accountDeletionRetentionDays < 1
+) {
   throw new Error("ACCOUNT_DELETION_RETENTION_DAYS must be a positive integer");
 }
 
-if (!Number.isInteger(accountDeletionCleanupIntervalMs) || accountDeletionCleanupIntervalMs < 60000) {
-  throw new Error("ACCOUNT_DELETION_CLEANUP_INTERVAL_MS must be at least 60000");
+if (
+  !Number.isInteger(accountDeletionCleanupIntervalMs) ||
+  accountDeletionCleanupIntervalMs < 60000
+) {
+  throw new Error(
+    "ACCOUNT_DELETION_CLEANUP_INTERVAL_MS must be at least 60000",
+  );
 }
-if (!Number.isInteger(registrationCleanupIntervalMs) || registrationCleanupIntervalMs < 60000) {
+if (
+  !Number.isInteger(registrationCleanupIntervalMs) ||
+  registrationCleanupIntervalMs < 60000
+) {
   throw new Error("REGISTRATION_CLEANUP_INTERVAL_MS must be at least 60000");
 }
 
@@ -88,6 +103,7 @@ module.exports = {
   otpFixedCode,
   otpTestPhones,
   supabaseUrl: process.env.SUPABASE_URL || null,
+  supabaseSecretKey: process.env.SUPABASE_SECRET_KEY || null,
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || null,
   profileImagesBucket: process.env.PROFILE_IMAGES_BUCKET || "profile-images",
   identityVerificationsBucket:
@@ -97,11 +113,13 @@ module.exports = {
   mockPaymentOtpTestCode,
   mockPaymentProductionOtpTestEnabled,
   mockPaymentWebhookSecret: process.env.MOCK_PAYMENT_WEBHOOK_SECRET || null,
-  bankTransferBeneficiaryName: process.env.BANK_TRANSFER_BENEFICIARY_NAME || null,
+  bankTransferBeneficiaryName:
+    process.env.BANK_TRANSFER_BENEFICIARY_NAME || null,
   bankTransferAccountNumber: process.env.BANK_TRANSFER_ACCOUNT_NUMBER || null,
   bankTransferIban: process.env.BANK_TRANSFER_IBAN || null,
   bankTransferBankName: process.env.BANK_TRANSFER_BANK_NAME || null,
-  paymentReceiptsBucket: process.env.PAYMENT_RECEIPTS_BUCKET || "payment-receipts",
+  paymentReceiptsBucket:
+    process.env.PAYMENT_RECEIPTS_BUCKET || "payment-receipts",
   supportEmail: process.env.SUPPORT_EMAIL || "support@wasel.ps",
   supportPhones,
   supportWorkingHours: {

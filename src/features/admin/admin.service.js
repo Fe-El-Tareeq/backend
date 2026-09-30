@@ -8,15 +8,35 @@ const publicVerification = ({
   idBackImagePath,
   selfieImagePath,
   ...value
-}) => value;
+}) => ({
+  ...value,
+  documentCount: 3,
+  availableDocumentCount:
+    value.status === "REJECTED" || value.documentsDeletedAt ? 0 : 3,
+  documentsStatus: value.documentsDeletedAt
+    ? "DELETED"
+    : value.status === "REJECTED"
+      ? "PENDING_DELETION"
+      : "AVAILABLE",
+  documentsDeletedAt: value.documentsDeletedAt || null,
+});
 
 const listVerifications = async (filters) => {
-  const [verifications, total] = await Promise.all([
+  const [verifications, total, groups] = await Promise.all([
     repository.listVerifications(filters),
-    repository.countVerifications(filters.status),
+    repository.countVerifications(filters),
+    repository.verificationStatistics(filters.search),
   ]);
   return {
-    verifications,
+    verifications: verifications.map(publicVerification),
+    statistics: groups.reduce(
+      (counts, group) => {
+        counts[group.status] = group._count._all;
+        counts.total += group._count._all;
+        return counts;
+      },
+      { total: 0, PENDING_REVIEW: 0, VERIFIED: 0, REJECTED: 0, UNVERIFIED: 0 },
+    ),
     pagination: { skip: filters.skip, take: filters.take, total },
   };
 };
@@ -25,6 +45,9 @@ const getVerification = async (id) => {
   const verification = await repository.findVerificationById(id);
   if (!verification)
     throw new ApiError(404, "Identity verification not found.");
+  if (verification.status === "REJECTED" || verification.documentsDeletedAt) {
+    return { ...publicVerification(verification), documents: null };
+  }
   const [idFrontImageUrl, idBackImageUrl, selfieImageUrl] = await Promise.all([
     identityStorage.createSignedUrl(verification.idFrontImagePath),
     identityStorage.createSignedUrl(verification.idBackImagePath),
@@ -57,6 +80,18 @@ const reviewVerification = async (
         "Identity verification has already been reviewed.",
       );
     }
+    if (
+      status === "REJECTED" &&
+      (typeof rejectionReason !== "string" ||
+        rejectionReason.trim().length < 3 ||
+        rejectionReason.trim().length > 500)
+    ) {
+      throw new ApiError(
+        400,
+        "A rejection reason of 3 to 500 characters is required.",
+      );
+    }
+    if (rejectionReason) rejectionReason = rejectionReason.trim();
     const reviewedAt = new Date();
     const claim = await repository.claimPendingVerification(
       id,
@@ -69,6 +104,8 @@ const reviewVerification = async (
         "Identity verification has already been reviewed.",
       );
     }
+    if (status === "REJECTED")
+      await repository.enqueueVerificationCleanup(verification, tx);
     await repository.updateUserVerificationStatus(
       verification.userId,
       status,
@@ -104,6 +141,9 @@ const reviewVerification = async (
       status,
       rejectionReason,
       reviewedAt,
+      documentCount: 3,
+      documentsStatus: status === "REJECTED" ? "PENDING_DELETION" : "AVAILABLE",
+      documentsDeletedAt: null,
     };
   });
 
