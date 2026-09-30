@@ -105,6 +105,50 @@ const simulateMockPayment = async (req, res, next) => {
   }
 };
 
+const resendMockOtp = async (req, res, next) => {
+  try {
+    const result = await service.resendMockPaymentOtp(
+      req.user.id,
+      req.validatedData.params.id,
+    );
+    return res
+      .status(200)
+      .json(new ApiResponse(200, "Mock payment OTP resent.", result));
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const verifyMockOtp = async (req, res, next) => {
+  try {
+    const result = await service.verifyMockPaymentOtp(
+      req.user.id,
+      req.validatedData.params.id,
+      req.validatedData.body.otp,
+    );
+    return res
+      .status(200)
+      .json(new ApiResponse(200, "Mock OTP payment completed.", result));
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const submitBankTransferReceipt = async (req, res, next) => {
+  try {
+    const invoice = await service.submitBankTransferReceipt(
+      req.user.id,
+      req.validatedData.params.id,
+      req.file,
+    );
+    return res.status(200).json(
+      new ApiResponse(200, "Bank transfer receipt submitted for review.", { invoice }),
+    );
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   listPackages,
   createInvoice,
@@ -112,4 +156,7 @@ module.exports = {
   listInvoices,
   processMockWebhook,
   simulateMockPayment,
+  resendMockOtp,
+  verifyMockOtp,
+  submitBankTransferReceipt,
 };

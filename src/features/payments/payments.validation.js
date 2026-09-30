@@ -8,8 +8,26 @@ const createInvoiceSchema = z.object({
     .object({
       tokenPackageId: uuid("Token package ID"),
       clientRequestKey: uuid("Client request key"),
+      paymentMethod: z.enum(["QR", "OTP", "BANK_TRANSFER"]).default("QR"),
+      paymentPhone: z.string().trim().min(8).max(20).optional(),
     })
-    .strict(),
+    .strict()
+    .superRefine((body, context) => {
+      if (body.paymentMethod === "OTP" && !body.paymentPhone) {
+        context.addIssue({
+          code: "custom",
+          path: ["paymentPhone"],
+          message: "A phone number is required for OTP payment.",
+        });
+      }
+      if (body.paymentMethod !== "OTP" && body.paymentPhone) {
+        context.addIssue({
+          code: "custom",
+          path: ["paymentPhone"],
+          message: "A phone number is only accepted for OTP payment.",
+        });
+      }
+    }),
   params: emptyObject,
   query: emptyObject,
 });
@@ -20,12 +38,22 @@ const invoiceIdSchema = z.object({
   query: emptyObject,
 });
 
+const verifyOtpSchema = z.object({
+  body: z
+    .object({
+      otp: z.string().regex(/^\d{6}$/, "OTP must contain exactly 6 digits."),
+    })
+    .strict(),
+  params: z.object({ id: uuid("Invoice ID") }).strict(),
+  query: emptyObject,
+});
+
 const listInvoicesSchema = z.object({
   body: emptyObject,
   params: emptyObject,
   query: z
     .object({
-      status: z.enum(["PENDING", "PAID", "FAILED", "EXPIRED"]).optional(),
+      status: z.enum(["PENDING", "PENDING_VERIFICATION", "PAID", "FAILED", "EXPIRED"]).optional(),
       skip: z.coerce.number().int().min(0).default(0),
       take: z.coerce.number().int().min(1).max(50).default(20),
     })
@@ -50,6 +78,7 @@ const webhookSchema = z.object({
 module.exports = {
   createInvoiceSchema,
   invoiceIdSchema,
+  verifyOtpSchema,
   listInvoicesSchema,
   webhookSchema,
 };

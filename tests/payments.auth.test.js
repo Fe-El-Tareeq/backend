@@ -16,6 +16,10 @@ describe("Payments authentication", () => {
     ["post", "/api/v1/payments/invoices"],
     ["get", "/api/v1/payments/invoices"],
     ["get", `/api/v1/payments/invoices/${invoiceId}`],
+    ["post", `/api/v1/payments/invoices/${invoiceId}/receipt`],
+    ["get", "/api/v1/admin/payments/invoices"],
+    ["post", `/api/v1/admin/payments/invoices/${invoiceId}/approve`],
+    ["post", `/api/v1/admin/payments/invoices/${invoiceId}/reject`],
     ["post", `/api/v1/payments/mock/invoices/${invoiceId}/pay`],
   ])("%s %s requires an access token", async (method, path) => {
     const response = await request(app)[method](path).send({});

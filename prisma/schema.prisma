@@ -128,6 +128,7 @@ enum WalletTransactionType {
 
 enum InvoiceStatus {
   PENDING
+  PENDING_VERIFICATION
   PAID
   FAILED
   EXPIRED
@@ -136,6 +137,13 @@ enum InvoiceStatus {
 enum PaymentProvider {
   MOCK
   JAWWAL_PAY
+  BANK_TRANSFER
+}
+
+enum PaymentMethod {
+  QR
+  OTP
+  BANK_TRANSFER
 }
 
 enum PaymentTransactionStatus {
@@ -254,23 +262,23 @@ model Neighborhood {
 }
 
 model User {
-  id                  String     @id @default(uuid()) @db.Uuid
-  phone               String     @unique @db.VarChar(20)
-  passwordHash        String?    @map("password_hash") @db.VarChar(255)
-  fullName            String?    @map("full_name") @db.VarChar(100)
-  profileImageUrl     String?    @map("profile_image_url") @db.VarChar(500)
-  profileImagePath    String?    @map("profile_image_path") @db.VarChar(255)
-  role                UserRole   @default(USER)
-  trustScore          Decimal    @default(70.00) @map("trust_score") @db.Decimal(5, 2)
-  neighborhoodId      String?    @map("neighborhood_id") @db.Uuid
-  profileCompleted    Boolean    @default(false) @map("profile_completed")
-  phoneVerifiedAt     DateTime?  @map("phone_verified_at") @db.Timestamptz(6)
-  status              UserStatus @default(ACTIVE)
+  id                  String             @id @default(uuid()) @db.Uuid
+  phone               String             @unique @db.VarChar(20)
+  passwordHash        String?            @map("password_hash") @db.VarChar(255)
+  fullName            String?            @map("full_name") @db.VarChar(100)
+  profileImageUrl     String?            @map("profile_image_url") @db.VarChar(500)
+  profileImagePath    String?            @map("profile_image_path") @db.VarChar(255)
+  role                UserRole           @default(USER)
+  trustScore          Decimal            @default(70.00) @map("trust_score") @db.Decimal(5, 2)
+  neighborhoodId      String?            @map("neighborhood_id") @db.Uuid
+  profileCompleted    Boolean            @default(false) @map("profile_completed")
+  phoneVerifiedAt     DateTime?          @map("phone_verified_at") @db.Timestamptz(6)
+  status              UserStatus         @default(ACTIVE)
   verificationStatus  VerificationStatus @default(UNVERIFIED) @map("verification_status")
-  deletionRequestedAt DateTime?  @map("deletion_requested_at") @db.Timestamptz(6)
-  deletionScheduledAt DateTime?  @map("deletion_scheduled_at") @db.Timestamptz(6)
-  createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletionRequestedAt DateTime?          @map("deletion_requested_at") @db.Timestamptz(6)
+  deletionScheduledAt DateTime?          @map("deletion_scheduled_at") @db.Timestamptz(6)
+  createdAt           DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   neighborhood Neighborhood? @relation(fields: [neighborhoodId], references: [id])
 
@@ -321,18 +329,18 @@ model User {
 }
 
 model IdentityVerification {
-  id                 String             @id @default(uuid()) @db.Uuid
-  userId             String             @map("user_id") @db.Uuid
-  status             VerificationStatus @default(PENDING_REVIEW)
-  idFrontImagePath   String             @map("id_front_image_path") @db.VarChar(500)
-  idBackImagePath    String             @map("id_back_image_path") @db.VarChar(500)
-  selfieImagePath    String             @map("selfie_image_path") @db.VarChar(500)
-  submittedAt        DateTime           @default(now()) @map("submitted_at") @db.Timestamptz(6)
-  reviewedAt         DateTime?          @map("reviewed_at") @db.Timestamptz(6)
-  reviewedByAdminId  String?            @map("reviewed_by_admin_id") @db.Uuid
-  rejectionReason    String?            @map("rejection_reason") @db.VarChar(500)
-  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                String             @id @default(uuid()) @db.Uuid
+  userId            String             @map("user_id") @db.Uuid
+  status            VerificationStatus @default(PENDING_REVIEW)
+  idFrontImagePath  String             @map("id_front_image_path") @db.VarChar(500)
+  idBackImagePath   String             @map("id_back_image_path") @db.VarChar(500)
+  selfieImagePath   String             @map("selfie_image_path") @db.VarChar(500)
+  submittedAt       DateTime           @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  reviewedAt        DateTime?          @map("reviewed_at") @db.Timestamptz(6)
+  reviewedByAdminId String?            @map("reviewed_by_admin_id") @db.Uuid
+  rejectionReason   String?            @map("rejection_reason") @db.VarChar(500)
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   user            User  @relation("IdentityVerificationUser", fields: [userId], references: [id], onDelete: Cascade)
   reviewedByAdmin User? @relation("IdentityVerificationReviewer", fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
@@ -899,14 +907,18 @@ model UserBadge {
 }
 
 model TokenPackage {
-  id          String   @id @default(uuid()) @db.Uuid
-  name        String   @unique @db.VarChar(100)
-  tokenAmount Int      @map("token_amount")
-  bonusTokens Int      @default(0) @map("bonus_tokens")
-  priceNis    Decimal  @map("price_nis") @db.Decimal(10, 2)
-  isActive    Boolean  @default(true) @map("is_active")
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                 String   @id @default(uuid()) @db.Uuid
+  name               String   @unique @db.VarChar(100)
+  tokenAmount        Int      @map("token_amount")
+  bonusTokens        Int      @default(0) @map("bonus_tokens")
+  priceNis           Decimal  @map("price_nis") @db.Decimal(10, 2)
+  discountPercentage Int      @default(0) @map("discount_percentage")
+  features           String[] @default([])
+  savingsText        String?  @map("savings_text") @db.VarChar(255)
+  hasSearchPriority  Boolean  @default(false) @map("has_search_priority")
+  isActive           Boolean  @default(true) @map("is_active")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   paymentInvoices PaymentInvoice[]
 
@@ -915,25 +927,37 @@ model TokenPackage {
 }
 
 model PaymentInvoice {
-  id                String             @id @default(uuid()) @db.Uuid
-  userId            String             @map("user_id") @db.Uuid
-  clientRequestKey  String?            @map("client_request_key") @db.Uuid
-  tokenPackageId    String             @map("token_package_id") @db.Uuid
-  tokenAmount       Int                @map("token_amount")
-  bonusTokens       Int                @default(0) @map("bonus_tokens")
-  totalTokens       Int                @map("total_tokens")
-  amountNis         Decimal            @map("amount_nis") @db.Decimal(10, 2)
-  paymentProvider   PaymentProvider    @map("payment_provider")
-  providerInvoiceId String?            @unique @map("provider_invoice_id") @db.VarChar(150)
-  qrCodePayload     String             @map("qr_code_payload")
-  paymentUrl        String?            @map("payment_url")
-  status            InvoiceStatus      @default(PENDING)
-  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  expiresAt         DateTime           @map("expires_at") @db.Timestamptz(6)
-  paidAt            DateTime?          @map("paid_at") @db.Timestamptz(6)
-  failedAt          DateTime?          @map("failed_at") @db.Timestamptz(6)
-  walletTransaction WalletTransaction?
-  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                  String             @id @default(uuid()) @db.Uuid
+  userId              String             @map("user_id") @db.Uuid
+  clientRequestKey    String?            @map("client_request_key") @db.Uuid
+  tokenPackageId      String             @map("token_package_id") @db.Uuid
+  tokenAmount         Int                @map("token_amount")
+  bonusTokens         Int                @default(0) @map("bonus_tokens")
+  totalTokens         Int                @map("total_tokens")
+  amountNis           Decimal            @map("amount_nis") @db.Decimal(10, 2)
+  paymentProvider     PaymentProvider    @map("payment_provider")
+  paymentMethod       PaymentMethod      @default(QR) @map("payment_method")
+  paymentPhone        String?            @map("payment_phone") @db.VarChar(20)
+  referenceCode       String?            @unique @map("reference_code") @db.VarChar(40)
+  transferReceiptPath String?            @map("transfer_receipt_path") @db.VarChar(500)
+  rejectionNotes      String?            @map("rejection_notes") @db.VarChar(500)
+  reviewedAt          DateTime?          @map("reviewed_at") @db.Timestamptz(6)
+  reviewedByAdminId   String?            @map("reviewed_by_admin_id") @db.Uuid
+  otpHash             String?            @map("otp_hash") @db.VarChar(64)
+  otpExpiresAt        DateTime?          @map("otp_expires_at") @db.Timestamptz(6)
+  otpAttempts         Int                @default(0) @map("otp_attempts")
+  otpSentAt           DateTime?          @map("otp_sent_at") @db.Timestamptz(6)
+  otpVerifiedAt       DateTime?          @map("otp_verified_at") @db.Timestamptz(6)
+  providerInvoiceId   String?            @unique @map("provider_invoice_id") @db.VarChar(150)
+  qrCodePayload       String?            @map("qr_code_payload")
+  paymentUrl          String?            @map("payment_url")
+  status              InvoiceStatus      @default(PENDING)
+  createdAt           DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt           DateTime           @map("expires_at") @db.Timestamptz(6)
+  paidAt              DateTime?          @map("paid_at") @db.Timestamptz(6)
+  failedAt            DateTime?          @map("failed_at") @db.Timestamptz(6)
+  walletTransaction   WalletTransaction?
+  user                User               @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   tokenPackage TokenPackage @relation(fields: [tokenPackageId], references: [id])
 
@@ -943,6 +967,8 @@ model PaymentInvoice {
   @@index([userId])
   @@index([tokenPackageId])
   @@index([status])
+  @@index([paymentMethod, status])
+  @@index([paymentMethod, status, createdAt])
   @@index([expiresAt])
   @@index([userId, status, createdAt])
   @@map("payment_invoices")

@@ -1,5 +1,31 @@
 const { z } = require("zod");
 
+const paymentInvoiceIdParams = z.object({
+  id: z.string().uuid("Payment invoice ID must be a valid UUID."),
+});
+
+const listPaymentInvoicesSchema = z.object({
+  body: z.object({}).optional(),
+  params: z.object({}).strict(),
+  query: z.object({
+    status: z.enum(["PENDING_VERIFICATION", "PAID", "FAILED"]).default("PENDING_VERIFICATION"),
+    skip: z.coerce.number().int().min(0).default(0),
+    take: z.coerce.number().int().min(1).max(50).default(20),
+  }).strict(),
+});
+
+const paymentInvoiceActionSchema = z.object({
+  body: z.object({}).strict(),
+  params: paymentInvoiceIdParams,
+  query: z.object({}).strict(),
+});
+
+const rejectPaymentInvoiceSchema = z.object({
+  body: z.object({ notes: z.string().trim().min(3).max(500) }).strict(),
+  params: paymentInvoiceIdParams,
+  query: z.object({}).strict(),
+});
+
 const verificationIdParams = z.object({
   id: z.string().uuid("Verification ID must be a valid UUID."),
 });
@@ -116,6 +142,9 @@ const reorderFaqsSchema = z.object({
 
 module.exports = {
   listVerificationsSchema,
+  listPaymentInvoicesSchema,
+  paymentInvoiceActionSchema,
+  rejectPaymentInvoiceSchema,
   verificationDetailsSchema,
   approveVerificationSchema,
   rejectVerificationSchema,

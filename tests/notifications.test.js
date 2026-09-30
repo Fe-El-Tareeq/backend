@@ -386,3 +386,50 @@ describe("Notification creation idempotency", () => {
     );
   });
 });
+
+describe("Bank transfer decision notifications", () => {
+  test.each([
+    ["approved", "PAYMENT_SUCCESS", "payment-success:", null],
+    ["rejected with a reason", "PAYMENT_FAILURE", "bank-transfer-rejected:", "Receipt amount is incorrect"],
+    ["rejected without a reason", "PAYMENT_FAILURE", "bank-transfer-rejected:", null],
+  ])("%s persists an in-app notification linked to the invoice and visible in the feed", async (scenario, type, prefix, rejectionNotes) => {
+    const tx = { transaction: "bank-transfer-notification" };
+    let saved;
+    repository.create.mockImplementation(async (data) => {
+      saved = makeNotification({ ...data, errandId: null, assignmentId: null });
+      return saved;
+    });
+
+    if (scenario === "approved") {
+      await service.templates.paymentSuccess({ userId, invoiceId, totalTokens: 28 }, tx);
+    } else {
+      await service.templates.bankTransferRejected({ userId, invoiceId, rejectionNotes }, tx);
+    }
+
+    expect(repository.create).toHaveBeenCalledTimes(1);
+    expect(repository.create).toHaveBeenCalledWith(expect.objectContaining({
+      userId, notificationType: type, channel: "IN_APP", status: "PENDING",
+      idempotencyKey: prefix + invoiceId,
+      metadata: scenario === "approved" ? { invoiceId } : { invoiceId, rejectionNotes },
+      message: scenario === "approved"
+        ? "28 tokens were added to your wallet."
+        : rejectionNotes
+          ? "Your bank transfer was rejected: " + rejectionNotes
+          : "Your bank transfer could not be verified.",
+    }), tx);
+    expect(repository.findUserPreference).not.toHaveBeenCalled();
+
+    repository.listForUser.mockResolvedValue([saved]);
+    repository.countForUser.mockResolvedValue(1);
+    repository.countUnreadForUser.mockResolvedValue(1);
+    const response = await request(app)
+      .get("/api/v1/notifications")
+      .set("Authorization", `Bearer ${token}`);
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.unreadCount).toBe(1);
+    expect(response.body.data.notifications[0]).toMatchObject({
+      type, isRead: false, message: saved.message,
+      metadata: expect.objectContaining({ invoiceId }),
+    });
+  });
+});

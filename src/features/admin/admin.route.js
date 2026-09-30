@@ -21,6 +21,22 @@ const requireSuperAdmin =
 const router = express.Router();
 router.use(requireAuth, requireSuperAdmin);
 router.get(
+  "/payments/invoices",
+  validate(validation.listPaymentInvoicesSchema),
+  controller.listPaymentInvoices,
+);
+router.post(
+  "/payments/invoices/:id/approve",
+  validate(validation.paymentInvoiceActionSchema),
+  controller.approvePaymentInvoice,
+);
+router.post(
+  "/payments/invoices/:id/reject",
+  validate(validation.rejectPaymentInvoiceSchema),
+  controller.rejectPaymentInvoice,
+);
+
+router.get(
   "/verifications",
   validate(validation.listVerificationsSchema),
   controller.listVerifications,

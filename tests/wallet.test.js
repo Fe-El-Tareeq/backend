@@ -199,3 +199,29 @@ describe("Wallet idempotency scope", () => {
     });
   });
 });
+
+describe("Wallet summary and history ownership", () => {
+  test("adds totals for the authenticated user's wallet", async () => {
+    repository.findWalletByUserId.mockResolvedValue({ id: "own-wallet", tokenBalance: 10 });
+    repository.getWalletTotals.mockResolvedValue({ totalTokensPurchased: 28, totalTokensSpent: 18 });
+    await expect(service.getWallet("owner")).resolves.toEqual({
+      id: "own-wallet", tokenBalance: 10, totalTokensPurchased: 28, totalTokensSpent: 18,
+    });
+    expect(repository.findWalletByUserId).toHaveBeenCalledWith("owner");
+    expect(repository.getWalletTotals).toHaveBeenCalledWith("own-wallet");
+  });
+  test("forwards filters with the authenticated user and their wallet", async () => {
+    repository.findWalletByUserId.mockResolvedValue({ id: "own-wallet" });
+    const options = { status: "FAILED", transactionType: "TOKEN_TOP_UP", skip: 2, take: 5 };
+    const page = { transactions: [], pagination: { skip: 2, take: 5, total: 0 } };
+    repository.getWalletActivity.mockResolvedValue(page);
+    await expect(service.getTransactionHistory("owner", options)).resolves.toEqual(page);
+    expect(repository.getWalletActivity).toHaveBeenCalledWith("owner", "own-wallet", options);
+  });
+  test.each(["getWallet", "getTransactionHistory"])("%s returns 404 for a missing wallet", async (method) => {
+    repository.findWalletByUserId.mockResolvedValue(null);
+    await expect(service[method]("owner")).rejects.toMatchObject({ statusCode: 404 });
+    expect(repository.getWalletTotals).not.toHaveBeenCalled();
+    expect(repository.getWalletActivity).not.toHaveBeenCalled();
+  });
+});

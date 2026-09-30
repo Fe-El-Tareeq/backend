@@ -122,46 +122,67 @@ async function main() {
   console.log("Categories seeded successfully.");
 
   // Token Packages
+  // Retire the previous catalog while retaining rows referenced by old invoices.
+  await prisma.tokenPackage.updateMany({
+    where: { name: { in: ["Starter", "Standard", "Value"] } },
+    data: { isActive: false },
+  });
+
   const tokenPackages = [
     {
-      name: "Starter",
+      name: "الأساسية",
       tokenAmount: 10,
-      bonusTokens: 0,
+      bonusTokens: 2,
       priceNis: 5,
+      discountPercentage: 0,
+      features: ["10 توكنز + 2 هدية"],
+      savingsText: "تحصل على توكنزين هدية",
+      hasSearchPriority: false,
       isActive: true,
     },
     {
-      name: "Standard",
+      name: "المتوسطة",
       tokenAmount: 25,
-      bonusTokens: 3,
-      priceNis: 12,
+      bonusTokens: 0,
+      priceNis: 10,
+      discountPercentage: 20,
+      features: ["خصم 20%"],
+      savingsText: "وفّر 2.5 ₪",
+      hasSearchPriority: false,
       isActive: true,
     },
     {
-      name: "Value",
+      name: "الاحترافية",
       tokenAmount: 50,
-      bonusTokens: 7,
+      bonusTokens: 0,
+      priceNis: 15,
+      discountPercentage: 40,
+      features: ["خصم 40%", "أولوية في البحث"],
+      savingsText: "وفّر 10 ₪",
+      hasSearchPriority: true,
+      isActive: true,
+    },
+    {
+      name: "المؤسسية",
+      tokenAmount: 100,
+      bonusTokens: 0,
       priceNis: 25,
+      discountPercentage: 50,
+      features: ["خصم 50%", "أولوية في البحث"],
+      savingsText: "وفّر 25 ₪",
+      hasSearchPriority: true,
       isActive: true,
     },
   ];
 
   for (const tokenPackage of tokenPackages) {
+    const { name, ...data } = tokenPackage;
     await prisma.tokenPackage.upsert({
-      where: {
-        name: tokenPackage.name,
-      },
-      update: {
-        tokenAmount: tokenPackage.tokenAmount,
-        bonusTokens: tokenPackage.bonusTokens,
-        priceNis: tokenPackage.priceNis,
-        isActive: tokenPackage.isActive,
-      },
+      where: { name },
+      update: data,
       create: tokenPackage,
     });
   }
-
-  console.log("Token packages seeded successfully.");
 
   // Badges
   const badges = [

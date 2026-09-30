@@ -30,18 +30,23 @@ class MockPaymentProvider extends PaymentProvider {
     }
   }
 
-  createPayment(invoice) {
+  createPayment(invoice, paymentMethod = "QR") {
     const providerInvoiceId = `mock-invoice-${invoice.id}`;
     const query = new URLSearchParams({
       invoiceId: invoice.id,
       providerInvoiceId,
       amountNis: String(invoice.amountNis),
       currency: "NIS",
+      paymentMethod,
+      expiresAt: invoice.expiresAt.toISOString(),
     });
 
     return {
       providerInvoiceId,
-      qrCodePayload: `feeltareeq://payments/mock?${query.toString()}`,
+      qrCodePayload:
+        paymentMethod === "QR"
+          ? `feeltareeq://payments/mock?${query.toString()}`
+          : null,
       paymentUrl: null,
     };
   }

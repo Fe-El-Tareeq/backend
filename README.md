@@ -117,9 +117,14 @@ Use only one deployment trigger per environment. If Render dashboard auto-deploy
 ## Phase 11 - Payments and QR Token Top-Up
 
 - `GET /api/v1/payments/packages` returns active server-controlled token packages.
-- `POST /api/v1/payments/invoices` creates a 15-minute QR invoice. The client sends only `tokenPackageId` and a UUID `clientRequestKey`; price and token quantities are snapshotted from the database.
+- `POST /api/v1/payments/invoices` creates a 15-minute mock invoice. The client selects `paymentMethod: QR` or `OTP`; OTP also sends `paymentPhone`. Price and token quantities are snapshotted from the database.
 - `GET /api/v1/payments/invoices` and `GET /api/v1/payments/invoices/:id` expose only the authenticated user's invoices and lazily mark overdue pending invoices as `EXPIRED`.
 - `POST /api/v1/payments/mock/invoices/:id/pay` simulates a successful provider payment only when `MOCK_PAYMENT_ENABLED=true`. It must remain disabled in production.
+- OTP invoices include a five-minute mock challenge. Use `POST /api/v1/payments/invoices/:id/otp/verify` to complete it, or `POST /api/v1/payments/invoices/:id/otp/resend` after the 60-second cooldown. A `mockOtp` is included in non-production responses for frontend testing; no SMS is sent.
+- The mock `/pay` endpoint is only for QR invoices; OTP invoices must be verified through the OTP endpoint.
+- `BANK_TRANSFER` creates a `PENDING_VERIFICATION` invoice with a unique `referenceCode` and returns configured bank details. Upload a PNG/JPG/PDF receipt (up to 5 MB) to `POST /api/v1/payments/invoices/:id/receipt`; receipts use the private `PAYMENT_RECEIPTS_BUCKET`.
+- Super admins review submitted receipts through `GET /api/v1/admin/payments/invoices?status=PENDING_VERIFICATION`. Approve credits the wallet exactly once; reject requires `notes`. Both decisions notify the user and are recorded in the admin audit log.
+- Configure `BANK_TRANSFER_BENEFICIARY_NAME`, either `BANK_TRANSFER_ACCOUNT_NUMBER` or `BANK_TRANSFER_IBAN`, and `BANK_TRANSFER_BANK_NAME`. The receipt bucket must exist in Supabase Storage and remain private.
 - `POST /api/v1/payments/webhooks/mock` verifies an HMAC SHA-256 signature using `MOCK_PAYMENT_WEBHOOK_SECRET` and does not use user JWT authentication.
 - A successful exact-amount webhook creates the provider transaction, locks and credits the wallet, writes one immutable `TOKEN_TOP_UP` ledger entry, creates an in-app notification, and marks the invoice `PAID` in one database transaction.
 - Duplicate create requests, duplicate provider transaction IDs, repeated paid-invoice webhooks, and concurrent wallet updates are protected by database constraints, row locks, and idempotency checks.
@@ -131,9 +136,12 @@ Local/staging mock configuration:
 ```env
 MOCK_PAYMENT_ENABLED=true
 MOCK_PAYMENT_WEBHOOK_SECRET=replace_with_a_long_random_environment_secret
+MOCK_PAYMENT_OTP_TEST_PHONE=+970599000000
+MOCK_PAYMENT_OTP_TEST_CODE=123456
+MOCK_PAYMENT_PRODUCTION_OTP_TEST_ENABLED=false
 ```
 
-Never enable mock payment confirmation in a real production environment.
+Render OTP testing can be enabled for the account registered with +970599000000. Set MOCK_PAYMENT_ENABLED=true and MOCK_PAYMENT_PRODUCTION_OTP_TEST_ENABLED=true, and keep the webhook secret private. Enter OTP 123456 in the client; the API does not return the code in production. QR mock confirmation and the public mock webhook remain disabled in production. Turn off the test flag after testing.
 
 ## Phase 10 - Ratings, Trust Score, and Badges
 
@@ -498,3 +506,33 @@ must log in again with the new password.
 
 Do not enable a fixed OTP for real user phone numbers in production. A real
 SMS/WhatsApp provider is still required before production authentication.
+
+## Wallet summary and activity (BE-PAY-04)
+
+GET /api/v1/wallet returns tokenBalance, totalTokensPurchased and totalTokensSpent.
+Purchased tokens include completed TOKEN_TOP_UP package bonuses, but exclude signup
+bonuses, refunds and admin credits. Spent tokens are gross debits (errand posting,
+trip posting, acceptance and admin debits); refunds do not subtract from that total.
+
+GET /api/v1/wallet/transactions supports skip, take, transactionType and status.
+Statuses: SUCCESS, PENDING, PENDING_VERIFICATION, FAILED, EXPIRED.
+Filters combine with AND and pagination.total counts matching items only.
+The feed combines committed ledger entries (source=WALLET_TRANSACTION,
+status=SUCCESS) and unpaid invoices (source=PAYMENT_INVOICE). Paid invoices
+appear only through their ledger entry, so a purchase is never listed twice.
+Unpaid invoices have null balanceBefore/balanceAfter and never affect totals.
+Use paymentInvoiceId to open invoice details and rejectionNotes to display a
+bank-transfer rejection. Unknown filters and invalid enum values return 400.
+
+Example: /api/v1/wallet/transactions?transactionType=TOKEN_TOP_UP&status=FAILED&skip=0&take=20
+
+Expired bank transfers without a receipt are refreshed when invoice details,
+invoice lists or wallet activity are requested. Transfers with an uploaded receipt
+remain pending manual review after their upload deadline.
+
+Validation commands:
+
+- Unit/API tests: node node_modules/jest/bin/jest.js --runInBand --testPathIgnorePatterns="wallet.concurrency.test.js|trips.repository.test.js|wallet.activity.integration.test.js"
+- Local database tests: npm test -- --runInBand tests/wallet.concurrency.test.js tests/wallet.activity.integration.test.js tests/trips.repository.test.js
+  The database tests require TEST_DATABASE_URL pointing to a running local wallet_test
+  PostgreSQL database with the current migrations applied.

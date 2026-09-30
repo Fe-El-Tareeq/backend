@@ -21,12 +21,9 @@ const getTransactions = async (req, res, next) => {
   try {
     const userId = req.user.id;
 
-    const { skip, take } = req.validatedData.query;
+    const options = req.validatedData.query;
 
-    const transactions = await service.getTransactionHistory(userId, {
-      skip,
-      take,
-    });
+    const transactions = await service.getTransactionHistory(userId, options);
 
     return res
       .status(200)

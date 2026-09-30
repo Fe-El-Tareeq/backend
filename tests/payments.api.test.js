@@ -39,6 +39,7 @@ test("POST /payments/invoices creates a payment invoice", async () => {
   expect(service.createInvoice).toHaveBeenCalledWith(userId, {
     tokenPackageId: packageId,
     clientRequestKey,
+    paymentMethod: "QR",
   });
 });
 

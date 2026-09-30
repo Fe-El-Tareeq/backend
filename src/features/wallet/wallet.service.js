@@ -10,7 +10,8 @@ const getWallet = async (userId) => {
     throw new ApiError(404, "Wallet not found");
   }
 
-  return wallet;
+  const totals = await repository.getWalletTotals(wallet.id);
+  return { ...wallet, ...totals };
 };
 
 // Returns the authenticated user's wallet transaction history with pagination.
@@ -21,21 +22,7 @@ const getTransactionHistory = async (userId, options = {}) => {
     throw new ApiError(404, "Wallet not found");
   }
 
-  const { skip = 0, take = 20 } = options;
-
-  const [transactions, total] = await Promise.all([
-    repository.findTransactionsByWalletId(wallet.id, { skip, take }),
-    repository.countTransactionsByWalletId(wallet.id),
-  ]);
-
-  return {
-    transactions,
-    pagination: {
-      skip,
-      take,
-      total,
-    },
-  };
+  return repository.getWalletActivity(userId, wallet.id, options);
 };
 
 // Validates the token amount before performing a wallet operation.
