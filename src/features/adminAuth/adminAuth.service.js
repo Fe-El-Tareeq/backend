@@ -4,6 +4,7 @@ const {
   assertDashboardAdmin,
   isDashboardAdmin,
 } = require("./adminAuth.policy");
+const { isAccountVerifiedForAccess } = require("../auth/accountVerification");
 
 const invalidCredentials = () =>
   new ApiError(401, "Invalid phone or password.");
@@ -11,7 +12,7 @@ const invalidCredentials = () =>
 const login = async (phone, password) => {
   const user = await authService.authenticatePassword(phone, password);
 
-  if (!user.phoneVerifiedAt || !isDashboardAdmin(user)) {
+  if (!isAccountVerifiedForAccess(user) || !isDashboardAdmin(user)) {
     throw invalidCredentials();
   }
 
@@ -31,6 +32,9 @@ const login = async (phone, password) => {
 const refresh = (refreshToken) =>
   authService.refresh(refreshToken, async (user) => {
     assertDashboardAdmin(user);
+    if (!isAccountVerifiedForAccess(user)) {
+      throw new ApiError(403, "Dashboard administrator access is required.");
+    }
   });
 
 const logout = (refreshToken) => authService.logout(refreshToken);

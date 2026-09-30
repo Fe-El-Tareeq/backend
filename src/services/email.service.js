@@ -1,6 +1,6 @@
 const env = require("../config/env");
 
-const send = async ({ to, subject, text }) => {
+const send = async ({ to, subject, text, html }) => {
   if (!env.resendApiKey || !env.emailFrom || !to) {
     return { sent: false, reason: "EMAIL_NOT_CONFIGURED" };
   }
@@ -11,7 +11,13 @@ const send = async ({ to, subject, text }) => {
       Authorization: `Bearer ${env.resendApiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ from: env.emailFrom, to: [to], subject, text }),
+    body: JSON.stringify({
+      from: env.emailFrom,
+      to: [to],
+      subject,
+      text,
+      ...(html ? { html } : {}),
+    }),
   });
 
   if (!response.ok) {

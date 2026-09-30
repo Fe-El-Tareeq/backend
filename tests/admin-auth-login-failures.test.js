@@ -39,6 +39,10 @@ beforeEach(() => {
 test.each([
   ["inactive", { status: "SUSPENDED" }],
   ["unverified", { phoneVerifiedAt: null }],
+  [
+    "email-era unverified",
+    { email: "admin@example.com", emailVerifiedAt: null },
+  ],
 ])("rejects the configured admin when %s without disclosing state", async (label, changes) => {
   authRepository.findUserWithPasswordByPhone.mockResolvedValue({
     ...admin,

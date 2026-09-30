@@ -13,6 +13,15 @@ jest.mock("../src/features/users/profileImage.storage");
 jest.mock("../src/features/users/identityVerification.storage");
 
 describe("User Profile Service Tests", () => {
+  test("generic profile validation cannot change email", () => {
+    const result = updateProfileSchema.safeParse({
+      body: { email: "replacement@example.com" },
+      params: {},
+      query: {},
+    });
+
+    expect(result.success).toBe(false);
+  });
   beforeEach(() => {
     jest.clearAllMocks();
     profileImageStorage.remove.mockResolvedValue(undefined);

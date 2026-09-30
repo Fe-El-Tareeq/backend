@@ -186,6 +186,20 @@ describe("Trips create", () => {
     expect(repository.createTrip).not.toHaveBeenCalled();
   });
 
+  test("email-era traveler cannot post before email verification", async () => {
+    repository.findTravelerForPosting.mockResolvedValue({
+      ...traveler,
+      email: "traveler@example.com",
+      emailVerifiedAt: null,
+      phoneVerifiedAt: new Date(),
+    });
+
+    await expect(
+      service.createTrip(traveler.id, createData),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    expect(repository.createTrip).not.toHaveBeenCalled();
+  });
+
   test("rejects traveler with incomplete profile", async () => {
     repository.findTravelerForPosting.mockResolvedValue({
       ...traveler,

@@ -3,12 +3,13 @@ const ApiResponse = require("../../utils/ApiResponse");
 
 const register = async (req, res, next) => {
   try {
-    const { fullName, phone, password, neighborhoodId, termsAccepted } =
+    const { fullName, phone, email, password, neighborhoodId, termsAccepted } =
       req.validatedData.body;
 
     const result = await authService.register({
       fullName,
       phone,
+      email,
       password,
       neighborhoodId,
       termsAccepted,
@@ -47,9 +48,9 @@ const login = async (req, res, next) => {
 
 const requestOtp = async (req, res, next) => {
   try {
-    const { phone, channel } = req.validatedData.body;
+    const { phone } = req.validatedData.body;
 
-    const result = await authService.requestOtp(phone, channel);
+    const result = await authService.requestOtp(phone);
 
     return res.status(200).json(
       new ApiResponse(200, result.message, {
@@ -116,8 +117,8 @@ const logout = async (req, res, next) => {
 
 const forgotPassword = async (req, res, next) => {
   try {
-    const { phone, channel } = req.validatedData.body;
-    const result = await authService.forgotPassword(phone, channel);
+    const { phone } = req.validatedData.body;
+    const result = await authService.forgotPassword(phone);
 
     return res.status(200).json(
       new ApiResponse(200, result.message, {
@@ -142,11 +143,8 @@ const resetPassword = async (req, res, next) => {
 
 const requestAccountReactivationOtp = async (req, res, next) => {
   try {
-    const { phone, channel } = req.validatedData.body;
-    const result = await authService.requestAccountReactivationOtp(
-      phone,
-      channel,
-    );
+    const { phone } = req.validatedData.body;
+    const result = await authService.requestAccountReactivationOtp(phone);
     return res.status(200).json(
       new ApiResponse(200, result.message, {
         expiresInMinutes: result.expiresInMinutes,

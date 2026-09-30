@@ -10,7 +10,7 @@
 
 Provision the administrator through a private operational workflow:
 
-1. Create or identify a phone-verified user through the existing registration flow.
+1. Create or identify an account verified under the email OTP flow. Legacy users without email may temporarily retain their historical phone-verification eligibility.
 2. In an approved database console or Prisma Studio session, set only that user's role to `SUPER_ADMIN`. Do not add an HTTP promotion endpoint or a startup-time promotion.
 3. Set the deployment's `ADMIN_USER_ID` to that user's UUID. Never place the user's password or a real UUID in source control.
 4. Restart or redeploy the backend so it reloads the environment, then verify `/api/v1/admin/auth/login` and `/api/v1/admin/auth/me`.
@@ -27,10 +27,13 @@ Provision the administrator through a private operational workflow:
 
 ## Pending OTP Registration
 
-- Registration is a multi-step flow. `POST /api/v1/auth/register` requires `termsAccepted: true`, snapshots the current terms/privacy versions in an expiring `pending_registrations` row, and stores a hashed OTP without creating a row in `users`.
-- `POST /api/v1/auth/verify-otp` atomically claims a valid OTP, creates the verified user and signup wallet, records the captured versions in `legal_acceptances`, deletes the pending registration, and issues tokens. Missing or stale legal consent rejects verification and rolls back the transaction.
+- Phone remains the login identifier. Email is the verification and recovery delivery channel; email login is not supported.
+- Registration is a multi-step flow. `POST /api/v1/auth/register` requires a normalized email and `termsAccepted: true`, snapshots the current terms/privacy versions in an expiring `pending_registrations` row, and stores only a hashed OTP without creating a row in `users`.
+- `POST /api/v1/auth/verify-otp` accepts phone plus OTP and atomically claims the code, creates the email-verified user and signup wallet, records the captured versions in `legal_acceptances`, deletes the pending registration, and issues tokens. Email verification does not set `phoneVerifiedAt`.
+- Resends have a 60-second cooldown. Once a replacement code is delivered, older usable codes for the same phone and purpose are invalidated.
 - Expired pending registrations and OTP records are removed by a background cleanup job. `REGISTRATION_CLEANUP_INTERVAL_MS` controls its polling interval.
-- `000000` is available only to the allowlisted test phone configured in `OTP_TEST_PHONES`; all other phones get randomly generated codes. A real SMS/WhatsApp provider is still required for production delivery.
+- Temporary migration compatibility: legacy users without email may continue through their historical `phoneVerifiedAt` state. Any user with an email must have `emailVerifiedAt`; this debt remains until the future Add/Verify Email migration phase.
+- Auth email delivery uses Resend through `RESEND_API_KEY` and `EMAIL_FROM`. Delivery failures make the new OTP unusable and do not return a false sent response.
 
 ## Bidirectional Offers and Trip Requests
 
@@ -294,7 +297,7 @@ Implemented the authentication and user management foundation using phone number
 - Added OTP request and verification flow
 - Added OTP expiration and maximum attempt protection
 - Added secure OTP hashing using bcrypt
-- Added phone verification for users
+- Added account verification for users
 - Added automatic user creation after successful OTP verification
 - Added automatic wallet creation for new users
 - Added JWT access token generation
@@ -497,16 +500,17 @@ Wallet and Token Ledger are ready to be used internally by upcoming modules such
 
 ## Authentication Testing OTP & Password Recovery
 
-Authentication supports a fixed six-digit OTP for explicitly allowlisted test
-phone numbers. Configure it only in controlled development or staging testing:
+Authentication supports a fixed six-digit OTP for one explicit test email.
+Configure both values only in controlled non-production environments:
 
 ```env
-OTP_FIXED_CODE=000000
-OTP_TEST_PHONES=0590000000
+TEST_OTP_EMAIL=test-user@example.com
+TEST_OTP_CODE=000000
 ```
 
-Phone-verification and password-reset OTP records are separated by purpose, so
-a registration OTP cannot be reused to reset a password.
+Registration, password-reset, and reactivation OTP records are separated by
+purpose, so a code cannot be reused across flows. Production startup rejects
+fixed OTP configuration.
 
 Password recovery endpoints:
 
@@ -519,8 +523,11 @@ Successful password reset replaces the previous bcrypt password hash, consumes
 the reset OTP, and revokes all active refresh tokens for the account. The user
 must log in again with the new password.
 
-Do not enable a fixed OTP for real user phone numbers in production. A real
-SMS/WhatsApp provider is still required before production authentication.
+Password reset and account reactivation requests continue to accept phone, but
+codes are delivered only to the verified email already stored on the account.
+Legacy users without verified email receive the same generic response and need
+the future Add/Verify Email recovery path or support. Configure Resend with
+`RESEND_API_KEY` and `EMAIL_FROM`; never place provider secrets in source control.
 
 ## Wallet summary and activity (BE-PAY-04)
 

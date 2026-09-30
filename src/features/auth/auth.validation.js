@@ -24,6 +24,13 @@ const registerSchema = z.object({
       .min(8, "Phone number is too short")
       .max(20, "Phone number is too long"),
 
+    email: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .email("Email address must be valid")
+      .max(254, "Email address is too long"),
+
     password: passwordSchema,
 
     neighborhoodId: z.string().uuid("Neighborhood ID must be a valid UUID."),
@@ -47,15 +54,15 @@ const loginSchema = z.object({
 });
 
 const phoneSchema = z.object({
-  body: z.object({
-    phone: z
-      .string()
-      .trim()
-      .min(8, "Phone number is too short")
-      .max(20, "Phone number is too long"),
-
-    channel: z.enum(["SMS", "WHATSAPP"]).optional(),
-  }),
+  body: z
+    .object({
+      phone: z
+        .string()
+        .trim()
+        .min(8, "Phone number is too short")
+        .max(20, "Phone number is too long"),
+    })
+    .strict(),
 });
 
 const verifyOtpSchema = z.object({
@@ -87,7 +94,6 @@ const forgotPasswordSchema = z.object({
         .trim()
         .min(8, "Phone number is too short")
         .max(20, "Phone number is too long"),
-      channel: z.enum(["SMS", "WHATSAPP"]).optional(),
     })
     .strict(),
   params: z.object({}),

@@ -28,10 +28,12 @@ enum VerificationStatus {
 enum OtpChannel {
   SMS
   WHATSAPP
+  EMAIL
 }
 
 enum OtpPurpose {
   PHONE_VERIFICATION
+  EMAIL_VERIFICATION
   PASSWORD_RESET
   ACCOUNT_REACTIVATION
 }
@@ -264,6 +266,7 @@ model Neighborhood {
 model User {
   id                  String             @id @default(uuid()) @db.Uuid
   phone               String             @unique @db.VarChar(20)
+  email               String?            @unique @db.VarChar(254)
   passwordHash        String?            @map("password_hash") @db.VarChar(255)
   fullName            String?            @map("full_name") @db.VarChar(100)
   profileImageUrl     String?            @map("profile_image_url") @db.VarChar(500)
@@ -273,6 +276,7 @@ model User {
   neighborhoodId      String?            @map("neighborhood_id") @db.Uuid
   profileCompleted    Boolean            @default(false) @map("profile_completed")
   phoneVerifiedAt     DateTime?          @map("phone_verified_at") @db.Timestamptz(6)
+  emailVerifiedAt     DateTime?          @map("email_verified_at") @db.Timestamptz(6)
   status              UserStatus         @default(ACTIVE)
   verificationStatus  VerificationStatus @default(UNVERIFIED) @map("verification_status")
   deletionRequestedAt DateTime?          @map("deletion_requested_at") @db.Timestamptz(6)
@@ -497,12 +501,14 @@ model LegalAcceptance {
 model OtpVerification {
   id           String     @id @default(uuid()) @db.Uuid
   phone        String     @db.VarChar(20)
+  email        String?    @db.VarChar(254)
   otpHash      String     @map("otp_hash") @db.VarChar(255)
   channel      OtpChannel @default(SMS)
   purpose      OtpPurpose @default(PHONE_VERIFICATION)
   attemptCount Int        @default(0) @map("attempt_count")
   maxAttempts  Int        @default(5) @map("max_attempts")
   expiresAt    DateTime   @map("expires_at") @db.Timestamptz(6)
+  deliveredAt  DateTime?  @map("delivered_at") @db.Timestamptz(6)
   verifiedAt   DateTime?  @map("verified_at") @db.Timestamptz(6)
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -513,6 +519,7 @@ model OtpVerification {
 model PendingRegistration {
   id             String   @id @default(uuid()) @db.Uuid
   phone          String   @unique @db.VarChar(20)
+  email          String?  @unique @db.VarChar(254)
   fullName       String   @map("full_name") @db.VarChar(100)
   passwordHash   String   @map("password_hash") @db.VarChar(255)
   neighborhoodId String   @map("neighborhood_id") @db.Uuid
