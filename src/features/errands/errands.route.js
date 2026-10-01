@@ -29,6 +29,13 @@ router.post(
 );
 
 router.get(
+  "/:id/tracking",
+  requireAuth,
+  validate(validation.errandIdSchema),
+  controller.getErrandTracking,
+);
+
+router.get(
   "/:id",
   optionalAuth,
   validate(validation.errandIdSchema),

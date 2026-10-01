@@ -1,5 +1,20 @@
 # Backend
 
+## Single-Admin Dashboard Authentication
+
+- The dashboard administrator remains a normal `User` row. Dashboard access requires an `ACTIVE` user whose role is `SUPER_ADMIN` and whose UUID exactly matches the backend-only `ADMIN_USER_ID` environment variable.
+- `ADMIN_USER_ID` is optional at process startup so development and user-only test environments keep working. When it is unset, invalid, or does not match an active `SUPER_ADMIN`, every dashboard authorization attempt fails closed. Invalid configured UUIDs stop startup.
+- Dashboard authentication is password-based through `/api/v1/admin/auth/login`; OTP and fixed test OTP settings never authenticate the dashboard. There is no public admin registration, promotion, or role-update endpoint.
+- Admin login failures are limited to 5 attempts per client IP in 15 minutes, regardless of the submitted phone. Successful logins are not counted against that focused limit; the global API limiter still applies.
+- Exact-one authorization is application policy, not a database uniqueness rule. Additional accidental `SUPER_ADMIN` rows do not receive dashboard access unless their ID is the configured `ADMIN_USER_ID`.
+
+Provision the administrator through a private operational workflow:
+
+1. Create or identify an account verified under the email OTP flow. Legacy users without email may temporarily retain their historical phone-verification eligibility.
+2. In an approved database console or Prisma Studio session, set only that user's role to `SUPER_ADMIN`. Do not add an HTTP promotion endpoint or a startup-time promotion.
+3. Set the deployment's `ADMIN_USER_ID` to that user's UUID. Never place the user's password or a real UUID in source control.
+4. Restart or redeploy the backend so it reloads the environment, then verify `/api/v1/admin/auth/login` and `/api/v1/admin/auth/me`.
+
 ## Multi-Item Errands
 
 - `POST /api/v1/errands` accepts 1-20 entries in `items`. Each item stores its category, name, optional description, quantity, size, urgency, and optional item note in `errand_items`.
@@ -12,10 +27,13 @@
 
 ## Pending OTP Registration
 
-- Registration is a multi-step flow. `POST /api/v1/auth/register` requires `termsAccepted: true`, snapshots the current terms/privacy versions in an expiring `pending_registrations` row, and stores a hashed OTP without creating a row in `users`.
-- `POST /api/v1/auth/verify-otp` atomically claims a valid OTP, creates the verified user and signup wallet, records the captured versions in `legal_acceptances`, deletes the pending registration, and issues tokens. Missing or stale legal consent rejects verification and rolls back the transaction.
+- Phone remains the login identifier. Email is the verification and recovery delivery channel; email login is not supported.
+- Registration is a multi-step flow. `POST /api/v1/auth/register` requires a normalized email and `termsAccepted: true`, snapshots the current terms/privacy versions in an expiring `pending_registrations` row, and stores only a hashed OTP without creating a row in `users`.
+- `POST /api/v1/auth/verify-otp` accepts phone plus OTP and atomically claims the code, creates the email-verified user and signup wallet, records the captured versions in `legal_acceptances`, deletes the pending registration, and issues tokens. Email verification does not set `phoneVerifiedAt`.
+- Resends have a 60-second cooldown. Once a replacement code is delivered, older usable codes for the same phone and purpose are invalidated.
 - Expired pending registrations and OTP records are removed by a background cleanup job. `REGISTRATION_CLEANUP_INTERVAL_MS` controls its polling interval.
-- `000000` is available only to the allowlisted test phone configured in `OTP_TEST_PHONES`; all other phones get randomly generated codes. A real SMS/WhatsApp provider is still required for production delivery.
+- Temporary migration compatibility: legacy users without email may continue through their historical `phoneVerifiedAt` state. Any user with an email must have `emailVerifiedAt`; this debt remains until the future Add/Verify Email migration phase.
+- Auth email delivery uses Resend through `RESEND_API_KEY` and `EMAIL_FROM`. Delivery failures make the new OTP unusable and do not return a false sent response.
 
 ## Bidirectional Offers and Trip Requests
 
@@ -40,16 +58,19 @@
 
 ## Support Tickets
 
-- Authenticated users can read support contact configuration and create idempotent support tickets with an initial message.
+- Authenticated users can read support contact configuration, active ordered FAQs, phone numbers, email, and configured working hours.
+- Ticket creation requires client-generated `clientRequestKey` and `clientMessageKey` UUIDs so both the ticket and its first message are safe to retry on unstable connections.
 - Ticket categories cover payment issues, open requests, cancellation requests, and general inquiries. Each ticket receives a `TKT-...` tracking code.
 - Users can list, open, and message only their own tickets. Closed or resolved tickets reject new messages.
-- Super administrators can list all tickets, reply, assign themselves, and update ticket status.
+- The configured dashboard administrator can list all tickets, reply, assign themselves, and update ticket status.
+- The configured dashboard administrator manages persistent FAQs under `/api/v1/admin/faqs`; deleting an FAQ deactivates it so it can be restored later.
 
 ## Support Reports
 
 - Users can submit duplicate-safe reports under `/api/v1/support/reports` and receive an `RPT-...` tracking code.
 - Fraud, dangerous-item, abuse, and fake-account reports receive high priority; fulfillment and damaged-item reports receive medium priority; technical and other reports receive normal priority.
-- Reports may reference a user, assignment, errand, or trip. Users can read only their own reports, while super administrators can review and resolve all reports.
+- Reports may reference a user, assignment, errand, or trip only after server-side participation and cross-context validation. Users can read only their own reports, while the configured dashboard administrator can review and resolve all reports.
+- `attachChatHistory=true` requires an authorized `chatRoomId` and atomically stores an immutable chronological snapshot of at most the latest 50 text/image/voice messages. Evidence stores media references and metadata, never binary payloads, and is available only through the super-admin report detail endpoint.
 - Every newly created report is also sent to `REPORT_NOTIFICATION_EMAIL` through Resend when `RESEND_API_KEY` and `EMAIL_FROM` are configured. Database creation remains successful if email delivery fails.
 
 ## Legal Acceptance and Safe Account Deactivation
@@ -114,9 +135,14 @@ Use only one deployment trigger per environment. If Render dashboard auto-deploy
 ## Phase 11 - Payments and QR Token Top-Up
 
 - `GET /api/v1/payments/packages` returns active server-controlled token packages.
-- `POST /api/v1/payments/invoices` creates a 15-minute QR invoice. The client sends only `tokenPackageId` and a UUID `clientRequestKey`; price and token quantities are snapshotted from the database.
+- `POST /api/v1/payments/invoices` creates a 15-minute mock invoice. The client selects `paymentMethod: QR` or `OTP`; OTP also sends `paymentPhone`. Price and token quantities are snapshotted from the database.
 - `GET /api/v1/payments/invoices` and `GET /api/v1/payments/invoices/:id` expose only the authenticated user's invoices and lazily mark overdue pending invoices as `EXPIRED`.
 - `POST /api/v1/payments/mock/invoices/:id/pay` simulates a successful provider payment only when `MOCK_PAYMENT_ENABLED=true`. It must remain disabled in production.
+- OTP invoices include a five-minute mock challenge. Use `POST /api/v1/payments/invoices/:id/otp/verify` to complete it, or `POST /api/v1/payments/invoices/:id/otp/resend` after the 60-second cooldown. A `mockOtp` is included in non-production responses for frontend testing; no SMS is sent.
+- The mock `/pay` endpoint is only for QR invoices; OTP invoices must be verified through the OTP endpoint.
+- `BANK_TRANSFER` creates a `PENDING_VERIFICATION` invoice with a unique `referenceCode` and returns configured bank details. Upload a PNG/JPG/PDF receipt (up to 5 MB) to `POST /api/v1/payments/invoices/:id/receipt`; receipts use the private `PAYMENT_RECEIPTS_BUCKET`.
+- Super admins review submitted receipts through `GET /api/v1/admin/payments/invoices?status=PENDING_VERIFICATION`. Approve credits the wallet exactly once; reject requires `notes`. Both decisions notify the user and are recorded in the admin audit log.
+- Configure `BANK_TRANSFER_BENEFICIARY_NAME`, either `BANK_TRANSFER_ACCOUNT_NUMBER` or `BANK_TRANSFER_IBAN`, and `BANK_TRANSFER_BANK_NAME`. The receipt bucket must exist in Supabase Storage and remain private.
 - `POST /api/v1/payments/webhooks/mock` verifies an HMAC SHA-256 signature using `MOCK_PAYMENT_WEBHOOK_SECRET` and does not use user JWT authentication.
 - A successful exact-amount webhook creates the provider transaction, locks and credits the wallet, writes one immutable `TOKEN_TOP_UP` ledger entry, creates an in-app notification, and marks the invoice `PAID` in one database transaction.
 - Duplicate create requests, duplicate provider transaction IDs, repeated paid-invoice webhooks, and concurrent wallet updates are protected by database constraints, row locks, and idempotency checks.
@@ -128,9 +154,12 @@ Local/staging mock configuration:
 ```env
 MOCK_PAYMENT_ENABLED=true
 MOCK_PAYMENT_WEBHOOK_SECRET=replace_with_a_long_random_environment_secret
+MOCK_PAYMENT_OTP_TEST_PHONE=+970599000000
+MOCK_PAYMENT_OTP_TEST_CODE=123456
+MOCK_PAYMENT_PRODUCTION_OTP_TEST_ENABLED=false
 ```
 
-Never enable mock payment confirmation in a real production environment.
+Render OTP testing can be enabled for the account registered with +970599000000. Set MOCK_PAYMENT_ENABLED=true and MOCK_PAYMENT_PRODUCTION_OTP_TEST_ENABLED=true, and keep the webhook secret private. Enter OTP 123456 in the client; the API does not return the code in production. QR mock confirmation and the public mock webhook remain disabled in production. Turn off the test flag after testing.
 
 ## Phase 10 - Ratings, Trust Score, and Badges
 
@@ -268,7 +297,7 @@ Implemented the authentication and user management foundation using phone number
 - Added OTP request and verification flow
 - Added OTP expiration and maximum attempt protection
 - Added secure OTP hashing using bcrypt
-- Added phone verification for users
+- Added account verification for users
 - Added automatic user creation after successful OTP verification
 - Added automatic wallet creation for new users
 - Added JWT access token generation
@@ -471,16 +500,17 @@ Wallet and Token Ledger are ready to be used internally by upcoming modules such
 
 ## Authentication Testing OTP & Password Recovery
 
-Authentication supports a fixed six-digit OTP for explicitly allowlisted test
-phone numbers. Configure it only in controlled development or staging testing:
+Authentication supports a fixed six-digit OTP for one explicit test email.
+Configure both values only in controlled non-production environments:
 
 ```env
-OTP_FIXED_CODE=000000
-OTP_TEST_PHONES=0590000000
+TEST_OTP_EMAIL=test-user@example.com
+TEST_OTP_CODE=000000
 ```
 
-Phone-verification and password-reset OTP records are separated by purpose, so
-a registration OTP cannot be reused to reset a password.
+Registration, password-reset, and reactivation OTP records are separated by
+purpose, so a code cannot be reused across flows. Production startup rejects
+fixed OTP configuration.
 
 Password recovery endpoints:
 
@@ -493,5 +523,88 @@ Successful password reset replaces the previous bcrypt password hash, consumes
 the reset OTP, and revokes all active refresh tokens for the account. The user
 must log in again with the new password.
 
-Do not enable a fixed OTP for real user phone numbers in production. A real
-SMS/WhatsApp provider is still required before production authentication.
+Password reset and account reactivation requests continue to accept phone, but
+codes are delivered only to the verified email already stored on the account.
+Legacy users without verified email receive the same generic response and need
+the future Add/Verify Email recovery path or support. Configure Resend with
+`RESEND_API_KEY` and `EMAIL_FROM`; never place provider secrets in source control.
+
+## Wallet summary and activity (BE-PAY-04)
+
+GET /api/v1/wallet returns tokenBalance, totalTokensPurchased and totalTokensSpent.
+Purchased tokens include completed TOKEN_TOP_UP package bonuses, but exclude signup
+bonuses, refunds and admin credits. Spent tokens are gross debits (errand posting,
+trip posting, acceptance and admin debits); refunds do not subtract from that total.
+
+GET /api/v1/wallet/transactions supports skip, take, transactionType and status.
+Statuses: SUCCESS, PENDING, PENDING_VERIFICATION, FAILED, EXPIRED.
+Filters combine with AND and pagination.total counts matching items only.
+The feed combines committed ledger entries (source=WALLET_TRANSACTION,
+status=SUCCESS) and unpaid invoices (source=PAYMENT_INVOICE). Paid invoices
+appear only through their ledger entry, so a purchase is never listed twice.
+Unpaid invoices have null balanceBefore/balanceAfter and never affect totals.
+Use paymentInvoiceId to open invoice details and rejectionNotes to display a
+bank-transfer rejection. Unknown filters and invalid enum values return 400.
+
+Example: /api/v1/wallet/transactions?transactionType=TOKEN_TOP_UP&status=FAILED&skip=0&take=20
+
+Expired bank transfers without a receipt are refreshed when invoice details,
+invoice lists or wallet activity are requested. Transfers with an uploaded receipt
+remain pending manual review after their upload deadline.
+
+Validation commands:
+
+- Unit/API tests: node node_modules/jest/bin/jest.js --runInBand --testPathIgnorePatterns="wallet.concurrency.test.js|trips.repository.test.js|wallet.activity.integration.test.js"
+- Local database tests: npm test -- --runInBand tests/wallet.concurrency.test.js tests/wallet.activity.integration.test.js tests/trips.repository.test.js
+  The database tests require TEST_DATABASE_URL pointing to a running local wallet_test
+  PostgreSQL database with the current migrations applied.
+
+### Supabase storage authentication
+Set SUPABASE_SECRET_KEY to a server-only sb_secret_ key. Identity documents,
+profile images and payment receipts send this key using the apikey header only.
+The explicit secret takes precedence over SUPABASE_SERVICE_ROLE_KEY.
+When no secret is set, a legacy service_role JWT is accepted as a fallback.
+Publishable/anon keys and malformed credentials fail with 503 before any request.
+Restart the backend after changing environment variables. Keep identity-verifications
+and payment-receipts private. Do not place server keys in frontend configuration.
+
+## Identity verification lifecycle
+
+The frontend retains the chosen front ID, back ID and selfie until final submission.
+POST /api/v1/users/me/identity-verification accepts all three files together using
+idFrontImage, idBackImage and selfieImage. Each is required, max 5 MB, JPEG/PNG/WebP.
+There is no server-side draft-upload endpoint or automatic face matching.
+
+A complete submission stores private bucket files and a PENDING_REVIEW record.
+Approval marks the user VERIFIED, retains documents and sends an Arabic notification.
+Rejection requires a 3-500-character reason, records the decision, notifies the user
+with the reason and queues document deletion in the same database transaction.
+A rejected user may submit a new request; the rejected history is retained.
+
+GET /api/v1/admin/verifications accepts status=ALL (default), PENDING_REVIEW,
+VERIFIED, REJECTED or UNVERIFIED; search matches name or phone; skip/take paginate.
+The response includes statistics with total and each status count. Statistics respect
+search but ignore the selected status and page. pagination.total respects all filters.
+Each item exposes documentCount=3 (submitted count), availableDocumentCount,
+documentsStatus=AVAILABLE|PENDING_DELETION|DELETED and documentsDeletedAt.
+Rejected details return documents=null immediately, even before background deletion.
+Other details return signed URLs valid for 300 seconds. Frontend refreshes them
+by requesting details again. No 72-hour review deadline is guaranteed by the API.
+
+Apply migration 20260930010000_identity_document_cleanup before deploying this code.
+It also queues document deletion for existing rejected requests.
+The server starts a durable cleanup worker every minute (20 tasks per batch).
+Storage failures retry after a ten-minute lease, with no terminal retry limit.
+The request history is preserved; paths are nulled and documentsDeletedAt set only
+after all deletions succeed. Storage DELETE 404 is treated as already deleted.
+
+Upload cleanup intentions are recorded before uploading, with a one-hour grace period.
+Successful submission cancels its intention atomically with saving the request.
+Failed submissions attempt immediate removal and retain the durable intention to
+handle crashes, storage outages or uploads whose responses were lost. Failed immediate
+removals make the task eligible immediately. Supabase requests time out after 30 seconds.
+Keep the backend worker running and the identity bucket private. Cleanup progress
+depends on storage/database availability; it does not promise immediate deletion.
+
+Verification commands:
+node node_modules/jest/bin/jest.js --runInBand tests/identity.api.test.js tests/identity.repository.test.js tests/identity-submission.test.js tests/identity-cleanup.test.js tests/admin-verifications.test.js tests/supabase-storage.test.js

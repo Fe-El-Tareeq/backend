@@ -1,5 +1,6 @@
 const ApiError = require("../../utils/ApiError");
 const walletService = require("../wallet/wallet.service");
+const { isAccountVerifiedForAccess } = require("../auth/accountVerification");
 const repository = require("./errands.repository");
 const {
   ERRAND_POST_TOKEN_COST,
@@ -7,7 +8,10 @@ const {
   calculatePriorityScore,
   calculateExpiresAt,
 } = require("./errands.rules");
-const { findCityByKey } = require("../locations/locations.catalog");
+const {
+  getAreaKeysForZone,
+  isAreaInZone,
+} = require("../locations/locations.catalog");
 
 const EDITABLE_STATUSES = ["OPEN"];
 const CANCELLABLE_STATUSES = ["OPEN"];
@@ -143,8 +147,8 @@ const assertRequesterCanPost = (requester) => {
     throw new ApiError(404, "Requester not found.");
   }
 
-  if (!requester.phoneVerifiedAt) {
-    throw new ApiError(403, "Phone number is not verified.");
+  if (!isAccountVerifiedForAccess(requester)) {
+    throw new ApiError(403, "Account email is not verified.");
   }
 
   if (!requester.profileCompleted || !requester.neighborhoodId) {
@@ -293,6 +297,9 @@ const createErrand = async (requesterId, payload) => {
 
 const buildListWhere = async (user, filters) => {
   const where = {};
+  const originZoneKey = filters.originZoneKey || filters.originCity;
+  const destinationZoneKey =
+    filters.destinationZoneKey || filters.destinationCity;
 
   if (filters.mine) {
     if (!user)
@@ -310,13 +317,25 @@ const buildListWhere = async (user, filters) => {
     where.neighborhoodId = originNeighborhoodId;
   }
 
-  if (filters.originCity) {
+  if (originZoneKey && originNeighborhoodId) {
+    const neighborhood = await repository.findActiveNeighborhoodById(
+      originNeighborhoodId,
+    );
+    if (!neighborhood) {
+      throw new ApiError(400, "Origin neighborhood is missing, inactive, or invalid.");
+    }
+    if (!isAreaInZone(neighborhood.key, originZoneKey)) {
+      throw new ApiError(400, "Origin neighborhood does not belong to the requested zone.");
+    }
+  }
+
+  if (originZoneKey) {
     where.neighborhood = {
-      governorate: findCityByKey(filters.originCity).nameAr,
+      key: { in: getAreaKeysForZone(originZoneKey) },
     };
   }
 
-  if (!originNeighborhoodId && !filters.originCity && user && !filters.mine) {
+  if (!originNeighborhoodId && !originZoneKey && user && !filters.mine) {
     const requester = await repository.findRequesterForPosting(user.id);
     if (requester?.neighborhoodId) {
       where.neighborhoodId = requester.neighborhoodId;
@@ -327,15 +346,27 @@ const buildListWhere = async (user, filters) => {
     where.destinationNeighborhoodId = filters.destinationNeighborhoodId;
   }
 
-  if (filters.destinationCity) {
+  if (destinationZoneKey && filters.destinationNeighborhoodId) {
+    const neighborhood = await repository.findActiveNeighborhoodById(
+      filters.destinationNeighborhoodId,
+    );
+    if (!neighborhood) {
+      throw new ApiError(400, "Destination neighborhood is missing, inactive, or invalid.");
+    }
+    if (!isAreaInZone(neighborhood.key, destinationZoneKey)) {
+      throw new ApiError(400, "Destination neighborhood does not belong to the requested zone.");
+    }
+  }
+
+  if (destinationZoneKey) {
     where.destinationNeighborhood = {
-      governorate: findCityByKey(filters.destinationCity).nameAr,
+      key: { in: getAreaKeysForZone(destinationZoneKey) },
     };
   }
 
   if (filters.status) {
     where.status = filters.status;
-  } else {
+  } else if (!filters.mine) {
     where.status = "OPEN";
     where.expiresAt = {
       gt: new Date(),
@@ -359,9 +390,10 @@ const listErrands = async (user, filters) => {
   const where = await buildListWhere(user, filters);
   const { skip, take } = filters;
 
-  const [errands, total] = await Promise.all([
+  const [errands, total, summary] = await Promise.all([
     repository.listErrands({ where, skip, take }),
     repository.countErrands(where),
+    filters.mine ? repository.summarizeUserErrands(user.id) : null,
   ]);
 
   return {
@@ -371,6 +403,7 @@ const listErrands = async (user, filters) => {
       take,
       total,
     },
+    ...(summary ? { summary } : {}),
   };
 };
 
@@ -470,10 +503,82 @@ const cancelErrand = async (userId, id, cancellationReason) => {
   });
 };
 
+const TRACKING_STAGES = Object.freeze([
+  { stage: 1, key: "PUBLISHED", labelAr: "تم نشر الطلب" },
+  { stage: 2, key: "ACCEPTED", labelAr: "تم قبول العرض" },
+  { stage: 3, key: "IN_TRANSIT", labelAr: "في الطريق" },
+  { stage: 4, key: "DELIVERED", labelAr: "تم التسليم" },
+]);
+
+const TRACKING_PROGRESS = Object.freeze({ 1: 25, 2: 50, 3: 67, 4: 100 });
+
+const trackingStageFor = (errand, assignment) => {
+  if (errand.status === "COMPLETED" || assignment?.status === "COMPLETED") {
+    return 4;
+  }
+  if (["PICKED_UP", "IN_TRANSIT"].includes(assignment?.status)) return 3;
+  if (assignment?.status === "ACCEPTED") return 2;
+  return 1;
+};
+
+const reachedAtForStage = (stage, errand, assignment) => {
+  if (stage === 1) return errand.createdAt;
+  if (stage === 2) return assignment?.acceptedAt || null;
+  if (stage === 3) return assignment?.pickedUpAt || assignment?.inTransitAt || null;
+  if (stage === 4) return assignment?.completedAt || null;
+  return null;
+};
+
+const getErrandTracking = async (userId, errandId) => {
+  const trackingData = await repository.findTrackingData(errandId);
+  if (!trackingData) throw new ApiError(404, "Errand not found.");
+  const { errand, assignment, ratings, completedTripsCount } = trackingData;
+  if (errand.requesterId !== userId) {
+    throw new ApiError(403, "Only the requester can track this errand.");
+  }
+
+  const currentStage = trackingStageFor(errand, assignment);
+  const averageRating = ratings?._avg.ratingStars;
+  return {
+    errandId: errand.id,
+    errandStatus: errand.status,
+    assignmentStatus: assignment?.status || null,
+    currentStage,
+    progressPercentage: TRACKING_PROGRESS[currentStage],
+    stages: TRACKING_STAGES.map((stage) => ({
+      ...stage,
+      completed: stage.stage <= currentStage,
+      reachedAt: reachedAtForStage(stage.stage, errand, assignment),
+    })),
+    estimatedDeliveryAt: assignment?.estimatedDeliveryAt || null,
+    isEstimatedTimeProvided: Boolean(assignment?.estimatedDeliveryAt),
+    cancelled: errand.status === "CANCELLED",
+    cancellationReason:
+      errand.status === "CANCELLED" ? errand.cancellationReason : null,
+    traveler: assignment
+      ? {
+          id: assignment.traveler.id,
+          fullName: assignment.traveler.fullName,
+          profileImageUrl: assignment.traveler.profileImageUrl,
+          averageRating:
+            averageRating === null || averageRating === undefined
+              ? null
+              : Math.round(Number(averageRating) * 100) / 100,
+          ratingCount: ratings?._count._all || 0,
+          completedTripsCount,
+          isVerified: assignment.traveler.isVerified,
+          joinedYear: assignment.traveler.createdAt.getUTCFullYear(),
+          acceptanceMessage: assignment.proposal?.message || null,
+        }
+      : null,
+  };
+};
+
 module.exports = {
   createErrand,
   listErrands,
   getErrandById,
   updateErrand,
   cancelErrand,
+  getErrandTracking,
 };

@@ -1,26 +1,25 @@
 const { createService } = require("../../utils/featureScaffold");
 const { FEATURE_NAME } = require("./locations.constants");
 const repository = require("./locations.repository");
-const { cities, findCityByKey } = require("./locations.catalog");
-const ApiError = require("../../utils/ApiError");
+const {
+  cities,
+  getAreaKeysForZone,
+  getZoneForArea,
+} = require("./locations.catalog");
 
 const scaffoldService = createService(FEATURE_NAME, repository);
 
 const listCities = () => cities;
 
-const listActiveNeighborhoods = async (cityKey) => {
-  if (!cityKey) {
-    return repository.findActiveNeighborhoods();
-  }
+const listActiveNeighborhoods = async (zoneKey) => {
+  const neighborhoods = await repository.findActiveNeighborhoods(
+    zoneKey ? { areaKeys: getAreaKeysForZone(zoneKey) } : undefined,
+  );
 
-  const city = findCityByKey(cityKey);
-  if (!city) {
-    throw new ApiError(400, "Unsupported city.");
-  }
-
-  return repository.findActiveNeighborhoods({
-    governorate: city.nameAr,
-  });
+  return neighborhoods.map((neighborhood) => ({
+    ...neighborhood,
+    zoneKey: getZoneForArea(neighborhood.key)?.key || null,
+  }));
 };
 
 module.exports = {

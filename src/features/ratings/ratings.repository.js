@@ -4,6 +4,7 @@ const safeUserSelect = {
   fullName: true,
   profileImageUrl: true,
   trustScore: true,
+  isVerified: true,
 };
 const ratingInclude = {
   reviewer: { select: safeUserSelect },
@@ -121,6 +122,7 @@ const findUserSummary = (userId, client = prisma) =>
       id: true,
       fullName: true,
       trustScore: true,
+      isVerified: true,
       userBadges: {
         select: {
           awardedAt: true,

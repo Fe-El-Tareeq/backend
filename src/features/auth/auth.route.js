@@ -13,7 +13,9 @@ const {
   resetPasswordSchema,
   cancelDeletionRequestSchema,
   cancelDeletionConfirmSchema,
+  changePasswordSchema,
 } = require("./auth.validation");
+const { requireAuth } = require("../../middleware/auth.middleware");
 
 const router = express.Router();
 
@@ -63,6 +65,13 @@ router.post(
   "/reset-password",
   validate(resetPasswordSchema),
   authController.resetPassword,
+);
+
+router.post(
+  "/change-password",
+  requireAuth,
+  validate(changePasswordSchema),
+  authController.changePassword,
 );
 
 router.post(

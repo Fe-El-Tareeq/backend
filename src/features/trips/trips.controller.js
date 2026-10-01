@@ -48,6 +48,27 @@ const getTripById = async (req, res, next) => {
   }
 };
 
+const getTripChecklist = async (req, res, next) => {
+  try {
+    const checklist = await service.getTripChecklist(
+      req.user.id,
+      req.validatedData.params.id,
+    );
+
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          "Trip checklist retrieved successfully.",
+          checklist,
+        ),
+      );
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Updates an active trip owned by the authenticated traveler.
 const updateTrip = async (req, res, next) => {
   try {
@@ -85,6 +106,7 @@ module.exports = {
   createTrip,
   getTrips,
   getTripById,
+  getTripChecklist,
   updateTrip,
   cancelTrip,
 };

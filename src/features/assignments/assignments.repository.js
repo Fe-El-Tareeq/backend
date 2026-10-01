@@ -2,7 +2,7 @@ const prisma = require("../../config/prisma");
 const { ACTIVE_ASSIGNMENT_STATUSES } = require("./assignments.constants");
 
 const areaSelect = { id: true, key: true, name: true, governorate: true };
-const safeUserSelect = { id: true, fullName: true, trustScore: true, profileImageUrl: true };
+const safeUserSelect = { id: true, fullName: true, trustScore: true, profileImageUrl: true, isVerified: true };
 
 const assignmentInclude = {
   errand: {

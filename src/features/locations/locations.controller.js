@@ -21,9 +21,8 @@ const listCities = async (req, res, next) => {
 
 const listActiveNeighborhoods = async (req, res, next) => {
   try {
-    const neighborhoods = await service.listActiveNeighborhoods(
-      req.validatedData.query.city,
-    );
+    const { zoneKey, city } = req.validatedData.query;
+    const neighborhoods = await service.listActiveNeighborhoods(zoneKey || city);
 
     return res.status(200).json(
       new ApiResponse(200, "Active neighborhoods retrieved successfully", {

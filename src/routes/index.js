@@ -1,6 +1,7 @@
 const express = require("express");
 
 const adminRoutes = require("../features/admin/admin.route");
+const adminAuthRoutes = require("../features/adminAuth/adminAuth.route");
 const assignmentsRoutes = require("../features/assignments/assignments.route");
 const authRoutes = require("../features/auth/auth.route");
 const chatRoutes = require("../features/chat/chat.route");
@@ -23,6 +24,7 @@ const legalRoutes = require("../features/legal/legal.route");
 const router = express.Router();
 
 router.use("/", proposalInboxRoutes);
+router.use("/admin/auth", adminAuthRoutes);
 router.use("/admin", adminRoutes);
 router.use("/assignments", assignmentsRoutes);
 router.use("/auth", authRoutes);

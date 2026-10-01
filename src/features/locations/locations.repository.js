@@ -4,14 +4,14 @@ const { FEATURE_NAME } = require("./locations.constants");
 
 const scaffoldRepository = createRepository(FEATURE_NAME);
 
-const findActiveNeighborhoods = async ({ governorate } = {}) => {
+const findActiveNeighborhoods = async ({ areaKeys } = {}) => {
   return prisma.neighborhood.findMany({
     where: {
       isActive: true,
       key: {
         not: null,
       },
-      ...(governorate ? { governorate } : {}),
+      ...(areaKeys ? { key: { in: areaKeys } } : {}),
     },
     select: {
       id: true,

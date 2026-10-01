@@ -13,6 +13,19 @@ const VALID_LIST_STATUSES = new Set([
   "READ",
 ]);
 
+const NOTIFICATION_TYPES_BY_TAB = Object.freeze({
+  all: null,
+  unread: null,
+  trips: [NOTIFICATION_TYPES.NEW_TRIP_IN_AREA],
+  errands: [
+    NOTIFICATION_TYPES.NEW_PROPOSAL,
+    NOTIFICATION_TYPES.ASSIGNMENT_ACCEPTED,
+    NOTIFICATION_TYPES.ASSIGNMENT_STATUS_CHANGED,
+    NOTIFICATION_TYPES.ASSIGNMENT_CANCELLED,
+  ],
+  messages: [NOTIFICATION_TYPES.NEW_CHAT_MESSAGE],
+});
+
 const serializeNotification = (notification) => ({
   id: notification.id,
   type: notification.notificationType,
@@ -77,18 +90,35 @@ const createInAppNotification = async (
   }
 };
 
-const list = async (userId, { skip = 0, take = 20, status } = {}) => {
+const list = async (
+  userId,
+  { skip = 0, take = 20, status, tab = "all" } = {},
+) => {
   if (status && !VALID_LIST_STATUSES.has(status)) {
     throw new ApiError(400, "Notification status filter is not supported.");
   }
 
-  const [notifications, total] = await Promise.all([
-    repository.listForUser({ userId, skip, take, status }),
-    repository.countForUser({ userId, status }),
+  const effectiveStatus = tab === "unread" ? "UNREAD" : status;
+  const notificationTypes = NOTIFICATION_TYPES_BY_TAB[tab];
+  const [notifications, total, allUnreadCount] = await Promise.all([
+    repository.listForUser({
+      userId,
+      skip,
+      take,
+      status: effectiveStatus,
+      notificationTypes,
+    }),
+    repository.countForUser({
+      userId,
+      status: effectiveStatus,
+      notificationTypes,
+    }),
+    repository.countUnreadForUser(userId),
   ]);
 
   return {
     notifications: notifications.map(serializeNotification),
+    unreadCount: allUnreadCount,
     pagination: { skip, take, total },
   };
 };
@@ -120,15 +150,22 @@ const markAllRead = async (userId) => {
 };
 
 const assignmentAccepted = (
-  { requesterId, errandId, assignmentId, tripId },
+  {
+    recipientId,
+    errandId,
+    assignmentId,
+    tripId,
+    title = "Errand accepted",
+    message = "A traveler accepted your errand.",
+  },
   client,
 ) =>
   createInAppNotification(
     {
-      userId: requesterId,
+      userId: recipientId,
       type: NOTIFICATION_TYPES.ASSIGNMENT_ACCEPTED,
-      title: "Errand accepted",
-      message: "A traveler accepted your errand.",
+      title,
+      message,
       errandId,
       assignmentId,
       metadata: { tripId },
@@ -138,7 +175,7 @@ const assignmentAccepted = (
   );
 
 const assignmentStatusChanged = (
-  { userId, errandId, assignmentId, status, actorUserId },
+  { userId, errandId, assignmentId, tripId, status, actorUserId },
   client,
 ) =>
   createInAppNotification(
@@ -149,7 +186,7 @@ const assignmentStatusChanged = (
       message: `Assignment status changed to ${status}.`,
       errandId,
       assignmentId,
-      metadata: { status, actorUserId },
+      metadata: { tripId, status, actorUserId },
       idempotencyKey: `assignment-status:${assignmentId}:${status}`,
     },
     client,
@@ -237,6 +274,55 @@ const paymentFailure = ({ userId, invoiceId, reason }, client) =>
     client,
   );
 
+const bankTransferRejected = ({ userId, invoiceId, rejectionNotes }, client) =>
+  createInAppNotification(
+    {
+      userId,
+      type: NOTIFICATION_TYPES.PAYMENT_FAILURE,
+      title: "Bank transfer needs attention",
+      message: rejectionNotes
+        ? "Your bank transfer was rejected: " + rejectionNotes
+        : "Your bank transfer could not be verified.",
+      metadata: { invoiceId, rejectionNotes },
+      idempotencyKey: "bank-transfer-rejected:" + invoiceId,
+    },
+    client,
+  );
+
+const identityVerificationApproved = ({ userId, verificationId }, client) =>
+  createInAppNotification(
+    {
+      userId,
+      type: NOTIFICATION_TYPES.IDENTITY_VERIFICATION_APPROVED,
+      title: "تم توثيق الهوية",
+      message:
+        "تم توثيق هويتك بنجاح. يمكنك الآن إنشاء رحلة، مع استيفاء باقي شروط النشر.",
+      metadata: { verificationId, verificationStatus: "VERIFIED" },
+      idempotencyKey: `identity-verification-approved:${verificationId}`,
+    },
+    client,
+  );
+
+const identityVerificationRejected = (
+  { userId, verificationId, rejectionReason },
+  client,
+) =>
+  createInAppNotification(
+    {
+      userId,
+      type: NOTIFICATION_TYPES.IDENTITY_VERIFICATION_REJECTED,
+      title: "تم رفض طلب توثيق الهوية",
+      message: `تم رفض طلب توثيق هويتك بسبب: ${rejectionReason}. يرجى إعادة المحاولة بصور جديدة.`,
+      metadata: {
+        verificationId,
+        verificationStatus: "REJECTED",
+        rejectionReason,
+      },
+      idempotencyKey: `identity-verification-rejected:${verificationId}`,
+    },
+    client,
+  );
+
 module.exports = {
   createInAppNotification,
   list,
@@ -251,6 +337,9 @@ module.exports = {
     newProposal,
     paymentFailure,
     paymentSuccess,
+    bankTransferRejected,
+    identityVerificationApproved,
+    identityVerificationRejected,
   },
   unreadCount,
 };

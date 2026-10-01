@@ -1,4 +1,8 @@
 const { z } = require("zod");
+const {
+  zoneKeySchema,
+  addAliasConflictIssue,
+} = require("../locations/locations.validation");
 
 const {
   MIN_DEPARTURE_LEAD_MINUTES,
@@ -231,9 +235,22 @@ const listTripsSchema = z.object({
 
   query: z
     .object({
+      originZoneKey: zoneKeySchema.optional(),
+      originCity: zoneKeySchema.optional(),
+      originNeighborhoodId: z
+        .string()
+        .uuid("Origin neighborhood ID must be a valid UUID.")
+        .optional(),
       neighborhoodId: z
         .string()
         .uuid("Neighborhood ID must be a valid UUID.")
+        .optional(),
+
+      destinationZoneKey: zoneKeySchema.optional(),
+      destinationCity: zoneKeySchema.optional(),
+      destinationNeighborhoodId: z
+        .string()
+        .uuid("Destination neighborhood ID must be a valid UUID.")
         .optional(),
 
       destinationKeyword: z
@@ -284,6 +301,8 @@ const listTripsSchema = z.object({
         .default(20),
     })
     .superRefine((data, ctx) => {
+      addAliasConflictIssue(data, ctx, "originZoneKey", "originCity");
+      addAliasConflictIssue(data, ctx, "destinationZoneKey", "destinationCity");
       if (
         data.departureFrom &&
         data.departureTo &&

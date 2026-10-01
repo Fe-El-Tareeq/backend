@@ -19,6 +19,7 @@ jest.mock("../src/middleware/auth.middleware", () => ({
 
     next();
   },
+  requireAdmin: (req, res, next) => next(),
 }));
 
 const app = require("../src/app");

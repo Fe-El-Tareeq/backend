@@ -3,6 +3,10 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || "postgresql://test";
 jest.mock("../src/config/env", () => ({
   mockPaymentEnabled: true,
   mockPaymentWebhookSecret: "phase-11-test-webhook-secret",
+  mockPaymentOtpTestPhone: "+970599000000",
+  mockPaymentOtpTestCode: "123456",
+  mockPaymentProductionOtpTestEnabled: false,
+  nodeEnv: "test",
 }));
 jest.mock("../src/config/prisma", () => ({ $transaction: jest.fn() }));
 jest.mock("../src/features/payments/payments.repository");
@@ -57,6 +61,8 @@ const invoice = {
 beforeEach(() => {
   jest.clearAllMocks();
   env.mockPaymentEnabled = true;
+  env.mockPaymentProductionOtpTestEnabled = false;
+  env.nodeEnv = "test";
   prisma.$transaction.mockImplementation((callback) => callback(tx));
   notificationService.templates.paymentSuccess.mockResolvedValue({});
   notificationService.templates.paymentFailure.mockResolvedValue({});
@@ -78,6 +84,109 @@ test("lists active packages with totals and NIS currency", async () => {
   await expect(service.listPackages()).resolves.toEqual([
     expect.objectContaining({ totalTokens: 28, priceNis: 12, currency: "NIS" }),
   ]);
+});
+
+test("creates OTP invoices for the test phone with the fixed demo code", async () => {
+  repository.findInvoiceByClientRequestKey.mockResolvedValue(null);
+  repository.findActivePackageById.mockResolvedValue(tokenPackage);
+  repository.createInvoice.mockImplementation(async (data) => ({
+    ...invoice,
+    ...data,
+    tokenPackage,
+  }));
+
+  const result = await service.createInvoice(userId, {
+    tokenPackageId: packageId,
+    clientRequestKey: requestKey,
+    paymentMethod: "OTP",
+    paymentPhone: "0599000000",
+  });
+
+  expect(result.created).toBe(true);
+  expect(result.mockOtp).toBe("123456");
+  expect(repository.createInvoice).toHaveBeenCalledWith(
+    expect.objectContaining({
+      paymentMethod: "OTP",
+      paymentPhone: "0599000000",
+      otpHash: expect.any(String),
+      otpAttempts: 0,
+    }),
+  );
+  expect(repository.createInvoice.mock.calls[0][0].otpHash).not.toBe("123456");
+});
+
+test("fixed OTP verifies the invoice and credits the wallet once", async () => {
+  const crypto = require("crypto");
+  const otpInvoice = {
+    ...invoice,
+    paymentMethod: "OTP",
+    paymentPhone: "0599000000",
+    otpHash: crypto.createHmac("sha256", env.mockPaymentWebhookSecret)
+      .update(`${invoiceId}:123456`).digest("hex"),
+    otpExpiresAt: new Date(Date.now() + 5 * 60 * 1000),
+    otpAttempts: 0,
+  };
+  repository.expirePendingInvoiceById.mockResolvedValue({ count: 0 });
+  repository.findInvoiceByIdForUser.mockResolvedValue(otpInvoice);
+  repository.incrementOtpAttempts.mockResolvedValue({ count: 1 });
+  repository.lockInvoiceByProviderInvoiceId.mockResolvedValue({ id: invoiceId });
+  repository.findInvoiceByProviderInvoiceId.mockResolvedValue(otpInvoice);
+  repository.findPaymentTransactionByProviderId.mockResolvedValue(null);
+  repository.createPaymentTransaction.mockResolvedValue({});
+  walletService.credit.mockResolvedValue({ id: "ledger-otp-1" });
+  repository.updateInvoice.mockResolvedValue({ ...otpInvoice, status: "PAID", paidAt: new Date() });
+
+  await expect(service.verifyMockPaymentOtp(userId, invoiceId, "000000"))
+    .rejects.toMatchObject({ statusCode: 401 });
+  expect(prisma.$transaction).not.toHaveBeenCalled();
+
+  const result = await service.verifyMockPaymentOtp(userId, invoiceId, "123456");
+  expect(result.reason).toBe("PAYMENT_COMPLETED");
+  expect(walletService.credit).toHaveBeenCalledTimes(1);
+  expect(walletService.credit).toHaveBeenCalledWith(expect.objectContaining({
+    userId, amount: 28, paymentInvoiceId: invoiceId,
+  }));
+  expect(repository.updateInvoice).toHaveBeenCalledWith(invoiceId,
+    expect.objectContaining({ status: "PAID", otpVerifiedAt: expect.any(Date) }), tx);
+});
+
+test("production OTP is limited to the registered test account and hides the code", async () => {
+  env.nodeEnv = "production";
+  env.mockPaymentProductionOtpTestEnabled = true;
+  repository.findUserPhoneById.mockResolvedValue({ phone: "+970599000000" });
+  repository.findInvoiceByClientRequestKey.mockResolvedValue(null);
+  repository.findActivePackageById.mockResolvedValue(tokenPackage);
+  repository.createInvoice.mockImplementation(async (data) => ({
+    ...invoice,
+    ...data,
+    tokenPackage,
+  }));
+
+  const result = await service.createInvoice(userId, {
+    tokenPackageId: packageId,
+    clientRequestKey: requestKey,
+    paymentMethod: "OTP",
+    paymentPhone: "0599000000",
+  });
+
+  expect(result.mockOtp).toBeUndefined();
+  expect(repository.createInvoice).toHaveBeenCalled();
+  await expect(
+    service.createInvoice(userId, {
+      tokenPackageId: packageId,
+      clientRequestKey: requestKey,
+      paymentMethod: "OTP",
+      paymentPhone: "+970599111111",
+    }),
+  ).rejects.toMatchObject({ statusCode: 404 });
+});
+
+test("production public mock webhook remains disabled", async () => {
+  env.nodeEnv = "production";
+  await expect(
+    service.processMockWebhook({}, "bad-signature"),
+  ).rejects.toMatchObject({ statusCode: 404 });
+  expect(prisma.$transaction).not.toHaveBeenCalled();
 });
 
 test("creates an immutable package snapshot and mock QR invoice", async () => {
@@ -169,6 +278,28 @@ test("a valid signed webhook credits the wallet and pays the invoice atomically"
       invoiceId,
       totalTokens: 28,
     },
+    tx,
+  );
+});
+
+test("payment notification failure rejects the top-up transaction", async () => {
+  const provider = new MockPaymentProvider("phase-11-test-webhook-secret");
+  const { payload, signature } = provider.createSuccessfulWebhook(invoice);
+  repository.lockInvoiceByProviderInvoiceId.mockResolvedValue({ id: invoiceId });
+  repository.findInvoiceByProviderInvoiceId.mockResolvedValue(invoice);
+  repository.findPaymentTransactionByProviderId.mockResolvedValue(null);
+  repository.createPaymentTransaction.mockResolvedValue({});
+  walletService.credit.mockResolvedValue({ id: "wallet-transaction" });
+  notificationService.templates.paymentSuccess.mockRejectedValue(
+    new Error("notification write failed"),
+  );
+
+  await expect(service.processMockWebhook(payload, signature)).rejects.toThrow(
+    "notification write failed",
+  );
+  expect(repository.updateInvoice).not.toHaveBeenCalledWith(
+    invoiceId,
+    expect.objectContaining({ status: "PAID" }),
     tx,
   );
 });

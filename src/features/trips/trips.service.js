@@ -1,7 +1,12 @@
 const ApiError = require("../../utils/ApiError");
+const { isAccountVerifiedForAccess } = require("../auth/accountVerification");
 
 const repository = require("./trips.repository");
 const deliveryPricingService = require("../deliveryPricing/deliveryPricing.service");
+const {
+  getAreaKeysForZone,
+  isAreaInZone,
+} = require("../locations/locations.catalog");
 
 const {
   MIN_DEPARTURE_LEAD_MINUTES,
@@ -22,6 +27,83 @@ const calculateExpiresAt = (expectedReturnTime) => {
   return new Date(expectedReturnTime);
 };
 
+const PICKED_UP_ASSIGNMENT_STATUSES = new Set([
+  "PICKED_UP",
+  "IN_TRANSIT",
+  "COMPLETED",
+]);
+
+const checklistStateForAssignment = (status) => ({
+  pickedUp: PICKED_UP_ASSIGNMENT_STATUSES.has(status),
+  delivered: status === "COMPLETED",
+});
+
+const compareByNameThenId = (left, right) =>
+  left.name.localeCompare(right.name) || left.id.localeCompare(right.id);
+
+const buildTripChecklist = (trip) => {
+  const categoryGroups = new Map();
+  let completed = 0;
+  let total = 0;
+
+  for (const assignment of trip.assignments) {
+    const state = checklistStateForAssignment(assignment.status);
+    const isCancelled = assignment.status === "CANCELLED";
+
+    for (const item of assignment.errand.items) {
+      if (!isCancelled) {
+        total += 1;
+        if (state.delivered) completed += 1;
+      }
+
+      if (!categoryGroups.has(item.category.id)) {
+        categoryGroups.set(item.category.id, {
+          category: { ...item.category },
+          items: [],
+        });
+      }
+
+      categoryGroups.get(item.category.id).items.push({
+        itemId: item.id,
+        name: item.name,
+        description: item.description,
+        quantity: item.quantity,
+        size: item.size,
+        isUrgent: item.isUrgent,
+        itemNote: item.itemNote,
+        errandId: assignment.errand.id,
+        assignmentId: assignment.id,
+        ...state,
+        status: assignment.status,
+      });
+    }
+  }
+
+  const categories = [...categoryGroups.values()]
+    .sort((left, right) =>
+      compareByNameThenId(left.category, right.category),
+    )
+    .map((group) => ({
+      ...group,
+      items: group.items.sort((left, right) =>
+        compareByNameThenId(
+          { name: left.name, id: left.itemId },
+          { name: right.name, id: right.itemId },
+        ),
+      ),
+    }));
+
+  return {
+    tripId: trip.id,
+    progress: {
+      completed,
+      total,
+      percentage: total === 0 ? 0 : Math.round((completed / total) * 100),
+    },
+    categories,
+  };
+};
+
 // Checks that the traveler can create trips.
 const validateTravelerForPosting = (traveler) => {
   if (!traveler) {
@@ -32,10 +114,20 @@ const validateTravelerForPosting = (traveler) => {
     throw new ApiError(403, "User is not active.");
   }
 
-  if (!traveler.phoneVerifiedAt) {
+  if (traveler.verificationStatus !== "VERIFIED") {
+    const error = new ApiError(
+      403,
+      "Identity verification is required before publishing a trip.",
+    );
+    error.code = "IDENTITY_VERIFICATION_REQUIRED";
+    error.verificationStatus = traveler.verificationStatus || "UNVERIFIED";
+    throw error;
+  }
+
+  if (!isAccountVerifiedForAccess(traveler)) {
     throw new ApiError(
       403,
-      "Phone number must be verified before creating a trip.",
+      "Account email must be verified before creating a trip.",
     );
   }
 
@@ -164,7 +256,9 @@ const createTrip = async (travelerId, data) => {
 // Returns a paginated list of trips.
 const getTrips = async (userId, filters = {}) => {
   const {
+    originNeighborhoodId,
     neighborhoodId,
+    destinationNeighborhoodId,
     destinationKeyword,
     status,
     departureFrom,
@@ -173,10 +267,39 @@ const getTrips = async (userId, filters = {}) => {
     skip = 0,
     take = 20,
   } = filters;
+  const resolvedOriginNeighborhoodId = originNeighborhoodId || neighborhoodId;
+  const originZoneKey = filters.originZoneKey || filters.originCity;
+  const destinationZoneKey =
+    filters.destinationZoneKey || filters.destinationCity;
+
+  const assertNeighborhoodInZone = async (neighborhoodIdToCheck, zoneKey, label) => {
+    if (!neighborhoodIdToCheck || !zoneKey) return;
+    const neighborhood = await repository.findActiveNeighborhoodById(
+      neighborhoodIdToCheck,
+    );
+    if (!neighborhood) {
+      throw new ApiError(400, `${label} neighborhood is missing, inactive, or invalid.`);
+    }
+    if (!isAreaInZone(neighborhood.key, zoneKey)) {
+      throw new ApiError(400, `${label} neighborhood does not belong to the requested zone.`);
+    }
+  };
+
+  await Promise.all([
+    assertNeighborhoodInZone(resolvedOriginNeighborhoodId, originZoneKey, "Origin"),
+    assertNeighborhoodInZone(destinationNeighborhoodId, destinationZoneKey, "Destination"),
+  ]);
 
   const query = {
     userId,
-    neighborhoodId,
+    originNeighborhoodId: resolvedOriginNeighborhoodId,
+    originAreaKeys: originZoneKey
+      ? getAreaKeysForZone(originZoneKey)
+      : undefined,
+    destinationNeighborhoodId,
+    destinationAreaKeys: destinationZoneKey
+      ? getAreaKeysForZone(destinationZoneKey)
+      : undefined,
     destinationKeyword,
     status,
     departureFrom,
@@ -186,9 +309,10 @@ const getTrips = async (userId, filters = {}) => {
     take,
   };
 
-  const [trips, total] = await Promise.all([
+  const [trips, total, summary] = await Promise.all([
     repository.listTrips(query),
     repository.countTrips(query),
+    mine ? repository.summarizeUserTrips(userId) : null,
   ]);
 
   return {
@@ -198,6 +322,7 @@ const getTrips = async (userId, filters = {}) => {
       take,
       total,
     },
+    ...(summary ? { summary } : {}),
   };
 };
 
@@ -210,6 +335,20 @@ const getTripById = async (tripId) => {
   }
 
   return trip;
+};
+
+const getTripChecklist = async (userId, tripId) => {
+  const trip = await repository.findChecklistById(tripId);
+
+  if (!trip) {
+    throw new ApiError(404, "Trip not found.");
+  }
+
+  if (trip.travelerId !== userId) {
+    throw new ApiError(403, "Only the trip owner can view its checklist.");
+  }
+
+  return buildTripChecklist(trip);
 };
 
 // Verifies ownership and whether the trip can still be managed.
@@ -336,6 +475,7 @@ module.exports = {
   createTrip,
   getTrips,
   getTripById,
+  getTripChecklist,
   updateTrip,
   cancelTrip,
 };

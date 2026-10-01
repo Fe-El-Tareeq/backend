@@ -24,6 +24,13 @@ const registerSchema = z.object({
       .min(8, "Phone number is too short")
       .max(20, "Phone number is too long"),
 
+    email: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .email("Email address must be valid")
+      .max(254, "Email address is too long"),
+
     password: passwordSchema,
 
     neighborhoodId: z.string().uuid("Neighborhood ID must be a valid UUID."),
@@ -31,7 +38,7 @@ const registerSchema = z.object({
     termsAccepted: z.literal(true, {
       message: "Terms and privacy policy must be accepted.",
     }),
-  }),
+  }).strict(),
 });
 
 const loginSchema = z.object({
@@ -47,15 +54,15 @@ const loginSchema = z.object({
 });
 
 const phoneSchema = z.object({
-  body: z.object({
-    phone: z
-      .string()
-      .trim()
-      .min(8, "Phone number is too short")
-      .max(20, "Phone number is too long"),
-
-    channel: z.enum(["SMS", "WHATSAPP"]).optional(),
-  }),
+  body: z
+    .object({
+      phone: z
+        .string()
+        .trim()
+        .min(8, "Phone number is too short")
+        .max(20, "Phone number is too long"),
+    })
+    .strict(),
 });
 
 const verifyOtpSchema = z.object({
@@ -87,7 +94,6 @@ const forgotPasswordSchema = z.object({
         .trim()
         .min(8, "Phone number is too short")
         .max(20, "Phone number is too long"),
-      channel: z.enum(["SMS", "WHATSAPP"]).optional(),
     })
     .strict(),
   params: z.object({}),
@@ -113,6 +119,23 @@ const resetPasswordSchema = z.object({
   query: z.object({}),
 });
 
+const changePasswordSchema = z.object({
+  body: z
+    .object({
+      currentPassword: z.string().min(1, "Current password is required"),
+      newPassword: passwordSchema,
+      confirmNewPassword: z.string().min(1, "Password confirmation is required"),
+      refreshToken: z.string().min(1, "Current refresh token is required"),
+    })
+    .strict()
+    .refine((data) => data.newPassword === data.confirmNewPassword, {
+      path: ["confirmNewPassword"],
+      message: "Password confirmation does not match",
+    }),
+  params: z.object({}).strict(),
+  query: z.object({}).strict(),
+});
+
 const cancelDeletionRequestSchema = phoneSchema;
 
 const cancelDeletionConfirmSchema = z.object({
@@ -136,6 +159,7 @@ module.exports = {
   refreshTokenSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  changePasswordSchema,
   cancelDeletionRequestSchema,
   cancelDeletionConfirmSchema,
 };

@@ -120,7 +120,147 @@ const createLedgerEntry = async (data, client) => {
   });
 };
 
+const getWalletTotals = async (walletId, client = prisma) => {
+  const groups = await client.walletTransaction.groupBy({
+    by: ["transactionType"],
+    where: { walletId },
+    _sum: { tokenAmount: true },
+  });
+  const debitTypes = new Set([
+    "ERRAND_POST_DEBIT",
+    "TRIP_POST_DEBIT",
+    "ERRAND_ACCEPT_DEBIT",
+    "ADMIN_DEBIT",
+  ]);
+  return groups.reduce(
+    (totals, group) => {
+      const amount = group._sum.tokenAmount || 0;
+      if (group.transactionType === "TOKEN_TOP_UP")
+        totals.totalTokensPurchased += amount;
+      if (debitTypes.has(group.transactionType))
+        totals.totalTokensSpent += amount;
+      return totals;
+    },
+    { totalTokensPurchased: 0, totalTokensSpent: 0 },
+  );
+};
+
+// A paid invoice is represented by its ledger entry only. Other invoices
+// describe attempted top-ups and must never contribute to balances or totals.
+const getWalletActivity = async (
+  userId,
+  walletId,
+  options = {},
+  client = prisma,
+) => {
+  const { skip = 0, take = 20, status, transactionType } = options;
+  return client.$transaction(
+    async (db) => {
+      const {
+        expirePendingInvoicesForUser,
+      } = require("../payments/payments.repository");
+      await expirePendingInvoicesForUser(userId, new Date(), db);
+      const includeLedger = !status || status === "SUCCESS";
+      const includeInvoices =
+        status !== "SUCCESS" &&
+        (!transactionType || transactionType === "TOKEN_TOP_UP");
+      const ledgerWhere = {
+        walletId,
+        ...(transactionType ? { transactionType } : {}),
+      };
+      const invoiceWhere = {
+        userId,
+        status: status || {
+          in: ["PENDING", "PENDING_VERIFICATION", "FAILED", "EXPIRED"],
+        },
+      };
+      const orderBy = [{ createdAt: "desc" }, { id: "desc" }];
+      const [ledger, invoices, ledgerCount, invoiceCount] = await Promise.all([
+        includeLedger
+          ? db.walletTransaction.findMany({
+              where: ledgerWhere,
+              orderBy,
+              take: skip + take,
+              select: {
+                id: true,
+                transactionType: true,
+                tokenAmount: true,
+                balanceBefore: true,
+                balanceAfter: true,
+                referenceType: true,
+                referenceId: true,
+                idempotencyKey: true,
+                description: true,
+                createdAt: true,
+                paymentInvoiceId: true,
+              },
+            })
+          : [],
+        includeInvoices
+          ? db.paymentInvoice.findMany({
+              where: invoiceWhere,
+              orderBy,
+              take: skip + take,
+              select: {
+                id: true,
+                status: true,
+                totalTokens: true,
+                createdAt: true,
+                paymentMethod: true,
+                referenceCode: true,
+                rejectionNotes: true,
+              },
+            })
+          : [],
+        includeLedger ? db.walletTransaction.count({ where: ledgerWhere }) : 0,
+        includeInvoices ? db.paymentInvoice.count({ where: invoiceWhere }) : 0,
+      ]);
+      const rows = [
+        ...ledger.map((row) => ({
+          ...row,
+          status: "SUCCESS",
+          source: "WALLET_TRANSACTION",
+        })),
+        ...invoices.map((row) => ({
+          id: row.id,
+          transactionType: "TOKEN_TOP_UP",
+          tokenAmount: row.totalTokens,
+          balanceBefore: null,
+          balanceAfter: null,
+          referenceType: "PAYMENT_INVOICE",
+          referenceId: row.id,
+          paymentInvoiceId: row.id,
+          idempotencyKey: null,
+          description: null,
+          createdAt: row.createdAt,
+          status: row.status,
+          source: "PAYMENT_INVOICE",
+          paymentMethod: row.paymentMethod,
+          referenceCode: row.referenceCode,
+          rejectionNotes: row.rejectionNotes,
+        })),
+      ];
+      rows.sort(
+        (a, b) =>
+          new Date(b.createdAt) - new Date(a.createdAt) ||
+          (a.id < b.id
+            ? 1
+            : a.id > b.id
+              ? -1
+              : a.source.localeCompare(b.source)),
+      );
+      return {
+        transactions: rows.slice(skip, skip + take),
+        pagination: { skip, take, total: ledgerCount + invoiceCount },
+      };
+    },
+    { isolationLevel: "RepeatableRead" },
+  );
+};
+
 module.exports = {
+  getWalletTotals,
+  getWalletActivity,
   findWalletByUserId,
   findTransactionsByWalletId,
   countTransactionsByWalletId,

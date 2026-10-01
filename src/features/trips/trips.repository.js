@@ -5,6 +5,12 @@ const runTransaction = async (callback) => {
   return prisma.$transaction(callback);
 };
 
+const findActiveNeighborhoodById = async (neighborhoodId, client = prisma) =>
+  client.neighborhood.findFirst({
+    where: { id: neighborhoodId, isActive: true, key: { not: null } },
+    select: { id: true, key: true, name: true, governorate: true },
+  });
+
 // Returns the traveler information required before creating a trip.
 const findTravelerForPosting = async (travelerId, client = prisma) => {
   return client.user.findUnique({
@@ -14,9 +20,12 @@ const findTravelerForPosting = async (travelerId, client = prisma) => {
     select: {
       id: true,
       phone: true,
+      email: true,
+      emailVerifiedAt: true,
       phoneVerifiedAt: true,
       profileCompleted: true,
       status: true,
+      verificationStatus: true,
       neighborhoodId: true,
       neighborhood: {
         select: {
@@ -80,6 +89,7 @@ const createTrip = async (data, client = prisma) => {
           id: true,
           fullName: true,
           trustScore: true,
+          isVerified: true,
         },
       },
     },
@@ -108,6 +118,48 @@ const findById = async (tripId, client = prisma) => {
           id: true,
           fullName: true,
           trustScore: true,
+          isVerified: true,
+        },
+      },
+    },
+  });
+};
+
+const findChecklistById = async (tripId, client = prisma) => {
+  return client.trip.findUnique({
+    where: { id: tripId },
+    select: {
+      id: true,
+      travelerId: true,
+      assignments: {
+        orderBy: [{ acceptedAt: "asc" }, { id: "asc" }],
+        select: {
+          id: true,
+          status: true,
+          errand: {
+            select: {
+              id: true,
+              items: {
+                orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+                select: {
+                  id: true,
+                  name: true,
+                  description: true,
+                  quantity: true,
+                  size: true,
+                  isUrgent: true,
+                  itemNote: true,
+                  category: {
+                    select: {
+                      id: true,
+                      name: true,
+                      icon: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -117,7 +169,10 @@ const findById = async (tripId, client = prisma) => {
 // Builds the query used for listing trips.
 const buildListWhere = ({
   userId,
-  neighborhoodId,
+  originNeighborhoodId,
+  originAreaKeys,
+  destinationNeighborhoodId,
+  destinationAreaKeys,
   destinationKeyword,
   status,
   departureFrom,
@@ -131,8 +186,20 @@ const buildListWhere = ({
     where.travelerId = userId;
   }
 
-  if (neighborhoodId) {
-    where.neighborhoodId = neighborhoodId;
+  if (originNeighborhoodId) {
+    where.neighborhoodId = originNeighborhoodId;
+  }
+
+  if (originAreaKeys) {
+    where.neighborhood = { key: { in: originAreaKeys } };
+  }
+
+  if (destinationNeighborhoodId) {
+    where.destinationNeighborhoodId = destinationNeighborhoodId;
+  }
+
+  if (destinationAreaKeys) {
+    where.destinationNeighborhood = { key: { in: destinationAreaKeys } };
   }
 
   if (destinationKeyword) {
@@ -144,7 +211,7 @@ const buildListWhere = ({
 
   if (status) {
     where.status = status;
-  } else {
+  } else if (!mine) {
     // By default, only active future trips are returned.
     where.status = "ACTIVE";
     where.expiresAt = {
@@ -171,7 +238,10 @@ const buildListWhere = ({
 const listTrips = async (
   {
     userId,
-    neighborhoodId,
+    originNeighborhoodId,
+    originAreaKeys,
+    destinationNeighborhoodId,
+    destinationAreaKeys,
     destinationKeyword,
     status,
     departureFrom,
@@ -184,7 +254,10 @@ const listTrips = async (
 ) => {
   const where = buildListWhere({
     userId,
-    neighborhoodId,
+    originNeighborhoodId,
+    originAreaKeys,
+    destinationNeighborhoodId,
+    destinationAreaKeys,
     destinationKeyword,
     status,
     departureFrom,
@@ -220,6 +293,7 @@ const listTrips = async (
           id: true,
           fullName: true,
           trustScore: true,
+          isVerified: true,
         },
       },
     },
@@ -230,7 +304,10 @@ const listTrips = async (
 const countTrips = async (
   {
     userId,
-    neighborhoodId,
+    originNeighborhoodId,
+    originAreaKeys,
+    destinationNeighborhoodId,
+    destinationAreaKeys,
     destinationKeyword,
     status,
     departureFrom,
@@ -241,7 +318,10 @@ const countTrips = async (
 ) => {
   const where = buildListWhere({
     userId,
-    neighborhoodId,
+    originNeighborhoodId,
+    originAreaKeys,
+    destinationNeighborhoodId,
+    destinationAreaKeys,
     destinationKeyword,
     status,
     departureFrom,
@@ -252,6 +332,36 @@ const countTrips = async (
   return client.trip.count({
     where,
   });
+};
+
+const summarizeUserTrips = async (travelerId, client = prisma) => {
+  const [groups, receivedRequestsCount, acceptedRequestsCount] =
+    await Promise.all([
+      client.trip.groupBy({
+        by: ["status"],
+        where: { travelerId },
+        _count: { _all: true },
+      }),
+      client.proposal.count({
+        where: { trip: { travelerId }, type: "REQUESTER_REQUEST" },
+      }),
+      client.proposal.count({
+        where: {
+          trip: { travelerId },
+          type: "REQUESTER_REQUEST",
+          status: "ACCEPTED",
+        },
+      }),
+    ]);
+  const counts = Object.fromEntries(groups.map((row) => [row.status, row._count._all]));
+  return {
+    totalTrips: groups.reduce((sum, row) => sum + row._count._all, 0),
+    activeTrips: counts.ACTIVE || 0,
+    completedTrips: counts.COMPLETED || 0,
+    cancelledTrips: (counts.CANCELLED || 0) + (counts.EXPIRED || 0),
+    receivedRequestsCount,
+    acceptedRequestsCount,
+  };
 };
 
 // Updates an existing trip.
@@ -274,6 +384,7 @@ const updateTrip = async (tripId, data, client = prisma) => {
           id: true,
           fullName: true,
           trustScore: true,
+          isVerified: true,
         },
       },
     },
@@ -290,11 +401,15 @@ const hasAcceptedAssignment = async (tripId, client = prisma) => {
 };
 
 module.exports = {
+  buildListWhere,
   runTransaction,
+  findActiveNeighborhoodById,
   findTravelerForPosting,
   findByTravelerAndClientKey,
   createTrip,
+  summarizeUserTrips,
   findById,
+  findChecklistById,
   listTrips,
   countTrips,
   updateTrip,

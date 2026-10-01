@@ -6,6 +6,7 @@ const userSelect = {
   fullName: true,
   trustScore: true,
   profileImageUrl: true,
+  isVerified: true,
   _count: { select: { assignments: { where: { status: "COMPLETED" } } } },
 };
 const proposalInclude = {

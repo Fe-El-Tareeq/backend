@@ -1,4 +1,13 @@
 const swaggerJSDoc = require("swagger-jsdoc");
+const { zoneKeys } = require("../features/locations/locations.catalog");
+
+const zoneKeySchema = {
+  type: "string",
+  enum: zoneKeys,
+  description: "Stable application geographic zone identifier.",
+};
+
+const zoneKeyReference = { $ref: "#/components/schemas/ZoneKey" };
 
 const apiResponse = (dataSchema, example) => ({
   type: "object",
@@ -137,7 +146,12 @@ const swaggerDefinition = {
     {
       name: "Authentication",
       description:
-        "Password registration/login, phone verification OTP, access-token refresh, and logout.",
+        "Phone/password login, email-delivered verification and recovery OTPs, access-token refresh, and logout.",
+    },
+    {
+      name: "Admin Authentication",
+      description:
+        "Password-only authentication for the single configured dashboard administrator.",
     },
     {
       name: "Users",
@@ -312,6 +326,7 @@ const swaggerDefinition = {
         required: [
           "fullName",
           "phone",
+          "email",
           "password",
           "neighborhoodId",
           "termsAccepted",
@@ -331,6 +346,13 @@ const swaggerDefinition = {
             description:
               "Dedicated frontend test phone. Use the exact local format shown; phone values are not normalized automatically.",
             example: "0599000000",
+          },
+          email: {
+            type: "string",
+            format: "email",
+            maxLength: 254,
+            description: "Trimmed and lowercased before persistence.",
+            example: "test-user@example.com",
           },
           password: {
             type: "string",
@@ -377,23 +399,77 @@ const swaggerDefinition = {
           },
         },
       },
+      AdminLoginRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["phone", "password"],
+        properties: {
+          phone: {
+            type: "string",
+            minLength: 8,
+            maxLength: 20,
+            example: "0590000000",
+          },
+          password: {
+            type: "string",
+            format: "password",
+            minLength: 1,
+            example: "Example1!",
+          },
+        },
+      },
+      AdminRefreshTokenRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["refreshToken"],
+        properties: {
+          refreshToken: {
+            type: "string",
+            minLength: 1,
+            example: "<admin-refresh-token>",
+          },
+        },
+      },
+      AdminUserSummary: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "phone", "role"],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          phone: { type: "string", example: "0590000000" },
+          role: { type: "string", enum: ["SUPER_ADMIN"] },
+        },
+      },
+      AdminAuthTokens: {
+        type: "object",
+        required: [
+          "accessToken",
+          "refreshToken",
+          "tokenType",
+          "accessTokenExpiresIn",
+          "refreshTokenExpiresIn",
+        ],
+        properties: {
+          accessToken: { type: "string", description: "Opaque access JWT." },
+          refreshToken: {
+            type: "string",
+            description: "Opaque rotating refresh JWT.",
+          },
+          tokenType: { type: "string", enum: ["Bearer"] },
+          accessTokenExpiresIn: { type: "string", example: "15m" },
+          refreshTokenExpiresIn: { type: "string", example: "7d" },
+        },
+      },
       OtpRequest: {
         type: "object",
+        additionalProperties: false,
         required: ["phone"],
         properties: {
           phone: {
             type: "string",
             minLength: 8,
             maxLength: 20,
-            description:
-              "For frontend testing, 0599000000 receives the fixed code only when the server allowlist is configured.",
             example: "0599000000",
-          },
-          channel: {
-            type: "string",
-            enum: ["SMS", "WHATSAPP"],
-            default: "SMS",
-            example: "SMS",
           },
         },
       },
@@ -412,8 +488,6 @@ const swaggerDefinition = {
             minLength: 6,
             maxLength: 6,
             pattern: "^\\d{6}$",
-            description:
-              "Use 000000 only for the allowlisted frontend test phone 0599000000. Other phones require their generated OTP.",
             example: "000000",
           },
         },
@@ -495,8 +569,33 @@ const swaggerDefinition = {
             enum: ["ACTIVE", "SUSPENDED", "BANNED", "DEACTIVATED"],
             example: "ACTIVE",
           },
+          verificationStatus: {
+            type: "string",
+            enum: ["UNVERIFIED", "PENDING_REVIEW", "VERIFIED", "REJECTED"],
+          },
+          isVerified: { type: "boolean", example: false },
+          city: {
+            type: "object",
+            nullable: true,
+            properties: {
+              key: { type: "string", example: "GAZA_CITY" },
+              nameAr: { type: "string", example: "مدينة غزة" },
+              nameEn: { type: "string", example: "Gaza City" },
+            },
+          },
+          statistics: {
+            type: "object",
+            properties: {
+              publishedErrandsCount: { type: "integer", minimum: 0 },
+              tripsCount: { type: "integer", minimum: 0 },
+              averageRating: { type: "number", nullable: true },
+              ratingCount: { type: "integer", minimum: 0 },
+              tokenBalance: { type: "integer", minimum: 0 },
+            },
+          },
         },
       },
+      ZoneKey: zoneKeySchema,
       Neighborhood: {
         type: "object",
         required: ["id", "name", "governorate"],
@@ -506,7 +605,13 @@ const swaggerDefinition = {
             type: "string",
             example: "AN_NASER",
             description:
-              "Stable delivery-area key used by the pricing configuration.",
+              "Stable catalog local-area identifier bridging this DB neighborhood to gaza-areas.json.",
+          },
+          zoneKey: {
+            allOf: [zoneKeyReference],
+            nullable: true,
+            description:
+              "Stable application zone key derived from the geographic catalog.",
           },
           id: {
             type: "string",
@@ -515,11 +620,11 @@ const swaggerDefinition = {
           },
           name: {
             type: "string",
-            example: "Al-Bireh",
+            example: "Ash Shujaiyeh",
           },
           governorate: {
             type: "string",
-            example: "Ramallah and Al-Bireh",
+            example: "Gaza City",
           },
           isActive: {
             type: "boolean",
@@ -544,9 +649,10 @@ const swaggerDefinition = {
         required: ["key", "nameAr", "nameEn", "neighborhoodsCount"],
         properties: {
           key: {
-            type: "string",
+            ...zoneKeySchema,
             example: "GAZA_CITY",
-            description: "Stable city key used by the neighborhoods filter.",
+            description:
+              "Stable application zone key; the cities route name is retained for backward compatibility.",
           },
           nameAr: { type: "string", example: "مدينة غزة" },
           nameEn: { type: "string", example: "Gaza City" },
@@ -585,6 +691,13 @@ const swaggerDefinition = {
             type: "string",
             example: "+970599123456",
           },
+          email: {
+            type: "string",
+            format: "email",
+            nullable: true,
+            readOnly: true,
+            example: "test-user@example.com",
+          },
           fullName: {
             type: "string",
             nullable: true,
@@ -622,6 +735,12 @@ const swaggerDefinition = {
             format: "date-time",
             nullable: true,
             example: "2026-08-17T09:15:00.000Z",
+          },
+          emailVerifiedAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+            example: "2026-09-30T09:15:00.000Z",
           },
           status: {
             type: "string",
@@ -1531,6 +1650,20 @@ const swaggerDefinition = {
           },
         },
       },
+      EstimatedDeliveryTimeRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["estimatedDeliveryAt"],
+        properties: {
+          estimatedDeliveryAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+            description:
+              "Optional traveler-provided future delivery estimate. Send null to clear it.",
+          },
+        },
+      },
       AssignmentChatRoom: {
         type: "object",
         nullable: true,
@@ -1588,6 +1721,11 @@ const swaggerDefinition = {
           acceptedAt: { type: "string", format: "date-time" },
           pickedUpAt: { type: "string", format: "date-time", nullable: true },
           inTransitAt: { type: "string", format: "date-time", nullable: true },
+          estimatedDeliveryAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+          },
           completedAt: { type: "string", format: "date-time", nullable: true },
           cancelledAt: { type: "string", format: "date-time", nullable: true },
           cancelledByUserId: { type: "string", format: "uuid", nullable: true },
@@ -1631,6 +1769,270 @@ const swaggerDefinition = {
               total: { type: "integer", example: 1 },
             },
           },
+        },
+      },
+      ErrandTrackingStage: {
+        type: "object",
+        required: ["stage", "key", "labelAr", "completed", "reachedAt"],
+        properties: {
+          stage: { type: "integer", minimum: 1, maximum: 4 },
+          key: {
+            type: "string",
+            enum: ["PUBLISHED", "ACCEPTED", "IN_TRANSIT", "DELIVERED"],
+          },
+          labelAr: { type: "string" },
+          completed: { type: "boolean" },
+          reachedAt: { type: "string", format: "date-time", nullable: true },
+        },
+      },
+      ErrandTrackingTraveler: {
+        type: "object",
+        nullable: true,
+        properties: {
+          id: { type: "string", format: "uuid" },
+          fullName: { type: "string", nullable: true },
+          profileImageUrl: { type: "string", format: "uri", nullable: true },
+          averageRating: { type: "number", nullable: true, example: 4.75 },
+          ratingCount: { type: "integer", minimum: 0 },
+          completedTripsCount: { type: "integer", minimum: 0 },
+          isVerified: { type: "boolean" },
+          joinedYear: { type: "integer", example: 2024 },
+          acceptanceMessage: { type: "string", nullable: true },
+        },
+      },
+      ErrandTrackingData: {
+        type: "object",
+        required: [
+          "errandId",
+          "errandStatus",
+          "currentStage",
+          "progressPercentage",
+          "stages",
+          "isEstimatedTimeProvided",
+          "cancelled",
+        ],
+        properties: {
+          errandId: { type: "string", format: "uuid" },
+          errandStatus: { type: "string" },
+          assignmentStatus: { type: "string", nullable: true },
+          currentStage: { type: "integer", minimum: 1, maximum: 4 },
+          progressPercentage: { type: "integer", enum: [25, 50, 67, 100] },
+          stages: {
+            type: "array",
+            minItems: 4,
+            maxItems: 4,
+            items: { $ref: "#/components/schemas/ErrandTrackingStage" },
+          },
+          estimatedDeliveryAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+          },
+          isEstimatedTimeProvided: { type: "boolean" },
+          cancelled: { type: "boolean" },
+          cancellationReason: { type: "string", nullable: true },
+          traveler: { $ref: "#/components/schemas/ErrandTrackingTraveler" },
+        },
+      },
+      TripChecklistProgress: {
+        type: "object",
+        required: ["completed", "total", "percentage"],
+        properties: {
+          completed: {
+            type: "integer",
+            minimum: 0,
+            description: "Number of non-cancelled checklist items delivered.",
+          },
+          total: {
+            type: "integer",
+            minimum: 0,
+            description: "Number of non-cancelled checklist items.",
+          },
+          percentage: {
+            type: "integer",
+            minimum: 0,
+            maximum: 100,
+            description:
+              "Rounded delivered percentage; zero when total is zero.",
+          },
+        },
+      },
+      TripChecklistCategory: {
+        type: "object",
+        required: ["id", "name", "icon"],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          name: { type: "string" },
+          icon: { type: "string", nullable: true },
+        },
+      },
+      TripChecklistItem: {
+        type: "object",
+        required: [
+          "itemId",
+          "name",
+          "description",
+          "quantity",
+          "size",
+          "isUrgent",
+          "itemNote",
+          "errandId",
+          "assignmentId",
+          "pickedUp",
+          "delivered",
+          "status",
+        ],
+        properties: {
+          itemId: { type: "string", format: "uuid" },
+          name: { type: "string" },
+          description: { type: "string", nullable: true },
+          quantity: {
+            type: "integer",
+            minimum: 1,
+            description:
+              "Stored item quantity; one checklist row represents one ErrandItem.",
+          },
+          size: {
+            type: "string",
+            enum: ["ENVELOPE", "SMALL", "MEDIUM", "LARGE"],
+          },
+          isUrgent: { type: "boolean" },
+          itemNote: { type: "string", nullable: true },
+          errandId: { type: "string", format: "uuid" },
+          assignmentId: { type: "string", format: "uuid" },
+          pickedUp: {
+            type: "boolean",
+            description:
+              "True for PICKED_UP, IN_TRANSIT, and COMPLETED assignments.",
+          },
+          delivered: {
+            type: "boolean",
+            description: "True only for COMPLETED assignments.",
+          },
+          status: {
+            type: "string",
+            enum: [
+              "ACCEPTED",
+              "PICKED_UP",
+              "IN_TRANSIT",
+              "COMPLETED",
+              "CANCELLED",
+            ],
+            description:
+              "Assignment lifecycle status. Cancelled items remain visible and are excluded from progress.",
+          },
+        },
+      },
+      TripChecklistCategoryGroup: {
+        type: "object",
+        required: ["category", "items"],
+        properties: {
+          category: { $ref: "#/components/schemas/TripChecklistCategory" },
+          items: {
+            type: "array",
+            items: { $ref: "#/components/schemas/TripChecklistItem" },
+          },
+        },
+      },
+      TripChecklistData: {
+        type: "object",
+        required: ["tripId", "progress", "categories"],
+        properties: {
+          tripId: { type: "string", format: "uuid" },
+          progress: { $ref: "#/components/schemas/TripChecklistProgress" },
+          categories: {
+            type: "array",
+            items: {
+              $ref: "#/components/schemas/TripChecklistCategoryGroup",
+            },
+          },
+        },
+      },
+      Faq: {
+        type: "object",
+        required: ["id", "question", "answer"],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          question: { type: "string", maxLength: 300 },
+          answer: { type: "string", maxLength: 3000 },
+          isActive: { type: "boolean" },
+          displayOrder: { type: "integer", minimum: 0 },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+        },
+      },
+      SupportConfig: {
+        type: "object",
+        required: ["isAvailable", "phones", "email", "workingHours", "faqs"],
+        properties: {
+          isAvailable: { type: "boolean" },
+          availableAgents: { type: "integer", minimum: 0 },
+          averageResponseMinutes: { type: "integer", minimum: 0 },
+          phone: {
+            type: "string",
+            nullable: true,
+            description: "Compatibility alias for the first value in phones.",
+          },
+          phones: { type: "array", items: { type: "string" } },
+          email: { type: "string", format: "email" },
+          workingHours: {
+            type: "object",
+            required: ["days", "from", "to"],
+            properties: {
+              days: { type: "string" },
+              from: { type: "string", example: "09:00" },
+              to: { type: "string", example: "17:00" },
+            },
+          },
+          faqs: {
+            type: "array",
+            description: "Active FAQs only, ordered by displayOrder.",
+            items: { $ref: "#/components/schemas/Faq" },
+          },
+        },
+      },
+      SupportReportCreateRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["clientRequestKey", "type", "description"],
+        properties: {
+          clientRequestKey: { type: "string", format: "uuid" },
+          type: {
+            type: "string",
+            enum: [
+              "FRAUD_OR_SCAM",
+              "PROHIBITED_OR_DANGEROUS_ITEM",
+              "ABUSE_OR_THREAT",
+              "FAKE_ACCOUNT",
+              "FAILURE_TO_FULFILL",
+              "DAMAGED_OR_MISSING_ITEM",
+              "TECHNICAL_ISSUE",
+              "OTHER",
+            ],
+          },
+          description: { type: "string", minLength: 10, maxLength: 1500 },
+          reportedUserId: { type: "string", format: "uuid" },
+          assignmentId: { type: "string", format: "uuid" },
+          errandId: { type: "string", format: "uuid" },
+          tripId: { type: "string", format: "uuid" },
+          attachChatHistory: { type: "boolean", default: false },
+          chatRoomId: {
+            type: "string",
+            format: "uuid",
+            description: "Required only when attachChatHistory=true.",
+          },
+        },
+      },
+      SupportReportEvidence: {
+        type: "object",
+        description:
+          "Immutable last-50-message snapshot available only to the configured dashboard administrator.",
+        properties: {
+          id: { type: "string", format: "uuid" },
+          chatRoomId: { type: "string", format: "uuid", nullable: true },
+          messageCount: { type: "integer", minimum: 0, maximum: 50 },
+          snapshotTakenAt: { type: "string", format: "date-time" },
+          snapshot: { type: "object", additionalProperties: true },
         },
       },
       RatingCreateRequest: {
@@ -2190,7 +2592,15 @@ const swaggerDefinition = {
       },
       Wallet: {
         type: "object",
-        required: ["id", "userId", "tokenBalance", "createdAt", "updatedAt"],
+        required: [
+          "id",
+          "userId",
+          "tokenBalance",
+          "totalTokensPurchased",
+          "totalTokensSpent",
+          "createdAt",
+          "updatedAt",
+        ],
         properties: {
           id: {
             type: "string",
@@ -2201,6 +2611,18 @@ const swaggerDefinition = {
             type: "string",
             format: "uuid",
             example: "0f46f56f-32d1-4fd4-84d2-69bc2b077d8f",
+          },
+          totalTokensPurchased: {
+            type: "integer",
+            minimum: 0,
+            description:
+              "Completed TOKEN_TOP_UP tokens, including package bonuses; excludes signup bonuses, refunds and admin credits.",
+          },
+          totalTokensSpent: {
+            type: "integer",
+            minimum: 0,
+            description:
+              "Gross tokens debited for errands, trips, acceptance and admin debits; refunds do not reduce this total.",
           },
           tokenBalance: {
             type: "integer",
@@ -2234,6 +2656,29 @@ const swaggerDefinition = {
             format: "uuid",
             example: "17268c0e-0748-4108-a486-dce6d1da412e",
           },
+          status: {
+            type: "string",
+            enum: [
+              "SUCCESS",
+              "PENDING",
+              "PENDING_VERIFICATION",
+              "FAILED",
+              "EXPIRED",
+            ],
+            description:
+              "SUCCESS for committed ledger entries; otherwise the payment invoice status.",
+          },
+          source: {
+            type: "string",
+            enum: ["WALLET_TRANSACTION", "PAYMENT_INVOICE"],
+          },
+          paymentInvoiceId: { type: "string", format: "uuid", nullable: true },
+          rejectionNotes: { type: "string", nullable: true },
+          paymentMethod: {
+            type: "string",
+            enum: ["QR", "OTP", "BANK_TRANSFER"],
+          },
+          referenceCode: { type: "string", nullable: true },
           transactionType: {
             type: "string",
             enum: [
@@ -2254,10 +2699,12 @@ const swaggerDefinition = {
           },
           balanceBefore: {
             type: "integer",
+            nullable: true,
             example: 0,
           },
           balanceAfter: {
             type: "integer",
+            nullable: true,
             example: 3,
           },
           referenceType: {
@@ -2333,16 +2780,38 @@ const swaggerDefinition = {
           "totalTokens",
           "priceNis",
           "currency",
+          "discountPercentage",
+          "features",
+          "savingsText",
+          "hasSearchPriority",
         ],
         properties: {
           id: { type: "string", format: "uuid" },
-          name: { type: "string", example: "Standard" },
+          name: { type: "string", example: "المتوسطة" },
           tokenAmount: { type: "integer", example: 25 },
-          bonusTokens: { type: "integer", example: 3 },
-          totalTokens: { type: "integer", example: 28 },
-          priceNis: { type: "number", format: "double", example: 12 },
+          bonusTokens: { type: "integer", example: 0 },
+          totalTokens: { type: "integer", example: 25 },
+          priceNis: { type: "number", format: "double", example: 10 },
           currency: { type: "string", enum: ["NIS"] },
+          discountPercentage: { type: "integer", example: 20 },
+          features: {
+            type: "array",
+            items: { type: "string" },
+            example: ["خصم 20%"],
+          },
+          savingsText: { type: "string", example: "وفّر 2.5 ₪" },
+          hasSearchPriority: { type: "boolean", example: false },
           isActive: { type: "boolean", example: true },
+        },
+      },
+      BankTransferAccount: {
+        type: "object",
+        required: ["beneficiaryName", "bankName"],
+        properties: {
+          beneficiaryName: { type: "string" },
+          accountNumber: { type: "string", nullable: true },
+          iban: { type: "string", nullable: true },
+          bankName: { type: "string" },
         },
       },
       PaymentInvoice: {
@@ -2355,7 +2824,7 @@ const swaggerDefinition = {
           "amountNis",
           "currency",
           "paymentProvider",
-          "qrCodePayload",
+          "paymentMethod",
           "status",
           "createdAt",
           "expiresAt",
@@ -2375,7 +2844,33 @@ const swaggerDefinition = {
           totalTokens: { type: "integer", example: 28 },
           amountNis: { type: "number", format: "double", example: 12 },
           currency: { type: "string", enum: ["NIS"] },
-          paymentProvider: { type: "string", enum: ["MOCK", "JAWWAL_PAY"] },
+          paymentProvider: {
+            type: "string",
+            enum: ["MOCK", "JAWWAL_PAY", "BANK_TRANSFER"],
+          },
+          paymentMethod: {
+            type: "string",
+            enum: ["QR", "OTP", "BANK_TRANSFER"],
+          },
+          referenceCode: {
+            type: "string",
+            nullable: true,
+            example: "ORD-MT06H0QG-6D8F1A0B42",
+          },
+          hasTransferReceipt: { type: "boolean" },
+          rejectionNotes: { type: "string", nullable: true },
+          reviewedAt: { type: "string", format: "date-time", nullable: true },
+          paymentPhone: {
+            type: "string",
+            nullable: true,
+            description: "Masked phone number used by the OTP mock flow.",
+          },
+          otpExpiresAt: { type: "string", format: "date-time", nullable: true },
+          otpResendAvailableAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+          },
           providerInvoiceId: {
             type: "string",
             nullable: true,
@@ -2383,12 +2878,19 @@ const swaggerDefinition = {
           },
           qrCodePayload: {
             type: "string",
+            nullable: true,
             example: "feeltareeq://payments/mock?invoiceId=uuid",
           },
           paymentUrl: { type: "string", nullable: true },
           status: {
             type: "string",
-            enum: ["PENDING", "PAID", "FAILED", "EXPIRED"],
+            enum: [
+              "PENDING",
+              "PENDING_VERIFICATION",
+              "PAID",
+              "FAILED",
+              "EXPIRED",
+            ],
           },
           createdAt: { type: "string", format: "date-time" },
           expiresAt: { type: "string", format: "date-time" },
@@ -2452,18 +2954,29 @@ const swaggerDefinition = {
               "Unread in-app notifications are any records whose status is not READ. Mark-read is idempotent.",
           },
           isRead: { type: "boolean", example: false },
-          createdAt: { type: "string", format: "date-time" },
+          createdAt: {
+            type: "string",
+            format: "date-time",
+            description:
+              "Creation timestamp used by clients to group notifications as today, yesterday, or earlier in the user's local timezone.",
+          },
           readAt: { type: "string", format: "date-time", nullable: true },
           metadata: { $ref: "#/components/schemas/NotificationMetadata" },
         },
       },
       NotificationListData: {
         type: "object",
-        required: ["notifications", "pagination"],
+        required: ["notifications", "unreadCount", "pagination"],
         properties: {
           notifications: {
             type: "array",
             items: { $ref: "#/components/schemas/Notification" },
+          },
+          unreadCount: {
+            type: "integer",
+            minimum: 0,
+            description:
+              "All unread notifications for the user, independent of tab and pagination.",
           },
           pagination: {
             type: "object",
@@ -2572,7 +3085,7 @@ const swaggerDefinition = {
         },
         {
           success: true,
-          message: "Registration OTP sent successfully",
+          message: "Registration verification code sent successfully",
           data: {
             expiresInMinutes: 2,
           },
@@ -2594,6 +3107,28 @@ const swaggerDefinition = {
           },
         ],
       }),
+      AdminLoginResponse: apiResponse({
+        allOf: [
+          {
+            type: "object",
+            required: ["user"],
+            properties: {
+              user: { $ref: "#/components/schemas/AdminUserSummary" },
+            },
+          },
+          { $ref: "#/components/schemas/AdminAuthTokens" },
+        ],
+      }),
+      AdminRefreshResponse: apiResponse({
+        $ref: "#/components/schemas/AdminAuthTokens",
+      }),
+      AdminMeResponse: apiResponse({
+        type: "object",
+        required: ["user"],
+        properties: {
+          user: { $ref: "#/components/schemas/AdminUserSummary" },
+        },
+      }),
       OtpRequestResponse: apiResponse(
         {
           type: "object",
@@ -2607,7 +3142,7 @@ const swaggerDefinition = {
         },
         {
           success: true,
-          message: "OTP sent successfully",
+          message: "Verification code sent successfully",
           data: {
             expiresInMinutes: 2,
           },
@@ -2672,12 +3207,31 @@ const swaggerDefinition = {
       ErrandListResponse: apiResponse({
         $ref: "#/components/schemas/ErrandListData",
       }),
+      ErrandTrackingResponse: apiResponse({
+        type: "object",
+        required: ["tracking"],
+        properties: {
+          tracking: { $ref: "#/components/schemas/ErrandTrackingData" },
+        },
+      }),
       TripResponse: apiResponse({
         $ref: "#/components/schemas/Trip",
       }),
       TripListResponse: apiResponse({
         $ref: "#/components/schemas/TripListData",
       }),
+      TripChecklistResponse: apiResponse(
+        { $ref: "#/components/schemas/TripChecklistData" },
+        {
+          success: true,
+          message: "Trip checklist retrieved successfully.",
+          data: {
+            tripId: "880e8400-e29b-41d4-a716-446655440000",
+            progress: { completed: 0, total: 0, percentage: 0 },
+            categories: [],
+          },
+        },
+      ),
       MatchingTripsResponse: apiResponse({
         $ref: "#/components/schemas/MatchingTripsData",
       }),
@@ -2749,6 +3303,12 @@ const swaggerDefinition = {
         properties: {
           created: { type: "boolean" },
           invoice: { $ref: "#/components/schemas/PaymentInvoice" },
+          bankAccount: { $ref: "#/components/schemas/BankTransferAccount" },
+          mockOtp: {
+            type: "string",
+            description:
+              "Non-production mock code for completing the OTP flow.",
+          },
         },
       }),
       NotificationListResponse: apiResponse({
@@ -2815,9 +3375,9 @@ const swaggerDefinition = {
     "/api/v1/auth/register": {
       post: {
         tags: ["Authentication"],
-        summary: "Register and request phone verification",
+        summary: "Register and request email verification",
         description:
-          "Requires termsAccepted=true, snapshots the current terms and privacy versions, stores an expiring pending registration, and sends a phone verification OTP; it does not create a users row or issue tokens. The user, wallet, and legal acceptance are created atomically only after successful OTP verification. For frontend testing, the dedicated phone 0599000000 uses OTP 000000 only when OTP_FIXED_CODE and OTP_TEST_PHONES are configured on the running server. neighborhoodId must be selected from an existing active neighborhood returned by GET /api/v1/locations/neighborhoods. Passwords must be at least 8 characters and include one uppercase letter, one number, and one special character.",
+          "Requires a normalized email and termsAccepted=true, snapshots the current legal versions, stores an expiring pending registration, and sends an email verification code through Resend. No user row or tokens are created until phone plus OTP verification succeeds. The user, wallet, and legal acceptance are then created atomically. Phone remains the login identifier.",
         requestBody: {
           required: true,
           content: {
@@ -2874,6 +3434,7 @@ const swaggerDefinition = {
             },
           },
           409: errorResponse("A user with this phone already exists."),
+          503: errorResponse("Unable to deliver the verification code."),
           429: {
             $ref: "#/components/responses/TooManyRequests",
           },
@@ -2888,7 +3449,7 @@ const swaggerDefinition = {
         tags: ["Authentication"],
         summary: "Log in with phone and password",
         description:
-          "Authenticates a verified ACTIVE user with phone and password only. Normal login never accepts or requires OTP. OTP is used only for initial phone verification and password reset. Wrong phone, missing password support on a legacy user, and wrong password all return a generic invalid-credentials response. Users whose phoneVerifiedAt is null are rejected until initial OTP verification succeeds.",
+          "Authenticates with phone and password. Email-era users require emailVerifiedAt. As temporary migration compatibility, legacy users with no email may use their historical phoneVerifiedAt state. A user with an unverified email cannot use phoneVerifiedAt as a bypass.",
         requestBody: {
           required: true,
           content: {
@@ -2916,7 +3477,7 @@ const swaggerDefinition = {
           401: errorResponse("Invalid phone or password."),
           403: {
             description:
-              "Phone number is not verified, or the user is suspended or banned.",
+              "Account email is not verified, or the user is suspended or banned.",
             content: {
               "application/json": {
                 schema: {
@@ -2926,7 +3487,7 @@ const swaggerDefinition = {
                   unverified: {
                     value: {
                       success: false,
-                      message: "Phone number is not verified.",
+                      message: "Account email is not verified.",
                       errors: [],
                     },
                   },
@@ -2953,9 +3514,9 @@ const swaggerDefinition = {
     "/api/v1/auth/request-otp": {
       post: {
         tags: ["Authentication"],
-        summary: "Request a phone verification OTP",
+        summary: "Resend the registration email OTP",
         description:
-          "Creates a six-digit PHONE_VERIFICATION OTP for the provided phone number. It supports initial registration verification and is not part of normal login. For frontend testing, 0599000000 uses 000000 only when explicitly allowlisted by the running server. Request a new code after changing OTP environment settings because existing OTP rows keep their original hash. The code expires after two minutes and allows at most three attempts.",
+          "Resends a six-digit EMAIL_VERIFICATION code to the normalized email already stored with the pending phone registration. Clients cannot choose SMS or WhatsApp. A 60-second cooldown applies; after successful delivery, older usable registration codes are invalidated. The code expires after two minutes and allows at most three attempts.",
         requestBody: {
           required: true,
           content: {
@@ -2968,7 +3529,7 @@ const swaggerDefinition = {
         },
         responses: {
           200: {
-            description: "OTP created successfully.",
+            description: "Verification code delivered successfully.",
             content: {
               "application/json": {
                 schema: {
@@ -2983,6 +3544,7 @@ const swaggerDefinition = {
           429: {
             $ref: "#/components/responses/TooManyRequests",
           },
+          503: errorResponse("Unable to deliver the verification code."),
           500: {
             $ref: "#/components/responses/InternalServerError",
           },
@@ -2992,9 +3554,9 @@ const swaggerDefinition = {
     "/api/v1/auth/verify-otp": {
       post: {
         tags: ["Authentication"],
-        summary: "Verify phone OTP and receive tokens",
+        summary: "Verify registration email OTP and receive tokens",
         description:
-          "Verifies the latest PHONE_VERIFICATION OTP for initial account activation. For the allowlisted frontend test phone 0599000000, use 000000. On success, the backend atomically creates the user and wallet, records the legal acceptance for the terms and privacy versions captured during registration, marks the OTP used, and returns access and refresh tokens. If legal-version consent is missing or stale, verification is rejected and the transaction is rolled back. Later logins use phone and password without OTP.",
+          "Accepts phone plus OTP and verifies the latest EMAIL_VERIFICATION code bound to that phone's pending normalized email. Success atomically consumes the code, creates the user with emailVerifiedAt, creates the wallet, records legal acceptance, deletes pending registration, and returns tokens. It does not set phoneVerifiedAt.",
         requestBody: {
           required: true,
           content: {
@@ -3170,7 +3732,7 @@ const swaggerDefinition = {
         tags: ["Authentication"],
         summary: "Request a password-reset OTP",
         description:
-          "Creates a purpose-scoped PASSWORD_RESET OTP when the account exists. The response is intentionally identical for existing and missing accounts. For frontend testing, 0599000000 uses 000000 only when explicitly allowlisted through server environment configuration. This flow is separate from normal login.",
+          "Accepts phone and, only when the account has a verified email, sends a purpose-scoped PASSWORD_RESET code to that stored email. Existing, missing, legacy no-email, and ineligible accounts receive the same generic response; no full email or verification state is exposed.",
         requestBody: {
           required: true,
           content: {
@@ -3209,7 +3771,7 @@ const swaggerDefinition = {
         tags: ["Authentication"],
         summary: "Reset a password using a password-reset OTP",
         description:
-          "Validates the latest unused PASSWORD_RESET OTP for the same phone, replaces the stored bcrypt password hash, marks the OTP used, and revokes every active refresh token for the user. The allowlisted test phone 0599000000 uses 000000; after reset, the user logs in normally with phone and the new password without OTP.",
+          "Validates the latest unused PASSWORD_RESET code for the same phone and its current verified email, replaces the password hash, consumes the code, and revokes every active refresh token. Login remains phone plus the new password.",
         requestBody: {
           required: true,
           content: {
@@ -3250,12 +3812,60 @@ const swaggerDefinition = {
         },
       },
     },
+    "/api/v1/auth/change-password": {
+      post: {
+        tags: ["Authentication"],
+        summary: "Change current user's password",
+        description:
+          "Changes the password, keeps the supplied current refresh-token session active, and revokes every other active refresh token.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: [
+                  "currentPassword",
+                  "newPassword",
+                  "confirmNewPassword",
+                  "refreshToken",
+                ],
+                properties: {
+                  currentPassword: { type: "string", format: "password" },
+                  newPassword: {
+                    type: "string",
+                    format: "password",
+                    minLength: 8,
+                  },
+                  confirmNewPassword: { type: "string", format: "password" },
+                  refreshToken: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: "Password changed and other sessions revoked." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: errorResponse("Current password or refresh token is invalid."),
+        },
+      },
+    },
     "/api/v1/auth/cancel-deletion/request-otp": {
       post: {
         tags: ["Authentication"],
         summary: "Request an OTP to cancel scheduled account deletion",
         description:
-          "Returns a generic response. A purpose-scoped OTP is sent only when the account is deactivated and still inside its recovery window.",
+          "Accepts phone and always returns a generic response. A purpose-scoped code is emailed only when the account is deactivated, inside its recovery window, and already has a verified email. A replacement email is never accepted.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/OtpRequest" },
+            },
+          },
+        },
         responses: {
           200: { description: "Generic account recovery response." },
           400: { $ref: "#/components/responses/ValidationFailed" },
@@ -3267,7 +3877,7 @@ const swaggerDefinition = {
         tags: ["Authentication"],
         summary: "Cancel account deletion and reactivate the account",
         description:
-          "Requires the phone, current password, and a valid ACCOUNT_REACTIVATION OTP. It clears the deletion dates, restores ACTIVE status, and issues fresh tokens.",
+          "Requires phone, current password, and an ACCOUNT_REACTIVATION code delivered to the account's existing verified email. It clears deletion dates, restores ACTIVE status, and issues fresh tokens.",
         responses: {
           200: { description: "Account reactivated and fresh tokens issued." },
           400: errorResponse("Account recovery request is invalid or expired."),
@@ -3280,7 +3890,7 @@ const swaggerDefinition = {
         tags: ["Locations"],
         summary: "List supported cities",
         description:
-          "Returns the public city hierarchy used to populate the city selector before loading neighborhoods.",
+          "Returns the six supported application geographic zones. The route name is retained for compatibility; each stable key is the canonical zoneKey clients should store and use.",
         responses: {
           200: {
             description: "Supported cities retrieved successfully.",
@@ -3300,24 +3910,23 @@ const swaggerDefinition = {
         tags: ["Locations"],
         summary: "List active neighborhoods",
         description:
-          "Returns active seeded neighborhoods for registration. Optionally filters by a stable city key returned by GET /api/v1/locations/cities. This endpoint is public and excludes inactive neighborhoods.",
+          "Returns active DB-backed neighborhoods whose stable key bridges to the geographic catalog. Prefer zoneKey; city is a backward-compatible alias. Different values for both return 400.",
         parameters: [
+          {
+            name: "zoneKey",
+            in: "query",
+            required: false,
+            description:
+              "Canonical stable zone key returned by the cities endpoint.",
+            schema: zoneKeyReference,
+          },
           {
             name: "city",
             in: "query",
             required: false,
-            description: "Stable city key returned by the cities endpoint.",
-            schema: {
-              type: "string",
-              enum: [
-                "NORTH_GAZA",
-                "GAZA_CITY",
-                "MIDDLE_AREA",
-                "DEIR_AL_BALAH",
-                "KHAN_YUNIS",
-                "RAFAH",
-              ],
-            },
+            deprecated: true,
+            description: "Backward-compatible alias for zoneKey.",
+            schema: zoneKeyReference,
           },
         ],
         responses: {
@@ -3346,7 +3955,7 @@ const swaggerDefinition = {
         tags: ["Errands"],
         summary: "List neighborhood errands",
         description:
-          "Returns a paginated notice-board list with origin and destination filtering. When authenticated and no origin filter is supplied, the user's neighborhood is used. By default only non-expired OPEN errands are returned.",
+          "Returns errands using canonical zone keys and DB neighborhood IDs. Neighborhood keys bridge DB rows to the catalog. City parameters are backward-compatible aliases.",
         security: [
           {
             bearerAuth: [],
@@ -3365,20 +3974,18 @@ const swaggerDefinition = {
             description: "Legacy alias for originNeighborhoodId.",
           },
           {
+            name: "originZoneKey",
+            in: "query",
+            required: false,
+            schema: zoneKeyReference,
+          },
+          {
             name: "originCity",
             in: "query",
             required: false,
-            schema: {
-              type: "string",
-              enum: [
-                "NORTH_GAZA",
-                "GAZA_CITY",
-                "MIDDLE_AREA",
-                "DEIR_AL_BALAH",
-                "KHAN_YUNIS",
-                "RAFAH",
-              ],
-            },
+            schema: zoneKeyReference,
+            deprecated: true,
+            description: "Backward-compatible alias for originZoneKey.",
           },
           {
             name: "originNeighborhoodId",
@@ -3387,20 +3994,18 @@ const swaggerDefinition = {
             schema: { type: "string", format: "uuid" },
           },
           {
+            name: "destinationZoneKey",
+            in: "query",
+            required: false,
+            schema: zoneKeyReference,
+          },
+          {
             name: "destinationCity",
             in: "query",
             required: false,
-            schema: {
-              type: "string",
-              enum: [
-                "NORTH_GAZA",
-                "GAZA_CITY",
-                "MIDDLE_AREA",
-                "DEIR_AL_BALAH",
-                "KHAN_YUNIS",
-                "RAFAH",
-              ],
-            },
+            schema: zoneKeyReference,
+            deprecated: true,
+            description: "Backward-compatible alias for destinationZoneKey.",
           },
           {
             name: "destinationNeighborhoodId",
@@ -3416,6 +4021,14 @@ const swaggerDefinition = {
               type: "string",
               enum: ["OPEN", "MATCHED", "CANCELLED", "EXPIRED", "COMPLETED"],
             },
+          },
+          {
+            name: "mine",
+            in: "query",
+            required: false,
+            description:
+              "When true, returns the authenticated user's errands across all statuses unless status is supplied.",
+            schema: { type: "boolean", default: false },
           },
           {
             name: "categoryId",
@@ -3687,6 +4300,41 @@ const swaggerDefinition = {
         },
       },
     },
+    "/api/v1/errands/{id}/tracking": {
+      get: {
+        tags: ["Errands"],
+        summary: "Track my errand through four delivery stages",
+        description:
+          "Requester-only tracking timeline: published (25%), accepted (50%), in transit (67%), and delivered (100%). Includes the assigned traveler summary and traveler-provided optional ETA.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Errand tracking retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ErrandTrackingResponse",
+                },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Only the requester can track this errand."),
+          404: errorResponse("Errand not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
     "/api/v1/matching/errands/{id}": {
       get: rankedTripsForErrandOperation,
     },
@@ -3695,13 +4343,33 @@ const swaggerDefinition = {
         tags: ["Trips"],
         summary: "List trips",
         description:
-          "Returns a paginated list of trips. Authentication is required. By default, only active and non-expired trips are returned.",
+          "Returns trips using the same canonical zone keys and DB neighborhood IDs as errands. City parameters are backward-compatible aliases; destinationKeyword remains free text.",
         security: [
           {
             bearerAuth: [],
           },
         ],
         parameters: [
+          {
+            name: "originZoneKey",
+            in: "query",
+            required: false,
+            schema: zoneKeyReference,
+          },
+          {
+            name: "originCity",
+            in: "query",
+            required: false,
+            deprecated: true,
+            description: "Backward-compatible alias for originZoneKey.",
+            schema: zoneKeyReference,
+          },
+          {
+            name: "originNeighborhoodId",
+            in: "query",
+            required: false,
+            schema: { type: "string", format: "uuid" },
+          },
           {
             name: "neighborhoodId",
             in: "query",
@@ -3710,6 +4378,28 @@ const swaggerDefinition = {
               type: "string",
               format: "uuid",
             },
+            deprecated: true,
+            description: "Legacy alias for originNeighborhoodId.",
+          },
+          {
+            name: "destinationZoneKey",
+            in: "query",
+            required: false,
+            schema: zoneKeyReference,
+          },
+          {
+            name: "destinationCity",
+            in: "query",
+            required: false,
+            deprecated: true,
+            description: "Backward-compatible alias for destinationZoneKey.",
+            schema: zoneKeyReference,
+          },
+          {
+            name: "destinationNeighborhoodId",
+            in: "query",
+            required: false,
+            schema: { type: "string", format: "uuid" },
           },
           {
             name: "destinationKeyword",
@@ -3966,6 +4656,43 @@ const swaggerDefinition = {
           500: {
             $ref: "#/components/responses/InternalServerError",
           },
+        },
+      },
+    },
+    "/api/v1/trips/{id}/checklist": {
+      get: {
+        tags: ["Trips"],
+        summary: "Get the trip execution checklist",
+        description:
+          "Returns the trip owner's assigned errand items grouped by category. Pickup and delivery flags are derived from assignment status. Cancelled assignment items remain visible but are excluded from progress totals.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            description: "DB identifier of the trip.",
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: {
+            description:
+              "Trip checklist retrieved successfully. A trip without assignments returns zero progress and an empty categories array.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/TripChecklistResponse",
+                },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Only the trip owner can view its checklist."),
+          404: errorResponse("Trip not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
         },
       },
     },
@@ -4446,6 +5173,26 @@ const swaggerDefinition = {
             schema: { type: "string", format: "uuid" },
           },
         ],
+        requestBody: {
+          required: false,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  estimatedDeliveryAt: {
+                    type: "string",
+                    format: "date-time",
+                    nullable: true,
+                    description:
+                      "Optional future ETA selected by the traveler; the backend does not calculate it.",
+                  },
+                },
+              },
+            },
+          },
+        },
         responses: {
           200: {
             description: "Assignment delivery started.",
@@ -4458,6 +5205,53 @@ const swaggerDefinition = {
           400: errorResponse("Only picked up assignments can start delivery."),
           401: { $ref: "#/components/responses/Unauthorized" },
           403: errorResponse("Only the traveler can start delivery."),
+          404: errorResponse("Assignment not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/assignments/{id}/estimated-delivery-time": {
+      patch: {
+        tags: ["Assignments"],
+        summary: "Update the traveler-provided delivery estimate",
+        description:
+          "Traveler-only action available after pickup and before completion. The ETA must be in the future; null clears it.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/EstimatedDeliveryTimeRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Estimated delivery time updated.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AssignmentResponse" },
+              },
+            },
+          },
+          400: errorResponse(
+            "ETA is not in the future or assignment status does not allow updates.",
+          ),
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse(
+            "Only the assigned traveler can update the estimated delivery time.",
+          ),
           404: errorResponse("Assignment not found."),
           429: { $ref: "#/components/responses/TooManyRequests" },
           500: { $ref: "#/components/responses/InternalServerError" },
@@ -5270,6 +6064,531 @@ const swaggerDefinition = {
         },
       },
     },
+    "/api/v1/users/me/identity-verification": {
+      post: {
+        tags: ["Users"],
+        summary: "Submit identity verification documents",
+        description:
+          "Uploads the private front ID, back ID, and selfie images together and changes the user's verification status to PENDING_REVIEW.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                required: ["idFrontImage", "idBackImage", "selfieImage"],
+                properties: {
+                  idFrontImage: { type: "string", format: "binary" },
+                  idBackImage: { type: "string", format: "binary" },
+                  selfieImage: { type: "string", format: "binary" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: "Identity verification submitted for review." },
+          400: errorResponse("All three valid images up to 5 MB are required."),
+          409: errorResponse(
+            "Identity is verified or a request is already pending.",
+          ),
+          503: errorResponse("Identity document storage is not configured."),
+        },
+      },
+    },
+    "/api/v1/admin/payments/invoices": {
+      get: {
+        tags: ["Admin"],
+        summary: "List bank transfer invoices for review",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "status",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: ["PENDING_VERIFICATION", "PAID", "FAILED"],
+              default: "PENDING_VERIFICATION",
+            },
+          },
+          {
+            name: "skip",
+            in: "query",
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
+        ],
+        responses: {
+          200: {
+            description:
+              "Bank transfer invoices with user, package, reference, and short-lived signed receipt URL.",
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+        },
+      },
+    },
+    "/api/v1/admin/payments/invoices/{id}/approve": {
+      post: {
+        tags: ["Admin"],
+        summary: "Approve a bank transfer invoice",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: {
+            description:
+              "Invoice paid, wallet credited once, and user notified.",
+          },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: errorResponse("Bank transfer invoice was not found."),
+          409: errorResponse(
+            "Invoice has already been reviewed or has no receipt.",
+          ),
+        },
+      },
+    },
+    "/api/v1/admin/payments/invoices/{id}/reject": {
+      post: {
+        tags: ["Admin"],
+        summary: "Reject a bank transfer invoice",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["notes"],
+                additionalProperties: false,
+                properties: {
+                  notes: { type: "string", minLength: 3, maxLength: 500 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description:
+              "Invoice failed, rejection note saved, and user notified.",
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: errorResponse("Bank transfer invoice was not found."),
+          409: errorResponse(
+            "Invoice has already been reviewed or has no receipt.",
+          ),
+        },
+      },
+    },
+    "/api/v1/admin/auth/login": {
+      post: {
+        tags: ["Admin Authentication"],
+        summary: "Log in to the admin dashboard",
+        description:
+          "Password-only login for the one ACTIVE, appropriately verified SUPER_ADMIN whose user ID exactly matches ADMIN_USER_ID. Email-era admins require emailVerifiedAt; legacy admins without email may temporarily use phoneVerifiedAt. All identity, password, verification, status, role, and allowlist failures use the same response.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/AdminLoginRequest" },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Administrator login succeeded.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AdminLoginResponse" },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: errorResponse("Invalid phone or password."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+        },
+      },
+    },
+    "/api/v1/admin/auth/refresh": {
+      post: {
+        tags: ["Admin Authentication"],
+        summary: "Rotate admin dashboard tokens",
+        description:
+          "Validates and rotates the persisted hashed refresh token, then rechecks the user's current ACTIVE status, SUPER_ADMIN role, and exact backend-configured administrator identity before issuing new tokens.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/AdminRefreshTokenRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Admin tokens rotated successfully.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AdminRefreshResponse" },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: errorResponse("Invalid refresh token."),
+          403: errorResponse("Dashboard administrator access is required."),
+        },
+      },
+    },
+    "/api/v1/admin/auth/logout": {
+      post: {
+        tags: ["Admin Authentication"],
+        summary: "Log out an admin dashboard session",
+        description:
+          "Revokes the supplied refresh token using the shared refresh-token store.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/AdminRefreshTokenRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Admin dashboard session logged out.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LogoutResponse" },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+        },
+      },
+    },
+    "/api/v1/admin/auth/me": {
+      get: {
+        tags: ["Admin Authentication"],
+        summary: "Get the current dashboard administrator",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: "Safe dashboard identity data.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AdminMeResponse" },
+              },
+            },
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Dashboard administrator access is required."),
+        },
+      },
+    },
+    "/api/v1/admin/verifications": {
+      get: {
+        tags: ["Admin"],
+        summary: "List identity verification submissions",
+        description:
+          "Defaults to ALL. Search matches user name (case-insensitive) or phone. Statistics count every status within the search, independent of the selected status and page. Items include documentCount=3, availableDocumentCount, documentsStatus (AVAILABLE/PENDING_DELETION/DELETED) and nullable documentsDeletedAt.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "search",
+            in: "query",
+            schema: { type: "string", minLength: 1, maxLength: 100 },
+            description: "Search by name or phone.",
+          },
+          {
+            name: "status",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: [
+                "ALL",
+                "UNVERIFIED",
+                "PENDING_REVIEW",
+                "VERIFIED",
+                "REJECTED",
+              ],
+              default: "ALL",
+            },
+          },
+          {
+            name: "skip",
+            in: "query",
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
+        ],
+        responses: {
+          200: {
+            description:
+              "Returns data.verifications, data.pagination (skip, take, total) and data.statistics (total, PENDING_REVIEW, VERIFIED, REJECTED, UNVERIFIED).",
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+        },
+      },
+    },
+    "/api/v1/admin/verifications/{id}": {
+      get: {
+        tags: ["Admin"],
+        summary: "Get an identity verification",
+        description:
+          "Pending and approved requests include five-minute signed document URLs. Rejected requests return documents=null, including while deletion is pending. DELETED and documentsDeletedAt are set only after storage deletion succeeds. Request history and rejectionReason remain available.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: { description: "Verification retrieved." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: errorResponse("Identity verification not found."),
+        },
+      },
+    },
+    "/api/v1/admin/verifications/{id}/approve": {
+      post: {
+        tags: ["Admin"],
+        summary: "Approve an identity verification",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: { description: "Verification approved and user notified." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          409: errorResponse("Verification was already reviewed."),
+        },
+      },
+    },
+    "/api/v1/admin/verifications/{id}/reject": {
+      post: {
+        tags: ["Admin"],
+        summary: "Reject an identity verification",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["reason"],
+                properties: {
+                  reason: { type: "string", minLength: 3, maxLength: 500 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description:
+              "Verification rejected and user notified with the reason. Document deletion is durably queued; response documentsStatus=PENDING_DELETION. The worker retries failures. Re-submission creates a separate request.",
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          409: errorResponse("Verification was already reviewed."),
+        },
+      },
+    },
+    "/api/v1/admin/faqs": {
+      get: {
+        tags: ["Admin", "Support"],
+        summary: "List FAQs for administration",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "isActive", in: "query", schema: { type: "boolean" } },
+          {
+            name: "skip",
+            in: "query",
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
+        ],
+        responses: {
+          200: { description: "FAQs retrieved successfully." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+        },
+      },
+      post: {
+        tags: ["Admin", "Support"],
+        summary: "Create an FAQ",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                required: ["question", "answer"],
+                properties: {
+                  question: { type: "string", minLength: 3, maxLength: 300 },
+                  answer: { type: "string", minLength: 3, maxLength: 3000 },
+                  displayOrder: { type: "integer", minimum: 0, default: 0 },
+                  isActive: { type: "boolean", default: true },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: "FAQ created successfully." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          403: { $ref: "#/components/responses/Forbidden" },
+        },
+      },
+    },
+    "/api/v1/admin/faqs/reorder": {
+      patch: {
+        tags: ["Admin", "Support"],
+        summary: "Reorder FAQs atomically",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["items"],
+                properties: {
+                  items: {
+                    type: "array",
+                    minItems: 1,
+                    maxItems: 100,
+                    items: {
+                      type: "object",
+                      required: ["id", "displayOrder"],
+                      properties: {
+                        id: { type: "string", format: "uuid" },
+                        displayOrder: { type: "integer", minimum: 0 },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: "FAQs reordered successfully." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: errorResponse("FAQ not found."),
+        },
+      },
+    },
+    "/api/v1/admin/faqs/{id}": {
+      patch: {
+        tags: ["Admin", "Support"],
+        summary: "Update or activate/deactivate an FAQ",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  question: { type: "string", minLength: 3, maxLength: 300 },
+                  answer: { type: "string", minLength: 3, maxLength: 3000 },
+                  displayOrder: { type: "integer", minimum: 0 },
+                  isActive: { type: "boolean" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: "FAQ updated successfully." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: errorResponse("FAQ not found."),
+        },
+      },
+      delete: {
+        tags: ["Admin", "Support"],
+        summary: "Soft-delete an FAQ by deactivating it",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: { description: "FAQ deactivated successfully." },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: errorResponse("FAQ not found."),
+        },
+      },
+    },
     "/api/v1/delivery-pricing/quote": {
       get: {
         tags: ["Delivery Pricing"],
@@ -5304,10 +6623,24 @@ const swaggerDefinition = {
     "/api/v1/support/config": {
       get: {
         tags: ["Support"],
-        summary: "Get support contact information",
+        summary: "Get support contact information and active FAQs",
         security: [{ bearerAuth: [] }],
         responses: {
-          200: { description: "Support configuration retrieved successfully." },
+          200: {
+            description: "Support configuration retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    success: { type: "boolean" },
+                    message: { type: "string" },
+                    data: { $ref: "#/components/schemas/SupportConfig" },
+                  },
+                },
+              },
+            },
+          },
           401: { $ref: "#/components/responses/Unauthorized" },
         },
       },
@@ -5332,9 +6665,20 @@ const swaggerDefinition = {
             "application/json": {
               schema: {
                 type: "object",
-                required: ["clientRequestKey", "category", "message"],
+                required: [
+                  "clientRequestKey",
+                  "clientMessageKey",
+                  "category",
+                  "message",
+                ],
                 properties: {
                   clientRequestKey: { type: "string", format: "uuid" },
+                  clientMessageKey: {
+                    type: "string",
+                    format: "uuid",
+                    description:
+                      "Client-generated idempotency key for the first ticket message.",
+                  },
                   category: {
                     type: "string",
                     enum: [
@@ -5464,12 +6808,48 @@ const swaggerDefinition = {
         tags: ["Support"],
         summary: "Submit a support report",
         description:
-          "Creates an idempotent report and assigns priority on the server.",
+          "Creates an idempotent report and assigns priority on the server. When attachChatHistory=true, chatRoomId is required, ownership is verified, and an immutable snapshot of at most the latest 50 messages is stored atomically. Evidence is never returned in ordinary user report responses.",
         security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/SupportReportCreateRequest",
+              },
+              examples: {
+                withoutChat: {
+                  value: {
+                    clientRequestKey: "750e8400-e29b-41d4-a716-446655440001",
+                    type: "TECHNICAL_ISSUE",
+                    description:
+                      "The application stopped while creating an errand.",
+                    attachChatHistory: false,
+                  },
+                },
+                withChat: {
+                  value: {
+                    clientRequestKey: "750e8400-e29b-41d4-a716-446655440002",
+                    type: "ABUSE_OR_THREAT",
+                    description:
+                      "The other participant sent threatening messages.",
+                    reportedUserId: "550e8400-e29b-41d4-a716-446655440002",
+                    attachChatHistory: true,
+                    chatRoomId: "650e8400-e29b-41d4-a716-446655440004",
+                  },
+                },
+              },
+            },
+          },
+        },
         responses: {
           201: { description: "Report submitted successfully." },
           400: { $ref: "#/components/responses/ValidationFailed" },
           401: { $ref: "#/components/responses/Unauthorized" },
+          404: errorResponse("Report context not found."),
+          409: errorResponse(
+            "The idempotency key was reused with different data.",
+          ),
         },
       },
     },
@@ -5504,6 +6884,27 @@ const swaggerDefinition = {
       },
     },
     "/api/v1/support/reports/admin/{id}": {
+      get: {
+        tags: ["Support"],
+        summary: "Get a safety report with immutable chat evidence",
+        description:
+          "Configured dashboard administrator only. The evidence snapshot is intentionally excluded from user report details and all list responses.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: { description: "Report evidence retrieved successfully." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Administrator access is required."),
+          404: errorResponse("Report not found."),
+        },
+      },
       patch: {
         tags: ["Support"],
         summary: "Update a safety report",
@@ -5546,9 +6947,19 @@ const swaggerDefinition = {
         tags: ["Notifications"],
         summary: "List in-app notifications",
         description:
-          "Returns newest-first, paginated in-app notifications belonging only to the authenticated user. Use status=UNREAD to fetch records whose status is not READ. This endpoint does not expose provider payloads, phone numbers, or sensitive payment/auth data.",
+          "Returns a flat, newest-first, paginated list of in-app notifications belonging only to the authenticated user. Clients may group the returned page as today, yesterday, or earlier using createdAt and the user's local timezone; the API does not return temporal groups. unreadCount always covers all unread notifications, independent of tab and pagination. Payment notifications remain available under all. This endpoint does not expose provider payloads, phone numbers, or sensitive payment/auth data.",
         security: [{ bearerAuth: [] }],
         parameters: [
+          {
+            name: "tab",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              enum: ["all", "unread", "trips", "errands", "messages"],
+              default: "all",
+            },
+          },
           {
             name: "status",
             in: "query",
@@ -5603,6 +7014,7 @@ const swaggerDefinition = {
                         },
                       },
                     ],
+                    unreadCount: 4,
                     pagination: { skip: 0, take: 20, total: 1 },
                   },
                 },
@@ -5763,12 +7175,52 @@ const swaggerDefinition = {
         },
       },
     },
+    "/api/v1/payments/invoices/{id}/receipt": {
+      post: {
+        tags: ["Payments"],
+        summary: "Upload a bank transfer receipt",
+        description:
+          "Uploads one private PNG, JPG, or PDF receipt up to 5 MB for an owned bank transfer invoice awaiting verification.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                required: ["receipt"],
+                properties: { receipt: { type: "string", format: "binary" } },
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Receipt uploaded; invoice is awaiting admin review.",
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: errorResponse("Invoice was not found."),
+          409: errorResponse("Invoice is not awaiting transfer verification."),
+          503: errorResponse("Payment receipt storage is not configured."),
+        },
+      },
+    },
     "/api/v1/payments/invoices": {
       post: {
         tags: ["Payments"],
-        summary: "Create a QR token top-up invoice",
+        summary:
+          "Create a token top-up invoice using QR, OTP, or bank transfer",
         description:
-          "Creates a 15-minute PENDING invoice using an active package snapshot when the mock flow is explicitly enabled. Reusing the same clientRequestKey with the same package returns the original invoice; reusing it with another package returns 409. Creating an invoice never credits the wallet.",
+          "Creates an invoice using QR, OTP, or BANK_TRANSFER and snapshots the active package. Bank transfer returns bank details and a unique referenceCode, remains PENDING_VERIFICATION, and requires a receipt upload before admin review. OTP requires paymentPhone. Reusing a clientRequestKey with different payment details returns 409. Creating an invoice never credits the wallet.",
         security: [{ bearerAuth: [] }],
         requestBody: {
           required: true,
@@ -5785,6 +7237,18 @@ const swaggerDefinition = {
                     format: "uuid",
                     description:
                       "A fresh UUID generated once by the client and reused only when retrying this request.",
+                  },
+                  paymentMethod: {
+                    type: "string",
+                    enum: ["QR", "OTP", "BANK_TRANSFER"],
+                    default: "QR",
+                  },
+                  paymentPhone: {
+                    type: "string",
+                    minLength: 8,
+                    maxLength: 20,
+                    description:
+                      "Required when paymentMethod is OTP; omitted for QR and BANK_TRANSFER.",
                   },
                 },
               },
@@ -5816,7 +7280,7 @@ const swaggerDefinition = {
           401: { $ref: "#/components/responses/Unauthorized" },
           404: errorResponse("Active token package was not found."),
           409: errorResponse(
-            "Client request key was already used for a different token package.",
+            "Client request key was already used with different package or payment data.",
           ),
         },
       },
@@ -5830,7 +7294,13 @@ const swaggerDefinition = {
             in: "query",
             schema: {
               type: "string",
-              enum: ["PENDING", "PAID", "FAILED", "EXPIRED"],
+              enum: [
+                "PENDING",
+                "PENDING_VERIFICATION",
+                "PAID",
+                "FAILED",
+                "EXPIRED",
+              ],
             },
           },
           {
@@ -5881,12 +7351,75 @@ const swaggerDefinition = {
         },
       },
     },
+    "/api/v1/payments/invoices/{id}/otp/resend": {
+      post: {
+        tags: ["Payments"],
+        summary: "Resend a simulated payment OTP",
+        description:
+          "Local/staging mock only. Resends an OTP for an owned pending OTP invoice; the code expires after five minutes, resend is rate-limited, and the code is returned as mockOtp only outside production.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: { description: "Mock OTP resent." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: errorResponse("Mock payment flow or invoice was not found."),
+          409: errorResponse("Invoice is not a pending OTP invoice."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+        },
+      },
+    },
+    "/api/v1/payments/invoices/{id}/otp/verify": {
+      post: {
+        tags: ["Payments"],
+        summary: "Verify a simulated payment OTP",
+        description:
+          "Local/staging mock only. A valid six-digit code completes the payment and credits the wallet exactly once.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["otp"],
+                additionalProperties: false,
+                properties: { otp: { type: "string", pattern: "^\\d{6}$" } },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: "OTP payment completed." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: errorResponse("Invalid payment OTP."),
+          404: errorResponse("Mock payment flow or invoice was not found."),
+          409: errorResponse("Invoice is not a pending OTP invoice."),
+          410: errorResponse("Payment OTP has expired."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+        },
+      },
+    },
     "/api/v1/payments/mock/invoices/{id}/pay": {
       post: {
         tags: ["Payments"],
         summary: "Simulate payment for an owned invoice",
         description:
-          "Local/staging-only helper that emits a correctly signed successful mock webhook. It returns 404 when MOCK_PAYMENT_ENABLED is not true and must never be enabled in production.",
+          "Local/staging-only QR helper that emits a correctly signed successful mock webhook. It only accepts QR invoices, returns 404 when MOCK_PAYMENT_ENABLED is not true, and is blocked in production.",
         security: [{ bearerAuth: [] }],
         parameters: [
           {
@@ -6001,13 +7534,44 @@ const swaggerDefinition = {
         tags: ["Wallet"],
         summary: "List wallet transactions",
         description:
-          "Returns the authenticated user's wallet transaction history ordered from newest to oldest.",
+          "Returns committed wallet movements and unpaid payment invoices, newest first. Paid invoices appear only as their ledger entry. Invoice rows have null balances and do not affect wallet totals. Filters combine with AND; pagination totals respect both filters.",
         security: [
           {
             bearerAuth: [],
           },
         ],
         parameters: [
+          {
+            name: "status",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: [
+                "SUCCESS",
+                "PENDING",
+                "PENDING_VERIFICATION",
+                "FAILED",
+                "EXPIRED",
+              ],
+            },
+          },
+          {
+            name: "transactionType",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: [
+                "TOKEN_TOP_UP",
+                "ERRAND_POST_DEBIT",
+                "TRIP_POST_DEBIT",
+                "ERRAND_ACCEPT_DEBIT",
+                "ADMIN_CREDIT",
+                "ADMIN_DEBIT",
+                "REFUND",
+                "SIGNUP_BONUS",
+              ],
+            },
+          },
           {
             name: "skip",
             in: "query",

@@ -3,6 +3,9 @@ const jwt = require("jsonwebtoken");
 const prisma = require("../config/prisma");
 const env = require("../config/env");
 const ApiError = require("../utils/ApiError");
+const {
+  isDashboardAdmin,
+} = require("../features/adminAuth/adminAuth.policy");
 
 const getBearerToken = (req) => {
   const authorization = req.headers.authorization;
@@ -67,6 +70,18 @@ const requireAuth = async (req, res, next) => {
   }
 };
 
+const requireAdmin = (req, res, next) => {
+  if (!req.user) return next(new ApiError(401, "Authentication is required."));
+  if (!isDashboardAdmin(req.user)) {
+    return next(
+      new ApiError(403, "Dashboard administrator access is required."),
+    );
+  }
+  return next();
+};
+
+const requireSuperAdmin = requireAdmin;
+
 const optionalAuth = async (req, res, next) => {
   try {
     const authorization = req.headers.authorization;
@@ -88,4 +103,6 @@ const optionalAuth = async (req, res, next) => {
 module.exports = {
   optionalAuth,
   requireAuth,
+  requireAdmin,
+  requireSuperAdmin,
 };

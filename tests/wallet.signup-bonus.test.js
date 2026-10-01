@@ -23,7 +23,9 @@ describe("Signup Bonus Wallet Tests", () => {
 
     const otpRecord = {
       id: "otp-1",
+      deliveredAt: new Date(),
       phone: "+970599000000",
+      email: "user@example.com",
       otpHash: "$2b$10$abcdefghijklmnopqrstuv",
       verifiedAt: null,
       attemptCount: 0,
@@ -34,9 +36,11 @@ describe("Signup Bonus Wallet Tests", () => {
     const user = {
       id: "user-1",
       phone: "+970599000000",
+      email: "user@example.com",
+      emailVerifiedAt: new Date(),
       role: "USER",
       status: "ACTIVE",
-      phoneVerifiedAt: new Date(),
+      phoneVerifiedAt: null,
     };
 
     const wallet = {
@@ -47,6 +51,7 @@ describe("Signup Bonus Wallet Tests", () => {
 
     const pending = {
       phone: user.phone,
+      email: user.email,
       fullName: "Test User",
       passwordHash: "$2b$10$hashed",
       neighborhoodId: "650e8400-e29b-41d4-a716-446655440000",

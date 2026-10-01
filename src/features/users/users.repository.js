@@ -13,6 +13,7 @@ const findUserById = async (userId) => {
     select: {
       id: true,
       phone: true,
+      email: true,
       fullName: true,
       profileImageUrl: true,
       profileImagePath: true,
@@ -20,8 +21,10 @@ const findUserById = async (userId) => {
       trustScore: true,
       neighborhoodId: true,
       profileCompleted: true,
+      emailVerifiedAt: true,
       phoneVerifiedAt: true,
       status: true,
+      verificationStatus: true,
       createdAt: true,
       updatedAt: true,
       neighborhood: {
@@ -31,6 +34,18 @@ const findUserById = async (userId) => {
           governorate: true,
           isActive: true,
         },
+      },
+      identityVerifications: {
+        select: {
+          id: true,
+          status: true,
+          submittedAt: true,
+          reviewedAt: true,
+          rejectionReason: true,
+          documentsDeletedAt: true,
+        },
+        orderBy: { submittedAt: "desc" },
+        take: 1,
       },
     },
   });
@@ -62,13 +77,16 @@ const updateUserProfile = async (userId, data) => {
     select: {
       id: true,
       phone: true,
+      email: true,
       fullName: true,
       profileImageUrl: true,
       role: true,
       trustScore: true,
       neighborhoodId: true,
       profileCompleted: true,
+      emailVerifiedAt: true,
       status: true,
+      verificationStatus: true,
       updatedAt: true,
       neighborhood: {
         select: {
@@ -84,6 +102,83 @@ const updateUserProfile = async (userId, data) => {
 
 const updateProfileImage = async (userId, profileImageUrl, profileImagePath) =>
   updateUserProfile(userId, { profileImageUrl, profileImagePath });
+
+const getProfileStatistics = async (userId) => {
+  const [publishedErrandsCount, tripsCount, ratings, wallet] =
+    await Promise.all([
+      prisma.errand.count({ where: { requesterId: userId } }),
+      prisma.trip.count({ where: { travelerId: userId } }),
+      prisma.rating.aggregate({
+        where: { reviewedUserId: userId },
+        _avg: { ratingStars: true },
+        _count: { _all: true },
+      }),
+      prisma.wallet.findUnique({
+        where: { userId },
+        select: { tokenBalance: true },
+      }),
+    ]);
+  return {
+    publishedErrandsCount,
+    tripsCount,
+    averageRating:
+      ratings._avg.ratingStars === null
+        ? null
+        : Math.round(ratings._avg.ratingStars * 100) / 100,
+    ratingCount: ratings._count._all,
+    tokenBalance: wallet?.tokenBalance ?? 0,
+  };
+};
+
+const findPendingIdentityVerification = (userId, client = prisma) =>
+  client.identityVerification.findFirst({
+    where: { userId, status: "PENDING_REVIEW" },
+    select: { id: true, submittedAt: true },
+  });
+
+const findIdentityByPaths = (userId, paths) =>
+  prisma.identityVerification.findFirst({
+    where: {
+      userId,
+      OR: [
+        { idFrontImagePath: { in: paths } },
+        { idBackImagePath: { in: paths } },
+        { selfieImagePath: { in: paths } },
+      ],
+    },
+    select: { id: true, status: true, submittedAt: true },
+  });
+
+const stageIdentityCleanup = (paths) =>
+  prisma.identityDocumentCleanup.create({
+    data: { paths, nextAttemptAt: new Date(Date.now() + 60 * 60 * 1000) },
+  });
+const activateIdentityCleanup = (id) =>
+  prisma.identityDocumentCleanup.update({
+    where: { id },
+    data: { nextAttemptAt: new Date() },
+  });
+
+const submitIdentityVerification = (userId, paths, cleanupId) =>
+  prisma.$transaction(async (tx) => {
+    if (!cleanupId)
+      throw new Error("Identity upload cleanup reservation is required.");
+    const users =
+      await tx.$queryRaw`SELECT verification_status FROM users WHERE id = ${userId}::uuid FOR UPDATE`;
+    if (users[0]?.verification_status === "VERIFIED") return { conflict: true };
+    const pending = await findPendingIdentityVerification(userId, tx);
+    if (pending) return { conflict: pending };
+    const verification = await tx.identityVerification.create({
+      data: { userId, ...paths },
+      select: { id: true, status: true, submittedAt: true },
+    });
+    await tx.user.update({
+      where: { id: userId },
+      data: { verificationStatus: "PENDING_REVIEW" },
+    });
+    await tx.identityDocumentCleanup.deleteMany({ where: { id: cleanupId } });
+    return { verification };
+  });
 
 const findNotificationPreference = (userId) =>
   prisma.userNotificationPreference.findUnique({ where: { userId } });
@@ -139,10 +234,16 @@ const revokeSessions = (userId, client = prisma) =>
   });
 
 module.exports = {
+  findIdentityByPaths,
+  stageIdentityCleanup,
+  activateIdentityCleanup,
   findUserById,
   findActiveNeighborhoodById,
   updateUserProfile,
   updateProfileImage,
+  getProfileStatistics,
+  findPendingIdentityVerification,
+  submitIdentityVerification,
   findNotificationPreference,
   upsertNotificationPreference,
   runTransaction,

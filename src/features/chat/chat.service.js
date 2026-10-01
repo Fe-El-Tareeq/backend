@@ -22,6 +22,7 @@ const serializeUser = (user) => {
     fullName: user.fullName,
     trustScore: user.trustScore,
     profileImageUrl: user.profileImageUrl,
+    isVerified: user.isVerified,
   };
 };
 

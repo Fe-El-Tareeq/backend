@@ -150,12 +150,12 @@ beforeEach(() => {
   repository.findRequesterForPosting.mockResolvedValue(requester);
   repository.findActiveCategoryById.mockResolvedValue(category);
   repository.findActiveCategoriesByIds.mockResolvedValue([category]);
-  repository.findActiveNeighborhoodById.mockResolvedValue({
-    id: pickupNeighborhoodId,
-    key: "ASH_SHUJAIYEH",
-    name: "Ash Shujaiyeh",
-    governorate: "Gaza",
-  });
+  repository.findActiveNeighborhoodById.mockImplementation(async (id) => ({
+    id,
+    key: id === neighborhoodId ? "ASH_SHUJAIYEH" : "KHAN_YUNIS_CITY",
+    name: "Catalog neighborhood",
+    governorate: "Non-canonical display text",
+  }));
   repository.createErrand.mockImplementation(async (data) => makeErrand(data));
   repository.findById.mockResolvedValue(makeErrand());
   repository.updateErrand.mockImplementation(async (id, data) =>
@@ -166,6 +166,16 @@ beforeEach(() => {
   );
   repository.listErrands.mockResolvedValue([makeErrand()]);
   repository.countErrands.mockResolvedValue(1);
+  repository.findTrackingData.mockResolvedValue({
+    errand: {
+      id: errandId,
+      requesterId: userId,
+      status: "OPEN",
+      cancellationReason: null,
+      createdAt: new Date("2026-09-24T10:00:00.000Z"),
+    },
+    assignment: null,
+  });
   walletService.debit.mockResolvedValue({
     id: transactionId,
     transactionType: "ERRAND_POST_DEBIT",
@@ -354,6 +364,20 @@ describe("Errands create", () => {
     });
   });
 
+  test("email-era user cannot post before email verification", async () => {
+    repository.findRequesterForPosting.mockResolvedValue({
+      ...requester,
+      email: "requester@example.com",
+      emailVerifiedAt: null,
+      phoneVerifiedAt: new Date(),
+    });
+
+    await expect(
+      service.createErrand(userId, createPayload),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    expect(repository.createErrand).not.toHaveBeenCalled();
+  });
+
   test("invalid item size is rejected", async () => {
     const response = await request(app)
       .post("/api/v1/errands")
@@ -445,6 +469,151 @@ describe("Errands create", () => {
 });
 
 describe("Errands list and detail", () => {
+  test("tracking requires authentication", async () => {
+    const response = await request(app).get(
+      `/api/v1/errands/${errandId}/tracking`,
+    );
+
+    expect(response.statusCode).toBe(401);
+    expect(repository.findTrackingData).not.toHaveBeenCalled();
+  });
+
+  test("tracking returns stage one before an offer is accepted", async () => {
+    const response = await request(app)
+      .get(`/api/v1/errands/${errandId}/tracking`)
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.tracking).toMatchObject({
+      currentStage: 1,
+      progressPercentage: 25,
+      traveler: null,
+      estimatedDeliveryAt: null,
+      isEstimatedTimeProvided: false,
+    });
+  });
+
+  test("tracking returns stage three, traveler statistics, message, and ETA", async () => {
+    repository.findTrackingData.mockResolvedValue({
+      errand: {
+        id: errandId,
+        requesterId: userId,
+        status: "MATCHED",
+        cancellationReason: null,
+        createdAt: new Date("2026-09-24T10:00:00.000Z"),
+      },
+      assignment: {
+        id: "850e8400-e29b-41d4-a716-446655440000",
+        status: "IN_TRANSIT",
+        acceptedAt: new Date("2026-09-24T10:10:00.000Z"),
+        pickedUpAt: new Date("2026-09-24T10:30:00.000Z"),
+        inTransitAt: new Date("2026-09-24T10:40:00.000Z"),
+        estimatedDeliveryAt: new Date("2026-09-24T11:30:00.000Z"),
+        completedAt: null,
+        traveler: {
+          id: "550e8400-e29b-41d4-a716-446655440001",
+          fullName: "Traveler",
+          profileImageUrl: null,
+          createdAt: new Date("2024-01-10T00:00:00.000Z"),
+          isVerified: true,
+        },
+        proposal: { message: "I can deliver it safely." },
+      },
+      ratings: { _avg: { ratingStars: 4.75 }, _count: { _all: 12 } },
+      completedTripsCount: 9,
+    });
+
+    const response = await request(app)
+      .get(`/api/v1/errands/${errandId}/tracking`)
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data.tracking).toMatchObject({
+      currentStage: 3,
+      progressPercentage: 67,
+      isEstimatedTimeProvided: true,
+      traveler: {
+        fullName: "Traveler",
+        averageRating: 4.75,
+        ratingCount: 12,
+        completedTripsCount: 9,
+        isVerified: true,
+        joinedYear: 2024,
+        acceptanceMessage: "I can deliver it safely.",
+      },
+    });
+  });
+
+  test.each([
+    ["ACCEPTED", "MATCHED", 2, 50],
+    ["COMPLETED", "COMPLETED", 4, 100],
+  ])(
+    "tracking maps %s assignment to the expected stage and progress",
+    async (assignmentStatus, errandStatus, expectedStage, expectedProgress) => {
+      repository.findTrackingData.mockResolvedValue({
+        errand: {
+          id: errandId,
+          requesterId: userId,
+          status: errandStatus,
+          cancellationReason: null,
+          createdAt: new Date("2026-09-24T10:00:00.000Z"),
+        },
+        assignment: {
+          id: "850e8400-e29b-41d4-a716-446655440000",
+          status: assignmentStatus,
+          acceptedAt: new Date("2026-09-24T10:10:00.000Z"),
+          pickedUpAt:
+            assignmentStatus === "COMPLETED"
+              ? new Date("2026-09-24T10:30:00.000Z")
+              : null,
+          inTransitAt:
+            assignmentStatus === "COMPLETED"
+              ? new Date("2026-09-24T10:40:00.000Z")
+              : null,
+          estimatedDeliveryAt: null,
+          completedAt:
+            assignmentStatus === "COMPLETED"
+              ? new Date("2026-09-24T11:00:00.000Z")
+              : null,
+          traveler: {
+            id: "550e8400-e29b-41d4-a716-446655440001",
+            fullName: "Traveler",
+            profileImageUrl: null,
+            createdAt: new Date("2024-01-10T00:00:00.000Z"),
+            isVerified: true,
+          },
+          proposal: null,
+        },
+        ratings: { _avg: { ratingStars: null }, _count: { _all: 0 } },
+        completedTripsCount: 0,
+      });
+
+      const tracking = await service.getErrandTracking(userId, errandId);
+
+      expect(tracking.currentStage).toBe(expectedStage);
+      expect(tracking.progressPercentage).toBe(expectedProgress);
+    },
+  );
+
+  test("tracking is forbidden for users other than the requester", async () => {
+    repository.findTrackingData.mockResolvedValue({
+      errand: {
+        id: errandId,
+        requesterId: otherUserId,
+        status: "OPEN",
+        cancellationReason: null,
+        createdAt: new Date(),
+      },
+      assignment: null,
+    });
+
+    const response = await request(app)
+      .get(`/api/v1/errands/${errandId}/tracking`)
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    expect(response.statusCode).toBe(403);
+  });
+
   test("list defaults to authenticated user's neighborhood and excludes expired OPEN errands", async () => {
     const response = await request(app)
       .get("/api/v1/errands?take=10")
@@ -486,9 +655,9 @@ describe("Errands list and detail", () => {
     );
   });
 
-  test("list supports origin and destination city and neighborhood filters", async () => {
+  test("list supports canonical zone and neighborhood filters", async () => {
     const response = await request(app).get(
-      `/api/v1/errands?originCity=GAZA_CITY&destinationCity=KHAN_YUNIS&originNeighborhoodId=${neighborhoodId}&destinationNeighborhoodId=${pickupNeighborhoodId}`,
+      `/api/v1/errands?originZoneKey=GAZA_CITY&destinationZoneKey=KHAN_YUNIS&originNeighborhoodId=${neighborhoodId}&destinationNeighborhoodId=${pickupNeighborhoodId}`,
     );
 
     expect(response.statusCode).toBe(200);
@@ -496,12 +665,96 @@ describe("Errands list and detail", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           neighborhoodId,
-          neighborhood: { governorate: "مدينة غزة" },
+          neighborhood: { key: { in: expect.arrayContaining(["ASH_SHUJAIYEH"]) } },
           destinationNeighborhoodId: pickupNeighborhoodId,
-          destinationNeighborhood: { governorate: "خانيونس" },
+          destinationNeighborhood: { key: { in: expect.arrayContaining(["KHAN_YUNIS_CITY"]) } },
         }),
       }),
     );
+  });
+
+  test("supports city aliases and rejects conflicts or neighborhood mismatches", async () => {
+    const aliasResponse = await request(app).get(
+      "/api/v1/errands?originCity=GAZA_CITY&destinationCity=KHAN_YUNIS",
+    );
+    const conflictResponse = await request(app).get(
+      "/api/v1/errands?originZoneKey=GAZA_CITY&originCity=RAFAH",
+    );
+    const mismatchResponse = await request(app).get(
+      `/api/v1/errands?originZoneKey=RAFAH&originNeighborhoodId=${neighborhoodId}`,
+    );
+
+    expect(aliasResponse.statusCode).toBe(200);
+    expect(conflictResponse.statusCode).toBe(400);
+    expect(mismatchResponse.statusCode).toBe(400);
+  });
+
+  test("destinationZoneKey constrains the destination relationship", async () => {
+    const response = await request(app).get(
+      "/api/v1/errands?destinationZoneKey=KHAN_YUNIS",
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(repository.listErrands).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          destinationNeighborhood: {
+            key: { in: expect.arrayContaining(["KHAN_YUNIS_CITY"]) },
+          },
+        }),
+      }),
+    );
+  });
+
+  test("destinationCity remains a filtering alias", async () => {
+    const response = await request(app).get(
+      "/api/v1/errands?destinationCity=RAFAH",
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(repository.listErrands).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          destinationNeighborhood: {
+            key: { in: expect.arrayContaining(["RAFAH_CITY"]) },
+          },
+        }),
+      }),
+    );
+  });
+
+  test("accepts a compatible destination zone and neighborhood", async () => {
+    const response = await request(app).get(
+      `/api/v1/errands?destinationZoneKey=KHAN_YUNIS&destinationNeighborhoodId=${pickupNeighborhoodId}`,
+    );
+
+    expect(response.statusCode).toBe(200);
+  });
+
+  test("rejects a destination zone and neighborhood mismatch", async () => {
+    const response = await request(app).get(
+      `/api/v1/errands?destinationZoneKey=RAFAH&destinationNeighborhoodId=${pickupNeighborhoodId}`,
+    );
+
+    expect(response.statusCode).toBe(400);
+    expect(repository.listErrands).not.toHaveBeenCalled();
+  });
+
+  test("accepts equal origin and destination aliases", async () => {
+    const response = await request(app).get(
+      "/api/v1/errands?originZoneKey=GAZA_CITY&originCity=GAZA_CITY&destinationZoneKey=KHAN_YUNIS&destinationCity=KHAN_YUNIS",
+    );
+
+    expect(response.statusCode).toBe(200);
+  });
+
+  test("rejects conflicting destination aliases", async () => {
+    const response = await request(app).get(
+      "/api/v1/errands?destinationZoneKey=GAZA_CITY&destinationCity=KHAN_YUNIS",
+    );
+
+    expect(response.statusCode).toBe(400);
+    expect(repository.listErrands).not.toHaveBeenCalled();
   });
 
   test("mine filter lists only the authenticated requester's errands", async () => {

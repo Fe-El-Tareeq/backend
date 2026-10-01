@@ -12,6 +12,7 @@ const request = require("supertest");
 jest.mock("../src/features/auth/auth.repository");
 jest.mock("../src/features/wallet/wallet.repository");
 jest.mock("../src/features/legal/legal.repository");
+jest.mock("../src/features/auth/verificationDelivery.service");
 jest.mock("../src/config/prisma", () => ({
   user: {
     findUnique: jest.fn(),
@@ -26,15 +27,21 @@ const authRepository = require("../src/features/auth/auth.repository");
 const walletRepository = require("../src/features/wallet/wallet.repository");
 const legalRepository = require("../src/features/legal/legal.repository");
 const authService = require("../src/features/auth/auth.service");
+const verificationDelivery = require("../src/features/auth/verificationDelivery.service");
 const env = require("../src/config/env");
 const prisma = require("../src/config/prisma");
-const { requireAuth } = require("../src/middleware/auth.middleware");
+const {
+  requireAuth,
+  requireSuperAdmin,
+} = require("../src/middleware/auth.middleware");
 
 const mockTx = {};
 
 const activeUser = {
   id: "550e8400-e29b-41d4-a716-446655440000",
   phone: "+970599000000",
+  email: "user@example.com",
+  emailVerifiedAt: new Date(),
   role: "USER",
   status: "ACTIVE",
   phoneVerifiedAt: new Date(),
@@ -45,12 +52,14 @@ const activeUser = {
 
 const activeNeighborhood = {
   id: "60a32850-bd3f-444a-84b4-c750abf6ecb6",
-  name: "Al-Bireh",
-  governorate: "Ramallah and Al-Bireh",
+  key: "ASH_SHUJAIYEH",
+  name: "Ash Shujaiyeh",
+  governorate: "Gaza display text",
 };
 const pendingRegistration = {
   id: "650e8400-e29b-41d4-a716-446655440000",
   phone: activeUser.phone,
+  email: activeUser.email,
   fullName: "Leenah Alborsh",
   passwordHash: "$2a$10$hashed",
   neighborhoodId: activeNeighborhood.id,
@@ -82,8 +91,20 @@ beforeEach(() => {
   });
   authRepository.createWallet.mockResolvedValue(activeUser.wallet);
   authRepository.createRefreshToken.mockResolvedValue({});
-  env.otpFixedCode = null;
-  env.otpTestPhones = [];
+  authRepository.createOtpVerification.mockResolvedValue({
+    id: "otp-new",
+    createdAt: new Date("2026-09-30T12:00:00.000Z"),
+  });
+  authRepository.findLatestOtpByPhone.mockResolvedValue(null);
+  authRepository.findUserByEmail.mockResolvedValue(null);
+  authRepository.findPendingRegistrationByEmail.mockResolvedValue(null);
+  authRepository.invalidateOtpVerification.mockResolvedValue({ count: 1 });
+  authRepository.markOtpDelivered.mockResolvedValue({ count: 1 });
+  authRepository.invalidateSupersededOtps.mockResolvedValue({ count: 0 });
+  verificationDelivery.sendVerificationCode.mockResolvedValue({ sent: true });
+  env.testOtpCode = null;
+  env.testOtpEmail = null;
+  env.adminUserId = activeUser.id;
 
   walletRepository.createLedgerEntry.mockResolvedValue({
     id: "signup-bonus-transaction",
@@ -112,7 +133,6 @@ describe("Auth request OTP", () => {
   test("valid phone succeeds, stores a hash, and does not return OTP", async () => {
     const response = await request(app).post("/api/v1/auth/request-otp").send({
       phone: "+970599000000",
-      channel: "SMS",
     });
 
     expect(response.statusCode).toBe(200);
@@ -123,14 +143,97 @@ describe("Auth request OTP", () => {
     const storedOtp = authRepository.createOtpVerification.mock.calls[0][0];
 
     expect(storedOtp.phone).toBe("+970599000000");
-    expect(storedOtp.channel).toBe("SMS");
+    expect(storedOtp.email).toBe("user@example.com");
+    expect(storedOtp.channel).toBe("EMAIL");
     expect(storedOtp.otpHash).toMatch(/^\$2/);
     expect(storedOtp.otpHash).not.toMatch(/^\d{6}$/);
+    expect(verificationDelivery.sendVerificationCode).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: "user@example.com",
+        purpose: "EMAIL_VERIFICATION",
+      }),
+    );
   });
 
-  test("allowlisted test phone uses configured fixed OTP without exposing it", async () => {
-    env.otpFixedCode = "000000";
-    env.otpTestPhones = ["+970599000000"];
+  test("rejects legacy client-selected SMS and WhatsApp channels", async () => {
+    await request(app)
+      .post("/api/v1/auth/request-otp")
+      .send({ phone: activeUser.phone, channel: "SMS" })
+      .expect(400);
+    expect(authRepository.createOtpVerification).not.toHaveBeenCalled();
+  });
+
+  test("enforces a 60-second resend cooldown", async () => {
+    authRepository.findLatestOtpByPhone.mockResolvedValue({
+      id: "recent-otp",
+      deliveredAt: new Date(),
+    });
+
+    const response = await request(app)
+      .post("/api/v1/auth/request-otp")
+      .send({ phone: activeUser.phone });
+
+    expect(response.statusCode).toBe(429);
+    expect(authRepository.createOtpVerification).not.toHaveBeenCalled();
+  });
+
+  test("makes the newest delivered OTP authoritative", async () => {
+    authRepository.findLatestOtpByPhone.mockResolvedValue({
+      id: "old-otp",
+      deliveredAt: new Date(Date.now() - 61_000),
+    });
+
+    await request(app)
+      .post("/api/v1/auth/request-otp")
+      .send({ phone: activeUser.phone })
+      .expect(200);
+
+    expect(authRepository.invalidateSupersededOtps).toHaveBeenCalledWith(
+      activeUser.phone,
+      "EMAIL_VERIFICATION",
+      expect.objectContaining({ id: "otp-new" }),
+      expect.any(Date),
+      mockTx,
+    );
+  });
+
+  test("invalidates a newly persisted OTP when delivery fails", async () => {
+    verificationDelivery.sendVerificationCode.mockRejectedValue(
+      new Error("provider unavailable"),
+    );
+
+    const response = await request(app)
+      .post("/api/v1/auth/request-otp")
+      .send({ phone: activeUser.phone });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.body.message).not.toMatch(/sent successfully/i);
+    expect(authRepository.invalidateOtpVerification).toHaveBeenCalledWith(
+      "otp-new",
+      expect.any(Date),
+    );
+  });
+
+  test("allows immediate retry after provider failure", async () => {
+    verificationDelivery.sendVerificationCode
+      .mockRejectedValueOnce(new Error("provider unavailable"))
+      .mockResolvedValueOnce({ sent: true });
+
+    await request(app)
+      .post("/api/v1/auth/request-otp")
+      .send({ phone: activeUser.phone })
+      .expect(503);
+    await request(app)
+      .post("/api/v1/auth/request-otp")
+      .send({ phone: activeUser.phone })
+      .expect(200);
+
+    expect(authRepository.createOtpVerification).toHaveBeenCalledTimes(2);
+  });
+
+  test("configured non-production test email uses fixed OTP without exposing it", async () => {
+    env.testOtpCode = "000000";
+    env.testOtpEmail = "user@example.com";
 
     const response = await request(app).post("/api/v1/auth/request-otp").send({
       phone: "+970599000000",
@@ -143,7 +246,7 @@ describe("Auth request OTP", () => {
     await expect(bcrypt.compare("000000", storedOtp.otpHash)).resolves.toBe(
       true,
     );
-    expect(storedOtp.purpose).toBe("PHONE_VERIFICATION");
+    expect(storedOtp.purpose).toBe("EMAIL_VERIFICATION");
   });
 
   test("invalid phone is rejected", async () => {
@@ -158,10 +261,44 @@ describe("Auth request OTP", () => {
 });
 
 describe("Auth register and login", () => {
+  test("register requires a valid email", async () => {
+    const base = {
+      fullName: "Leenah Alborsh",
+      phone: "+970599000001",
+      password: "Strong1!",
+      neighborhoodId: activeNeighborhood.id,
+      termsAccepted: true,
+    };
+
+    await request(app).post("/api/v1/auth/register").send(base).expect(400);
+    await request(app)
+      .post("/api/v1/auth/register")
+      .send({ ...base, email: "not-an-email" })
+      .expect(400);
+  });
+
+  test("rejects a normalized duplicate email", async () => {
+    authRepository.findUserByEmail.mockResolvedValue(activeUser);
+
+    const response = await request(app).post("/api/v1/auth/register").send({
+      fullName: "Leenah Alborsh",
+      phone: "+970599000001",
+      email: "  USER@EXAMPLE.COM ",
+      password: "Strong1!",
+      neighborhoodId: activeNeighborhood.id,
+      termsAccepted: true,
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(authRepository.findUserByEmail).toHaveBeenCalledWith(
+      "user@example.com",
+    );
+  });
   test("register validates password strength", async () => {
     const response = await request(app).post("/api/v1/auth/register").send({
       fullName: "Leenah Alborsh",
       phone: "+970599000000",
+      email: "user@example.com",
       password: "weakpass",
       neighborhoodId: activeNeighborhood.id,
       termsAccepted: true,
@@ -175,6 +312,7 @@ describe("Auth register and login", () => {
   test("register rejects missing fullName", async () => {
     const response = await request(app).post("/api/v1/auth/register").send({
       phone: "+970599000001",
+      email: "user1@example.com",
       password: "Strong1!",
       neighborhoodId: activeNeighborhood.id,
       termsAccepted: true,
@@ -189,6 +327,7 @@ describe("Auth register and login", () => {
     const response = await request(app).post("/api/v1/auth/register").send({
       fullName: "   ",
       phone: "+970599000001",
+      email: "user1@example.com",
       password: "Strong1!",
       neighborhoodId: activeNeighborhood.id,
       termsAccepted: true,
@@ -203,6 +342,7 @@ describe("Auth register and login", () => {
     const response = await request(app).post("/api/v1/auth/register").send({
       fullName: "Leenah Alborsh",
       phone: "+970599000001",
+      email: "user1@example.com",
       password: "Strong1!",
       termsAccepted: true,
     });
@@ -216,6 +356,7 @@ describe("Auth register and login", () => {
     const response = await request(app).post("/api/v1/auth/register").send({
       fullName: "Leenah Alborsh",
       phone: "+970599000001",
+      email: "user1@example.com",
       password: "Strong1!",
       neighborhoodId: "not-a-uuid",
       termsAccepted: true,
@@ -234,6 +375,7 @@ describe("Auth register and login", () => {
       authService.register({
         fullName: "Leenah Alborsh",
         phone: "+970599000001",
+        email: "user1@example.com",
         password: "Strong1!",
         neighborhoodId: activeNeighborhood.id,
         termsAccepted: true,
@@ -249,11 +391,11 @@ describe("Auth register and login", () => {
 
   test("register stores only a temporary registration and returns no tokens", async () => {
     authRepository.findUserWithPasswordByPhone.mockResolvedValue(null);
-    authRepository.createOtpVerification.mockResolvedValue({});
 
     const response = await request(app).post("/api/v1/auth/register").send({
       fullName: "  Leenah Alborsh  ",
       phone: "+970599000001",
+      email: "  User1@Example.com  ",
       password: "Strong1!",
       neighborhoodId: activeNeighborhood.id,
       termsAccepted: true,
@@ -271,6 +413,7 @@ describe("Auth register and login", () => {
       expect.objectContaining({
         fullName: "Leenah Alborsh",
         phone: "+970599000001",
+        email: "user1@example.com",
         neighborhoodId: activeNeighborhood.id,
         termsVersion: "1.0.0",
         privacyVersion: "1.0.0",
@@ -285,19 +428,34 @@ describe("Auth register and login", () => {
     expect(authRepository.createRefreshToken).not.toHaveBeenCalled();
   });
 
+  test("public registration rejects a requested SUPER_ADMIN role", async () => {
+    const response = await request(app).post("/api/v1/auth/register").send({
+      fullName: "Leenah Alborsh",
+      phone: "+970599000001",
+      email: "user1@example.com",
+      password: "Strong1!",
+      neighborhoodId: activeNeighborhood.id,
+      termsAccepted: true,
+      role: "SUPER_ADMIN",
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(authRepository.upsertPendingRegistration).not.toHaveBeenCalled();
+  });
+
   test("duplicate pending registration refreshes temporary data without creating a user", async () => {
     authRepository.findUserWithPasswordByPhone.mockResolvedValue(null);
-    authRepository.createOtpVerification.mockResolvedValue({});
 
     const result = await authService.register({
       fullName: "Leenah Alborsh",
       phone: "+970599000000",
+      email: "user@example.com",
       password: "Strong1!",
       neighborhoodId: activeNeighborhood.id,
       termsAccepted: true,
     });
 
-    expect(result.message).toBe("Registration OTP sent successfully");
+    expect(result.message).toBe("Registration verification code sent successfully");
     expect(authRepository.createUserWithPassword).not.toHaveBeenCalled();
     expect(authRepository.upsertPendingRegistration).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -305,7 +463,6 @@ describe("Auth register and login", () => {
         neighborhoodId: activeNeighborhood.id,
         passwordHash: expect.stringMatching(/^\$2/),
       }),
-      mockTx,
     );
     expect(authRepository.createWallet).not.toHaveBeenCalled();
     expect(walletRepository.createLedgerEntry).not.toHaveBeenCalled();
@@ -321,6 +478,7 @@ describe("Auth register and login", () => {
       authService.register({
         fullName: "Leenah Alborsh",
         phone: "+970599000000",
+        email: "user@example.com",
         password: "Strong1!",
         neighborhoodId: activeNeighborhood.id,
         termsAccepted: true,
@@ -351,12 +509,42 @@ describe("Auth register and login", () => {
     expect(response.body.data.user.passwordHash).toBeUndefined();
   });
 
-  test("login before phone verification is rejected", async () => {
+  test("legacy user without email can still login through phone verification", async () => {
+    const passwordHash = await bcrypt.hash("Strong1!", 10);
+    authRepository.findUserWithPasswordByPhone.mockResolvedValue({
+      ...activeUser,
+      email: null,
+      emailVerifiedAt: null,
+      phoneVerifiedAt: new Date(),
+      passwordHash,
+    });
+
+    await request(app)
+      .post("/api/v1/auth/login")
+      .send({ phone: activeUser.phone, password: "Strong1!" })
+      .expect(200);
+  });
+
+  test("an email-era user cannot bypass verification with phoneVerifiedAt", async () => {
+    const passwordHash = await bcrypt.hash("Strong1!", 10);
+    authRepository.findUserWithPasswordByPhone.mockResolvedValue({
+      ...activeUser,
+      emailVerifiedAt: null,
+      phoneVerifiedAt: new Date(),
+      passwordHash,
+    });
+
+    await expect(
+      authService.login(activeUser.phone, "Strong1!"),
+    ).rejects.toMatchObject({ statusCode: 403 });
+  });
+
+  test("login before email verification is rejected", async () => {
     const passwordHash = await bcrypt.hash("Strong1!", 10);
 
     authRepository.findUserWithPasswordByPhone.mockResolvedValue({
       ...activeUser,
-      phoneVerifiedAt: null,
+      emailVerifiedAt: null,
       passwordHash,
     });
 
@@ -364,7 +552,7 @@ describe("Auth register and login", () => {
       authService.login("+970599000000", "Strong1!"),
     ).rejects.toMatchObject({
       statusCode: 403,
-      message: "Phone number is not verified.",
+      message: "Account email is not verified.",
     });
   });
 
@@ -419,6 +607,20 @@ describe("Locations neighborhoods", () => {
         }),
       ]),
     );
+    expect(response.body.data.cities.map((city) => city.key)).toEqual([
+      "NORTH_GAZA",
+      "GAZA_CITY",
+      "MIDDLE_AREA",
+      "DEIR_AL_BALAH",
+      "KHAN_YUNIS",
+      "RAFAH",
+    ]);
+    expect(response.body.data.cities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "GAZA_CITY", neighborhoodsCount: 16 }),
+        expect.objectContaining({ key: "RAFAH", neighborhoodsCount: 7 }),
+      ]),
+    );
   });
 
   test("returns active neighborhoods without authentication", async () => {
@@ -426,7 +628,9 @@ describe("Locations neighborhoods", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.body.success).toBe(true);
-    expect(response.body.data.neighborhoods).toEqual([activeNeighborhood]);
+    expect(response.body.data.neighborhoods).toEqual([
+      { ...activeNeighborhood, zoneKey: "GAZA_CITY" },
+    ]);
     expect(prisma.neighborhood.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
@@ -445,9 +649,9 @@ describe("Locations neighborhoods", () => {
     );
   });
 
-  test("filters active neighborhoods by city", async () => {
+  test("filters active neighborhoods by canonical zone key", async () => {
     const response = await request(app).get(
-      "/api/v1/locations/neighborhoods?city=GAZA_CITY",
+      "/api/v1/locations/neighborhoods?zoneKey=GAZA_CITY",
     );
 
     expect(response.statusCode).toBe(200);
@@ -455,11 +659,43 @@ describe("Locations neighborhoods", () => {
       expect.objectContaining({
         where: {
           isActive: true,
-          key: { not: null },
-          governorate: "مدينة غزة",
+          key: { in: expect.arrayContaining(["ASH_SHUJAIYEH"]) },
         },
       }),
     );
+    expect(prisma.neighborhood.findMany.mock.calls[0][0].where.key.in).not.toContain(
+      "RAFAH_CITY",
+    );
+  });
+
+  test.each([
+    ["NORTH_GAZA", "BEIT_LAHIA", "GAZA_HARBOR"],
+    ["MIDDLE_AREA", "AL_ZAHRA", "RAFAH_CITY"],
+    ["DEIR_AL_BALAH", "DEIR_AL_BALAH_AL_BALAD", "AN_NUSEIRAT_CAMP"],
+    ["KHAN_YUNIS", "KHAN_YUNIS_CITY", "BEIT_LAHIA"],
+    ["RAFAH", "RAFAH_CITY", "ASH_SHUJAIYEH"],
+  ])("maps catalog zone %s to its own area keys", async (zoneKey, included, excluded) => {
+    const response = await request(app).get(
+      `/api/v1/locations/neighborhoods?zoneKey=${zoneKey}`,
+    );
+
+    expect(response.statusCode).toBe(200);
+    const areaKeys = prisma.neighborhood.findMany.mock.calls[0][0].where.key.in;
+    expect(areaKeys).toContain(included);
+    expect(areaKeys).not.toContain(excluded);
+    expect(prisma.neighborhood.findMany.mock.calls[0][0].where.governorate).toBeUndefined();
+  });
+
+  test("supports equal aliases and rejects conflicting aliases", async () => {
+    const accepted = await request(app).get(
+      "/api/v1/locations/neighborhoods?zoneKey=GAZA_CITY&city=GAZA_CITY",
+    );
+    const rejected = await request(app).get(
+      "/api/v1/locations/neighborhoods?zoneKey=GAZA_CITY&city=RAFAH",
+    );
+
+    expect(accepted.statusCode).toBe(200);
+    expect(rejected.statusCode).toBe(400);
   });
 
   test("rejects an unsupported city", async () => {
@@ -489,6 +725,7 @@ describe("Locations neighborhoods", () => {
         id: activeNeighborhood.id,
         name: activeNeighborhood.name,
         governorate: activeNeighborhood.governorate,
+        zoneKey: null,
       },
     ]);
     expect(
@@ -500,12 +737,32 @@ describe("Locations neighborhoods", () => {
 });
 
 describe("Auth verify OTP", () => {
+  test("rejects an OTP that was persisted but never confirmed delivered", async () => {
+    authRepository.findLatestOtpByPhone.mockResolvedValue({
+      id: "undelivered-otp",
+      email: pendingRegistration.email,
+      deliveredAt: null,
+      otpHash: await bcrypt.hash("123456", 10),
+      attemptCount: 0,
+      maxAttempts: 3,
+      expiresAt: new Date(Date.now() + 60_000),
+      verifiedAt: null,
+    });
+
+    await expect(
+      authService.verifyOtp(activeUser.phone, "123456"),
+    ).rejects.toMatchObject({ statusCode: 400, message: "OTP not found." });
+    expect(authRepository.claimOtpVerification).not.toHaveBeenCalled();
+  });
+
   test("valid OTP creates the user, creates wallet, removes pending data, and issues tokens", async () => {
     const otpHash = await bcrypt.hash("123456", 10);
 
     authRepository.findLatestOtpByPhone.mockResolvedValue({
       id: "otp-1",
+      deliveredAt: new Date(),
       phone: "+970599000000",
+      email: "user@example.com",
       otpHash,
       attemptCount: 0,
       maxAttempts: 5,
@@ -569,7 +826,9 @@ describe("Auth verify OTP", () => {
 
     authRepository.findLatestOtpByPhone.mockResolvedValue({
       id: "otp-no-user",
+      deliveredAt: new Date(),
       phone: "+970599000003",
+      email: "user@example.com",
       otpHash,
       attemptCount: 0,
       maxAttempts: 5,
@@ -595,7 +854,9 @@ describe("Auth verify OTP", () => {
     const otpHash = await bcrypt.hash("123456", 10);
     authRepository.findLatestOtpByPhone.mockResolvedValue({
       id: "otp-without-consent",
+      deliveredAt: new Date(),
       phone: "+970599000004",
+      email: "user@example.com",
       otpHash,
       attemptCount: 0,
       maxAttempts: 5,
@@ -624,12 +885,14 @@ describe("Auth verify OTP", () => {
     const missing = await request(app).post("/api/v1/auth/register").send({
       fullName: "Leenah Alborsh",
       phone: "+970599000001",
+      email: "user1@example.com",
       password: "Strong1!",
       neighborhoodId: activeNeighborhood.id,
     });
     const declined = await request(app).post("/api/v1/auth/register").send({
       fullName: "Leenah Alborsh",
       phone: "+970599000001",
+      email: "user1@example.com",
       password: "Strong1!",
       neighborhoodId: activeNeighborhood.id,
       termsAccepted: false,
@@ -645,7 +908,9 @@ describe("Auth verify OTP", () => {
 
     authRepository.findLatestOtpByPhone.mockResolvedValue({
       id: "otp-2",
+      deliveredAt: new Date(),
       phone: "+970599000000",
+      email: "user@example.com",
       otpHash,
       attemptCount: 0,
       maxAttempts: 5,
@@ -668,7 +933,9 @@ describe("Auth verify OTP", () => {
 
     authRepository.findLatestOtpByPhone.mockResolvedValue({
       id: "otp-registration",
+      deliveredAt: new Date(),
       phone: "+970599000002",
+      email: "user@example.com",
       otpHash,
       attemptCount: 0,
       maxAttempts: 5,
@@ -719,6 +986,8 @@ describe("Auth verify OTP", () => {
 
     authRepository.findLatestOtpByPhone.mockResolvedValue({
       id: "otp-3",
+      deliveredAt: new Date(),
+      email: "user@example.com",
       otpHash,
       attemptCount: 0,
       maxAttempts: 5,
@@ -742,6 +1011,7 @@ describe("Auth verify OTP", () => {
   test("expired OTP is rejected", async () => {
     authRepository.findLatestOtpByPhone.mockResolvedValue({
       id: "otp-4",
+      deliveredAt: new Date(),
       attemptCount: 0,
       maxAttempts: 5,
       expiresAt: new Date(Date.now() - 60 * 1000),
@@ -759,6 +1029,7 @@ describe("Auth verify OTP", () => {
   test("max attempts are enforced", async () => {
     authRepository.findLatestOtpByPhone.mockResolvedValue({
       id: "otp-5",
+      deliveredAt: new Date(),
       attemptCount: 5,
       maxAttempts: 5,
       expiresAt: new Date(Date.now() + 60 * 1000),
@@ -776,6 +1047,7 @@ describe("Auth verify OTP", () => {
   test("reused OTP is rejected", async () => {
     authRepository.findLatestOtpByPhone.mockResolvedValue({
       id: "otp-6",
+      deliveredAt: new Date(),
       attemptCount: 0,
       maxAttempts: 5,
       expiresAt: new Date(Date.now() + 60 * 1000),
@@ -793,8 +1065,8 @@ describe("Auth verify OTP", () => {
 
 describe("Auth forgot and reset password", () => {
   test("forgot password creates a purpose-scoped OTP for an existing user", async () => {
-    env.otpFixedCode = "000000";
-    env.otpTestPhones = [activeUser.phone];
+    env.testOtpCode = "000000";
+    env.testOtpEmail = activeUser.email;
     authRepository.findUserByPhone.mockResolvedValue(activeUser);
 
     const response = await request(app)
@@ -804,7 +1076,7 @@ describe("Auth forgot and reset password", () => {
     expect(response.statusCode).toBe(200);
     expect(response.body.data.expiresInMinutes).toBe(2);
     expect(response.body.message).toBe(
-      "If an account exists, a reset code has been sent.",
+      "If the account is eligible, a reset code will be delivered.",
     );
 
     const storedOtp = authRepository.createOtpVerification.mock.calls[0][0];
@@ -825,12 +1097,32 @@ describe("Auth forgot and reset password", () => {
     expect(authRepository.createOtpVerification).not.toHaveBeenCalled();
   });
 
+  test("forgot password keeps the same generic response for a legacy no-email user", async () => {
+    authRepository.findUserByPhone.mockResolvedValue({
+      ...activeUser,
+      email: null,
+      emailVerifiedAt: null,
+    });
+
+    const response = await request(app)
+      .post("/api/v1/auth/forgot-password")
+      .send({ phone: activeUser.phone });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.message).toBe(
+      "If the account is eligible, a reset code will be delivered.",
+    );
+    expect(verificationDelivery.sendVerificationCode).not.toHaveBeenCalled();
+  });
+
   test("reset password replaces the hash and revokes existing sessions", async () => {
     const otpHash = await bcrypt.hash("000000", 10);
     authRepository.findUserByPhone.mockResolvedValue(activeUser);
     authRepository.findLatestOtpByPhone.mockResolvedValue({
       id: "reset-otp-1",
+      deliveredAt: new Date(),
       phone: activeUser.phone,
+      email: activeUser.email,
       purpose: "PASSWORD_RESET",
       otpHash,
       attemptCount: 0,
@@ -870,6 +1162,8 @@ describe("Auth forgot and reset password", () => {
     authRepository.findUserByPhone.mockResolvedValue(activeUser);
     authRepository.findLatestOtpByPhone.mockResolvedValue({
       id: "reset-otp-2",
+      deliveredAt: new Date(),
+      email: activeUser.email,
       otpHash,
       attemptCount: 0,
       maxAttempts: 3,
@@ -901,8 +1195,8 @@ describe("Account deletion cancellation", () => {
   };
 
   test("requests a purpose-scoped OTP during the 30-day recovery window", async () => {
-    env.otpFixedCode = "000000";
-    env.otpTestPhones = [deactivatedUser.phone];
+    env.testOtpCode = "000000";
+    env.testOtpEmail = deactivatedUser.email;
     authRepository.findUserWithPasswordByPhone.mockResolvedValue(
       deactivatedUser,
     );
@@ -912,9 +1206,9 @@ describe("Account deletion cancellation", () => {
     expect(authRepository.createOtpVerification).toHaveBeenCalledWith(
       expect.objectContaining({
         phone: deactivatedUser.phone,
+        email: deactivatedUser.email,
         purpose: "ACCOUNT_REACTIVATION",
       }),
-      undefined,
     );
   });
 
@@ -927,6 +1221,8 @@ describe("Account deletion cancellation", () => {
     });
     authRepository.findLatestOtpByPhone.mockResolvedValue({
       id: "recovery-otp",
+      deliveredAt: new Date(),
+      email: deactivatedUser.email,
       otpHash,
       attemptCount: 0,
       maxAttempts: 3,
@@ -947,6 +1243,21 @@ describe("Account deletion cancellation", () => {
     );
     expect(result.user.status).toBe("ACTIVE");
     expect(result.accessToken).toBeTruthy();
+  });
+
+  test("does not deliver reactivation OTP for a legacy no-email account", async () => {
+    authRepository.findUserWithPasswordByPhone.mockResolvedValue({
+      ...deactivatedUser,
+      email: null,
+      emailVerifiedAt: null,
+    });
+
+    const result = await authService.requestAccountReactivationOtp(
+      deactivatedUser.phone,
+    );
+
+    expect(result.message).toMatch(/recovery is available/i);
+    expect(verificationDelivery.sendVerificationCode).not.toHaveBeenCalled();
   });
 });
 
@@ -1048,6 +1359,46 @@ describe("Auth refresh and logout", () => {
 });
 
 describe("Auth middleware", () => {
+  test("super admin middleware requires authentication", async () => {
+    const error = await runMiddleware(requireSuperAdmin, {});
+
+    expect(error).toMatchObject({
+      statusCode: 401,
+      message: "Authentication is required.",
+    });
+  });
+
+  test("super admin middleware rejects regular users", async () => {
+    const error = await runMiddleware(requireSuperAdmin, {
+      user: { id: activeUser.id, role: "USER", status: "ACTIVE" },
+    });
+
+    expect(error).toMatchObject({
+      statusCode: 403,
+      message: "Dashboard administrator access is required.",
+    });
+  });
+
+  test("super admin middleware rejects a non-allowlisted SUPER_ADMIN", async () => {
+    const error = await runMiddleware(requireSuperAdmin, {
+      user: {
+        id: "550e8400-e29b-41d4-a716-446655440099",
+        role: "SUPER_ADMIN",
+        status: "ACTIVE",
+      },
+    });
+
+    expect(error).toMatchObject({ statusCode: 403 });
+  });
+
+  test("super admin middleware accepts only the configured SUPER_ADMIN", async () => {
+    const error = await runMiddleware(requireSuperAdmin, {
+      user: { id: activeUser.id, role: "SUPER_ADMIN", status: "ACTIVE" },
+    });
+
+    expect(error).toBeUndefined();
+  });
+
   test("no Bearer token returns 401", async () => {
     const error = await runMiddleware(requireAuth, {
       headers: {},
