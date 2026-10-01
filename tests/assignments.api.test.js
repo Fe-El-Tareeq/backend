@@ -1,0 +1,138 @@
+process.env.NODE_ENV = "test";
+
+const request = require("supertest");
+
+jest.mock("../src/features/assignments/assignments.service");
+jest.mock("../src/middleware/auth.middleware", () => ({
+  requireAuth: (req, res, next) => {
+    req.user = { id: "550e8400-e29b-41d4-a716-446655440001" };
+    next();
+  },
+  requireAdmin: (req, res, next) => next(),
+}));
+
+const app = require("../src/app");
+const service = require("../src/features/assignments/assignments.service");
+
+const userId = "550e8400-e29b-41d4-a716-446655440001";
+const assignmentId = "850e8400-e29b-41d4-a716-446655440000";
+const errandId = "650e8400-e29b-41d4-a716-446655440000";
+const tripId = "750e8400-e29b-41d4-a716-446655440000";
+const assignment = {
+  id: assignmentId,
+  errandId,
+  tripId,
+  travelerId: userId,
+  status: "ACCEPTED",
+};
+
+beforeEach(() => {
+  jest.clearAllMocks();
+});
+
+describe("Assignments API", () => {
+  test("GET /api/v1/assignments lists assignments", async () => {
+    service.listAssignments.mockResolvedValue({
+      assignments: [assignment],
+      pagination: { skip: 0, take: 20, total: 1 },
+    });
+
+    const response = await request(app).get("/api/v1/assignments");
+
+    expect(response.statusCode).toBe(200);
+    expect(service.listAssignments).toHaveBeenCalledWith(userId, {
+      skip: 0,
+      take: 20,
+    });
+  });
+
+  test("GET /api/v1/assignments/:id returns details", async () => {
+    service.getAssignmentById.mockResolvedValue(assignment);
+
+    const response = await request(app).get(
+      `/api/v1/assignments/${assignmentId}`,
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(service.getAssignmentById).toHaveBeenCalledWith(
+      userId,
+      assignmentId,
+    );
+  });
+
+  test("explicit lifecycle action endpoints call the matching service methods", async () => {
+    service.markPickedUp.mockResolvedValue({
+      ...assignment,
+      status: "PICKED_UP",
+    });
+    service.startDelivery.mockResolvedValue({
+      ...assignment,
+      status: "IN_TRANSIT",
+    });
+    service.completeAssignment.mockResolvedValue({
+      ...assignment,
+      status: "COMPLETED",
+    });
+    service.cancelAssignment.mockResolvedValue({
+      ...assignment,
+      status: "CANCELLED",
+    });
+
+    expect(
+      (await request(app).post(`/api/v1/assignments/${assignmentId}/pickup`))
+        .statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await request(app).post(
+          `/api/v1/assignments/${assignmentId}/start-delivery`,
+        ).send({ estimatedDeliveryAt: "2027-09-24T18:30:00.000Z" })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (await request(app).post(`/api/v1/assignments/${assignmentId}/complete`))
+        .statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await request(app)
+          .post(`/api/v1/assignments/${assignmentId}/cancel`)
+          .send({ cancellationReason: "Changed" })
+      ).statusCode,
+    ).toBe(200);
+
+    expect(service.markPickedUp).toHaveBeenCalledWith(userId, assignmentId);
+    expect(service.startDelivery).toHaveBeenCalledWith(userId, assignmentId, {
+      estimatedDeliveryAt: "2027-09-24T18:30:00.000Z",
+    });
+    expect(service.completeAssignment).toHaveBeenCalledWith(
+      userId,
+      assignmentId,
+    );
+    expect(service.cancelAssignment).toHaveBeenCalledWith(
+      userId,
+      assignmentId,
+      { cancellationReason: "Changed" },
+    );
+  });
+
+  test("PATCH estimated delivery time calls the matching service method", async () => {
+    const estimatedDeliveryAt = "2027-09-24T19:00:00.000Z";
+    service.updateEstimatedDeliveryTime.mockResolvedValue({
+      ...assignment,
+      status: "IN_TRANSIT",
+      estimatedDeliveryAt,
+    });
+
+    const response = await request(app)
+      .patch(`/api/v1/assignments/${assignmentId}/estimated-delivery-time`)
+      .send({ estimatedDeliveryAt });
+
+    expect(response.statusCode).toBe(200);
+    expect(service.updateEstimatedDeliveryTime).toHaveBeenCalledWith(
+      userId,
+      assignmentId,
+      estimatedDeliveryAt,
+    );
+  });
+});

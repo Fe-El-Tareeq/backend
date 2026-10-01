@@ -1,5 +1,271 @@
-const { createService } = require('../../utils/featureScaffold');
-const { FEATURE_NAME } = require('./wallet.constants');
-const repository = require('./wallet.repository');
+const ApiError = require("../../utils/ApiError");
+const repository = require("./wallet.repository");
+const prisma = require("../../config/prisma");
 
-module.exports = createService(FEATURE_NAME, repository);
+// Returns the authenticated user's wallet.
+const getWallet = async (userId) => {
+  const wallet = await repository.findWalletByUserId(userId);
+
+  if (!wallet) {
+    throw new ApiError(404, "Wallet not found");
+  }
+
+  const totals = await repository.getWalletTotals(wallet.id);
+  return { ...wallet, ...totals };
+};
+
+// Returns the authenticated user's wallet transaction history with pagination.
+const getTransactionHistory = async (userId, options = {}) => {
+  const wallet = await repository.findWalletByUserId(userId);
+
+  if (!wallet) {
+    throw new ApiError(404, "Wallet not found");
+  }
+
+  return repository.getWalletActivity(userId, wallet.id, options);
+};
+
+// Validates the token amount before performing a wallet operation.
+const validateTokenAmount = (amount) => {
+  if (!Number.isInteger(amount) || amount <= 0) {
+    throw new ApiError(400, "Token amount must be a positive integer");
+  }
+};
+// Checks whether a repeated idempotency key belongs to the same operation.
+const validateIdempotentOperation = (
+  existingTransaction,
+  { amount, transactionType, referenceType = null, referenceId = null },
+) => {
+  const isSameOperation =
+    existingTransaction.tokenAmount === amount &&
+    existingTransaction.transactionType === transactionType &&
+    (existingTransaction.referenceType || null) === referenceType &&
+    (existingTransaction.referenceId || null) === referenceId;
+
+  if (!isSameOperation) {
+    throw new ApiError(
+      409,
+      "Idempotency key has already been used with different operation data",
+    );
+  }
+
+  return existingTransaction;
+};
+
+const executeDebit = async (
+  {
+    userId,
+    amount,
+    transactionType,
+    referenceType = null,
+    referenceId = null,
+    idempotencyKey = null,
+    description = null,
+  },
+  client,
+) => {
+  // Locks the wallet row until this database transaction finishes.
+  const wallet = await repository.lockWallet(userId, client);
+
+  if (!wallet) {
+    throw new ApiError(404, "Wallet not found");
+  }
+
+  // Check after locking so concurrent retries return the first operation.
+  if (idempotencyKey) {
+    const existingTransaction = await repository.findByIdempotencyKey(
+      wallet.id,
+      idempotencyKey,
+      client,
+    );
+
+    if (existingTransaction) {
+      return validateIdempotentOperation(existingTransaction, {
+        amount,
+        transactionType,
+        referenceType,
+        referenceId,
+      });
+    }
+  }
+
+  const balanceBefore = wallet.token_balance;
+
+  // Prevents the wallet balance from becoming negative.
+  if (balanceBefore < amount) {
+    throw new ApiError(400, "Insufficient token balance");
+  }
+
+  const balanceAfter = balanceBefore - amount;
+
+  // Updates the wallet balance inside the same database transaction.
+  await repository.updateBalance(wallet.id, balanceAfter, client);
+  // Records the debit operation in the wallet ledger.
+  const ledgerEntry = await repository.createLedgerEntry(
+    {
+      walletId: wallet.id,
+      transactionType,
+      tokenAmount: amount,
+      balanceBefore,
+      balanceAfter,
+      referenceType,
+      referenceId,
+      idempotencyKey,
+      description,
+    },
+    client,
+  );
+
+  return ledgerEntry;
+};
+
+// Deducts tokens from a user's wallet safely inside a database transaction.
+const debit = async ({
+  userId,
+  amount,
+  transactionType,
+  referenceType = null,
+  referenceId = null,
+  idempotencyKey = null,
+  description = null,
+  client = null,
+}) => {
+  validateTokenAmount(amount);
+
+  const payload = {
+    userId,
+    amount,
+    transactionType,
+    referenceType,
+    referenceId,
+    idempotencyKey,
+    description,
+  };
+
+  if (client) {
+    return executeDebit(payload, client);
+  }
+
+  return prisma.$transaction((tx) => executeDebit(payload, tx));
+};
+const executeCredit = async (
+  {
+    userId,
+    amount,
+    transactionType,
+    referenceType = null,
+    referenceId = null,
+    idempotencyKey = null,
+    description = null,
+    paymentInvoiceId = null,
+  },
+  client,
+) => {
+  const wallet = await repository.lockWallet(userId, client);
+
+  if (!wallet) {
+    throw new ApiError(404, "Wallet not found");
+  }
+
+  if (idempotencyKey) {
+    const existingTransaction = await repository.findByIdempotencyKey(
+      wallet.id,
+      idempotencyKey,
+      client,
+    );
+
+    if (existingTransaction) {
+      return validateIdempotentOperation(existingTransaction, {
+        amount,
+        transactionType,
+        referenceType,
+        referenceId,
+      });
+    }
+  }
+
+  const balanceBefore = wallet.token_balance;
+  const balanceAfter = balanceBefore + amount;
+
+  await repository.updateBalance(wallet.id, balanceAfter, client);
+
+  return repository.createLedgerEntry(
+    {
+      walletId: wallet.id,
+      transactionType,
+      tokenAmount: amount,
+      balanceBefore,
+      balanceAfter,
+      referenceType,
+      referenceId,
+      idempotencyKey,
+      description,
+      paymentInvoiceId,
+    },
+    client,
+  );
+};
+
+// Adds tokens safely and can join a caller-owned transaction.
+const credit = async ({
+  userId,
+  amount,
+  transactionType,
+  referenceType = null,
+  referenceId = null,
+  idempotencyKey = null,
+  description = null,
+  paymentInvoiceId = null,
+  client = null,
+}) => {
+  validateTokenAmount(amount);
+
+  const payload = {
+    userId,
+    amount,
+    transactionType,
+    referenceType,
+    referenceId,
+    idempotencyKey,
+    description,
+    paymentInvoiceId,
+  };
+
+  if (client) {
+    return executeCredit(payload, client);
+  }
+
+  return prisma.$transaction((tx) => executeCredit(payload, tx));
+}; // Refunds tokens back to a user's wallet.
+const refund = async ({
+  userId,
+  amount,
+  referenceType = null,
+  referenceId = null,
+  idempotencyKey,
+  description = "Token refund",
+}) => {
+  if (!idempotencyKey) {
+    throw new ApiError(400, "Idempotency key is required for refunds");
+  }
+
+  return credit({
+    userId,
+    amount,
+    transactionType: "REFUND",
+    referenceType,
+    referenceId,
+    idempotencyKey,
+    description,
+  });
+};
+
+module.exports = {
+  getWallet,
+  getTransactionHistory,
+  validateTokenAmount,
+  validateIdempotentOperation,
+  debit,
+  credit,
+  refund,
+};

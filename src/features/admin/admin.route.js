@@ -1,5 +1,70 @@
-const { createRoute } = require('../../utils/featureScaffold');
-const controller = require('./admin.controller');
-const validation = require('./admin.validation');
+const express = require("express");
+const controller = require("./admin.controller");
+const validation = require("./admin.validation");
+const validate = require("../../middleware/validate.middleware");
+const {
+  requireAdmin,
+  requireAuth,
+} = require("../../middleware/auth.middleware");
 
-module.exports = createRoute(controller, validation);
+const router = express.Router();
+router.use(requireAuth, requireAdmin);
+router.get(
+  "/payments/invoices",
+  validate(validation.listPaymentInvoicesSchema),
+  controller.listPaymentInvoices,
+);
+router.post(
+  "/payments/invoices/:id/approve",
+  validate(validation.paymentInvoiceActionSchema),
+  controller.approvePaymentInvoice,
+);
+router.post(
+  "/payments/invoices/:id/reject",
+  validate(validation.rejectPaymentInvoiceSchema),
+  controller.rejectPaymentInvoice,
+);
+
+router.get(
+  "/verifications",
+  validate(validation.listVerificationsSchema),
+  controller.listVerifications,
+);
+router.get(
+  "/verifications/:id",
+  validate(validation.verificationDetailsSchema),
+  controller.getVerification,
+);
+router.post(
+  "/verifications/:id/approve",
+  validate(validation.approveVerificationSchema),
+  controller.approveVerification,
+);
+router.post(
+  "/verifications/:id/reject",
+  validate(validation.rejectVerificationSchema),
+  controller.rejectVerification,
+);
+router.get("/faqs", validate(validation.listFaqsSchema), controller.listFaqs);
+router.post(
+  "/faqs",
+  validate(validation.createFaqSchema),
+  controller.createFaq,
+);
+router.patch(
+  "/faqs/reorder",
+  validate(validation.reorderFaqsSchema),
+  controller.reorderFaqs,
+);
+router.patch(
+  "/faqs/:id",
+  validate(validation.updateFaqSchema),
+  controller.updateFaq,
+);
+router.delete(
+  "/faqs/:id",
+  validate(validation.deleteFaqSchema),
+  controller.deleteFaq,
+);
+
+module.exports = router;

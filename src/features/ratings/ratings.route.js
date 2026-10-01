@@ -1,5 +1,13 @@
-const { createRoute } = require('../../utils/featureScaffold');
-const controller = require('./ratings.controller');
-const validation = require('./ratings.validation');
-
-module.exports = createRoute(controller, validation);
+const express = require("express");
+const { requireAuth } = require("../../middleware/auth.middleware");
+const validate = require("../../middleware/validate.middleware");
+const controller = require("./ratings.controller");
+const validation = require("./ratings.validation");
+const router = express.Router();
+router.use(requireAuth);
+router.post("/", validate(validation.createRatingSchema), controller.createRating);
+router.get("/pending", validate(validation.paginatedSchema), controller.getPending);
+router.get("/me/received", validate(validation.paginatedSchema), controller.getReceived);
+router.get("/me/summary", validate(validation.summarySchema), controller.getSummary);
+router.get("/assignments/:assignmentId", validate(validation.assignmentRatingsSchema), controller.getAssignmentRatings);
+module.exports = router;

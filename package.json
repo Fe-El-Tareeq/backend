@@ -4,18 +4,38 @@
   "description": "Backend API for Fe El-Tareeq peer-to-peer micro-errand platform",
   "main": "src/server.js",
   "type": "commonjs",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
+    "build": "node scripts/check-build.js",
     "dev": "nodemon src/server.js",
+    "lint": "node scripts/lint-js.js",
+    "prisma:generate": "prisma generate",
+    "prisma:validate": "prisma validate",
     "start": "node src/server.js",
-    "test": "echo \"Tests are not configured yet\""
+    "test": "jest",
+    "test:ci": "jest --runInBand --coverage --json --outputFile=coverage/jest-results.json",
+    "swagger:validate": "node scripts/validate-openapi.js",
+    "verify": "npm run lint && npm run prisma:validate && npm run prisma:generate && npm run swagger:validate && npm run build && npm run test:ci",
+    "import:delivery-areas": "node scripts/import-delivery-areas.js"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^16.6.1",
     "express": "^4.22.2",
+    "express-rate-limit": "^8.6.2",
     "helmet": "^8.3.0",
-    "morgan": "^1.11.0"
+    "jsonwebtoken": "^9.0.3",
+    "morgan": "^1.11.0",
+    "multer": "^2.2.0",
+    "pg": "^8.23.0",
+    "swagger-jsdoc": "^6.3.0",
+    "swagger-ui-express": "^5.0.1",
+    "zod": "^4.4.3"
   },
   "repository": {
     "type": "git",
@@ -35,7 +55,22 @@
   },
   "homepage": "https://github.com/Fe-El-Tareeq/backend#readme",
   "devDependencies": {
+    "jest": "^30.4.2",
     "nodemon": "^3.1.14",
-    "prisma": "^7.9.1"
+    "prisma": "^7.9.1",
+    "supertest": "^7.2.2"
+  },
+  "jest": {
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "!src/server.js",
+      "!src/config/prisma.js"
+    ],
+    "coverageDirectory": "coverage",
+    "coverageReporters": [
+      "text",
+      "json-summary",
+      "lcov"
+    ]
   }
 }

@@ -1,0 +1,11 @@
+const ACCEPT_TOKEN_COST = 1;
+const ACTIVE_ASSIGNMENT_STATUSES = Object.freeze([
+  "ACCEPTED",
+  "PICKED_UP",
+  "IN_TRANSIT",
+]);
+
+module.exports = {
+  ACCEPT_TOKEN_COST,
+  ACTIVE_ASSIGNMENT_STATUSES,
+};

@@ -1,0 +1,624 @@
+process.env.DATABASE_URL = process.env.DATABASE_URL || "postgresql://test";
+process.env.DIRECT_URL = process.env.DIRECT_URL || "postgresql://test";
+process.env.JWT_ACCESS_SECRET =
+  process.env.JWT_ACCESS_SECRET || "test-access-secret";
+process.env.JWT_REFRESH_SECRET =
+  process.env.JWT_REFRESH_SECRET || "test-refresh-secret";
+process.env.NODE_ENV = "test";
+
+const jwt = require("jsonwebtoken");
+const request = require("supertest");
+
+jest.mock("../src/features/notifications/notifications.repository");
+jest.mock("../src/config/prisma", () => ({ user: { findUnique: jest.fn() } }));
+
+const app = require("../src/app");
+const prisma = require("../src/config/prisma");
+const repository = require("../src/features/notifications/notifications.repository");
+const service = require("../src/features/notifications/notifications.service");
+
+const userId = "550e8400-e29b-41d4-a716-446655440001";
+const otherUserId = "550e8400-e29b-41d4-a716-446655440002";
+const notificationId = "650e8400-e29b-41d4-a716-446655440001";
+const otherNotificationId = "650e8400-e29b-41d4-a716-446655440002";
+const errandId = "750e8400-e29b-41d4-a716-446655440001";
+const assignmentId = "850e8400-e29b-41d4-a716-446655440001";
+const invoiceId = "950e8400-e29b-41d4-a716-446655440001";
+
+const token = jwt.sign(
+  { type: "access", userId, role: "USER" },
+  process.env.JWT_ACCESS_SECRET,
+);
+
+const makeNotification = (overrides = {}) => ({
+  id: notificationId,
+  userId,
+  errandId,
+  assignmentId,
+  notificationType: "ASSIGNMENT_ACCEPTED",
+  channel: "IN_APP",
+  title: "Errand accepted",
+  message: "A traveler accepted your errand.",
+  status: "PENDING",
+  metadata: { invoiceId },
+  providerMessageId: null,
+  createdAt: new Date("2026-09-05T08:00:00.000Z"),
+  sentAt: null,
+  readAt: null,
+  failedAt: null,
+  phone: "+970599000000",
+  providerPayload: { secret: true },
+  ...overrides,
+});
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  prisma.user.findUnique.mockImplementation(({ where }) =>
+    Promise.resolve({
+      id: where.id,
+      phone: "+970599000000",
+      role: "USER",
+      status: "ACTIVE",
+    }),
+  );
+  repository.listForUser.mockResolvedValue([makeNotification()]);
+  repository.countForUser.mockResolvedValue(1);
+  repository.countUnreadForUser.mockResolvedValue(4);
+  repository.findByIdForUser.mockResolvedValue(makeNotification());
+  repository.markReadForUser.mockResolvedValue({ count: 1 });
+  repository.markAllReadForUser.mockResolvedValue({ count: 3 });
+  repository.findUserPreference.mockResolvedValue(null);
+});
+
+describe("Notification listing", () => {
+  test("authenticated user lists own notifications", async () => {
+    const response = await request(app)
+      .get("/api/v1/notifications")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(response.statusCode).toBe(200);
+    expect(repository.listForUser).toHaveBeenCalledWith({
+      userId,
+      skip: 0,
+      take: 20,
+      status: undefined,
+      notificationTypes: null,
+    });
+    expect(response.body.data.unreadCount).toBe(4);
+    expect(response.body.data.notifications[0]).toMatchObject({
+      id: notificationId,
+      type: "ASSIGNMENT_ACCEPTED",
+      isRead: false,
+      metadata: { errandId, assignmentId, invoiceId },
+      createdAt: "2026-09-05T08:00:00.000Z",
+    });
+    expect(response.body.data).not.toHaveProperty("today");
+    expect(response.body.data).not.toHaveProperty("yesterday");
+    expect(response.body.data).not.toHaveProperty("earlier");
+  });
+
+  test("requires authentication", async () => {
+    const response = await request(app).get("/api/v1/notifications");
+
+    expect(response.statusCode).toBe(401);
+    expect(repository.listForUser).not.toHaveBeenCalled();
+  });
+
+  test("returns an empty page while preserving the global unread count", async () => {
+    repository.listForUser.mockResolvedValue([]);
+    repository.countForUser.mockResolvedValue(0);
+    repository.countUnreadForUser.mockResolvedValue(2);
+
+    const response = await request(app)
+      .get("/api/v1/notifications?tab=messages")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    expect(response.body.data).toEqual({
+      notifications: [],
+      unreadCount: 2,
+      pagination: { skip: 0, take: 20, total: 0 },
+    });
+  });
+
+  test("all includes notification types outside tab-specific mappings", async () => {
+    repository.listForUser.mockResolvedValue([
+      makeNotification({ notificationType: "PAYMENT_SUCCESS" }),
+    ]);
+
+    const response = await request(app)
+      .get("/api/v1/notifications?tab=all")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    expect(repository.listForUser).toHaveBeenCalledWith(
+      expect.objectContaining({ notificationTypes: null }),
+    );
+    expect(response.body.data.notifications[0].type).toBe("PAYMENT_SUCCESS");
+  });
+
+  test("newest-first ordering is requested from repository", async () => {
+    await service.list(userId, { skip: 0, take: 20 });
+
+    expect(repository.listForUser).toHaveBeenCalledWith({
+      userId,
+      skip: 0,
+      take: 20,
+      status: undefined,
+      notificationTypes: null,
+    });
+  });
+
+  test("pagination and unread filter are passed through", async () => {
+    await request(app)
+      .get("/api/v1/notifications?skip=5&take=10&status=UNREAD")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    expect(repository.listForUser).toHaveBeenCalledWith({
+      userId,
+      skip: 5,
+      take: 10,
+      status: "UNREAD",
+      notificationTypes: null,
+    });
+    expect(repository.countForUser).toHaveBeenCalledWith({
+      userId,
+      status: "UNREAD",
+      notificationTypes: null,
+    });
+  });
+
+  test("unreadCount is independent of page and page size", async () => {
+    repository.countUnreadForUser.mockResolvedValue(7);
+
+    const response = await request(app)
+      .get("/api/v1/notifications?tab=trips&skip=10&take=1")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    expect(repository.listForUser).toHaveBeenCalledWith(
+      expect.objectContaining({ skip: 10, take: 1 }),
+    );
+    expect(response.body.data.unreadCount).toBe(7);
+    expect(repository.countUnreadForUser).toHaveBeenCalledWith(userId);
+  });
+
+  test.each([
+    ["all", undefined, null],
+    ["unread", "UNREAD", null],
+    ["trips", undefined, ["NEW_TRIP_IN_AREA"]],
+    [
+      "errands",
+      undefined,
+      [
+        "NEW_PROPOSAL",
+        "ASSIGNMENT_ACCEPTED",
+        "ASSIGNMENT_STATUS_CHANGED",
+        "ASSIGNMENT_CANCELLED",
+      ],
+    ],
+    ["messages", undefined, ["NEW_CHAT_MESSAGE"]],
+  ])(
+    "maps the %s tab to repository filters",
+    async (tab, status, notificationTypes) => {
+      const response = await request(app)
+        .get(`/api/v1/notifications?tab=${tab}&take=1`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(200);
+
+      expect(repository.listForUser).toHaveBeenCalledWith({
+        userId,
+        skip: 0,
+        take: 1,
+        status,
+        notificationTypes,
+      });
+      expect(response.body.data.unreadCount).toBe(4);
+      expect(repository.countUnreadForUser).toHaveBeenCalledWith(userId);
+    },
+  );
+
+  test("rejects an unsupported notification tab", async () => {
+    await request(app)
+      .get("/api/v1/notifications?tab=payments")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(400);
+  });
+
+  test("user cannot see another user's notifications", async () => {
+    await service.list(userId, { skip: 0, take: 20 });
+
+    expect(repository.listForUser).toHaveBeenCalledWith(
+      expect.objectContaining({ userId }),
+    );
+  });
+
+  test("response does not expose sensitive fields", async () => {
+    const result = await service.list(userId, { skip: 0, take: 20 });
+
+    expect(result.notifications[0].phone).toBeUndefined();
+    expect(result.notifications[0].providerPayload).toBeUndefined();
+    expect(result.notifications[0].providerMessageId).toBeUndefined();
+  });
+});
+
+describe("Notification unread count and read state", () => {
+  test("unread count is compact", async () => {
+    const response = await request(app)
+      .get("/api/v1/notifications/unread-count")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data).toEqual({ count: 4 });
+    expect(repository.countUnreadForUser).toHaveBeenCalledWith(userId);
+  });
+
+  test("user marks own notification read", async () => {
+    repository.findByIdForUser
+      .mockResolvedValueOnce(makeNotification())
+      .mockResolvedValueOnce(
+        makeNotification({ status: "READ", readAt: new Date() }),
+      );
+
+    const response = await request(app)
+      .post(`/api/v1/notifications/${notificationId}/read`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({});
+
+    expect(response.statusCode).toBe(200);
+    expect(repository.markReadForUser).toHaveBeenCalledWith(
+      notificationId,
+      userId,
+      expect.any(Date),
+    );
+    expect(response.body.data.notification.isRead).toBe(true);
+  });
+
+  test("repeated mark-read is idempotent", async () => {
+    repository.findByIdForUser.mockResolvedValue(
+      makeNotification({ status: "READ", readAt: new Date() }),
+    );
+
+    await service.markRead(userId, notificationId);
+
+    expect(repository.markReadForUser).not.toHaveBeenCalled();
+  });
+
+  test("user cannot mark another user's notification", async () => {
+    repository.findByIdForUser.mockResolvedValue(null);
+
+    await expect(
+      service.markRead(userId, otherNotificationId),
+    ).rejects.toMatchObject({
+      statusCode: 404,
+    });
+    expect(repository.markReadForUser).not.toHaveBeenCalled();
+  });
+
+  test("mark-all-read updates only current user", async () => {
+    const response = await request(app)
+      .post("/api/v1/notifications/read-all")
+      .set("Authorization", `Bearer ${token}`)
+      .send({});
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data).toEqual({ updatedCount: 3 });
+    expect(repository.markAllReadForUser).toHaveBeenCalledWith(
+      userId,
+      expect.any(Date),
+    );
+  });
+});
+
+describe("Notification creation idempotency", () => {
+  test.each([
+    [
+      "new proposal",
+      () =>
+        service.templates.newProposal({
+          recipientId: userId,
+          proposalId: notificationId,
+          errandId,
+          tripId: invoiceId,
+          proposalType: "TRAVELER_OFFER",
+        }),
+      "NEW_PROPOSAL",
+      {
+        proposalId: notificationId,
+        tripId: invoiceId,
+        proposalType: "TRAVELER_OFFER",
+      },
+    ],
+    [
+      "accepted assignment",
+      () =>
+        service.templates.assignmentAccepted({
+          recipientId: userId,
+          errandId,
+          assignmentId,
+          tripId: invoiceId,
+        }),
+      "ASSIGNMENT_ACCEPTED",
+      { tripId: invoiceId },
+    ],
+    [
+      "in-transit assignment",
+      () =>
+        service.templates.assignmentStatusChanged({
+          userId,
+          errandId,
+          assignmentId,
+          tripId: invoiceId,
+          status: "IN_TRANSIT",
+          actorUserId: otherNotificationId,
+        }),
+      "ASSIGNMENT_STATUS_CHANGED",
+      {
+        tripId: invoiceId,
+        status: "IN_TRANSIT",
+        actorUserId: otherNotificationId,
+      },
+    ],
+    [
+      "completed assignment",
+      () =>
+        service.templates.assignmentStatusChanged({
+          userId,
+          errandId,
+          assignmentId,
+          tripId: invoiceId,
+          status: "COMPLETED",
+          actorUserId: otherNotificationId,
+        }),
+      "ASSIGNMENT_STATUS_CHANGED",
+      {
+        tripId: invoiceId,
+        status: "COMPLETED",
+        actorUserId: otherNotificationId,
+      },
+    ],
+    [
+      "successful top-up",
+      () =>
+        service.templates.paymentSuccess({
+          userId,
+          invoiceId,
+          totalTokens: 28,
+        }),
+      "PAYMENT_SUCCESS",
+      { invoiceId },
+    ],
+    [
+      "approved identity",
+      () =>
+        service.templates.identityVerificationApproved({
+          userId,
+          verificationId: notificationId,
+        }),
+      "IDENTITY_VERIFICATION_APPROVED",
+      { verificationId: notificationId, verificationStatus: "VERIFIED" },
+    ],
+  ])(
+    "creates one %s notification with stable metadata",
+    async (_label, create, type, metadata) => {
+      repository.create.mockResolvedValue(makeNotification());
+
+      await create();
+
+      expect(repository.create).toHaveBeenCalledTimes(1);
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId,
+          notificationType: type,
+          metadata,
+          idempotencyKey: expect.any(String),
+        }),
+        undefined,
+      );
+    },
+  );
+
+  test("does not create a chat notification when chat notifications are disabled", async () => {
+    repository.findUserPreference.mockResolvedValue({
+      chatMessagesEnabled: false,
+    });
+
+    const result = await service.createInAppNotification({
+      userId,
+      type: "NEW_CHAT_MESSAGE",
+      title: "New chat message",
+      message: "You have a new message.",
+    });
+
+    expect(result).toBeNull();
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  test("payment notifications bypass optional notification preferences", async () => {
+    repository.findUserPreference.mockResolvedValue({
+      newTripsEnabled: false,
+      chatMessagesEnabled: false,
+      requestUpdatesEnabled: false,
+    });
+    repository.create.mockResolvedValue(makeNotification());
+
+    await service.createInAppNotification({
+      userId,
+      type: "PAYMENT_SUCCESS",
+      title: "Wallet top-up completed",
+      message: "Tokens were added.",
+    });
+
+    expect(repository.findUserPreference).not.toHaveBeenCalled();
+    expect(repository.create).toHaveBeenCalledTimes(1);
+  });
+
+  test("creates an in-app notification with a duplicate-safe idempotency key", async () => {
+    repository.create.mockResolvedValue(makeNotification());
+
+    await service.createInAppNotification({
+      userId,
+      type: "PAYMENT_SUCCESS",
+      title: "Wallet top-up completed",
+      message: "28 tokens were added to your wallet.",
+      metadata: { invoiceId },
+      idempotencyKey: `payment-success:${invoiceId}`,
+    });
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId,
+        notificationType: "PAYMENT_SUCCESS",
+        channel: "IN_APP",
+        status: "PENDING",
+        metadata: { invoiceId },
+        idempotencyKey: `payment-success:${invoiceId}`,
+      }),
+      undefined,
+    );
+  });
+
+  test("returns the existing notification on idempotency conflict", async () => {
+    repository.create.mockRejectedValue(
+      Object.assign(new Error("duplicate"), { code: "P2002" }),
+    );
+    repository.findByIdempotencyKey.mockResolvedValue(makeNotification());
+
+    const result = await service.createInAppNotification({
+      userId,
+      type: "PAYMENT_SUCCESS",
+      title: "Wallet top-up completed",
+      message: "28 tokens were added to your wallet.",
+      idempotencyKey: `payment-success:${invoiceId}`,
+    });
+
+    expect(result.id).toBe(notificationId);
+    expect(repository.findByIdempotencyKey).toHaveBeenCalledWith(
+      `payment-success:${invoiceId}`,
+      undefined,
+    );
+  });
+});
+
+describe("Bank transfer decision notifications", () => {
+  test.each([
+    ["approved", "PAYMENT_SUCCESS", "payment-success:", null],
+    [
+      "rejected with a reason",
+      "PAYMENT_FAILURE",
+      "bank-transfer-rejected:",
+      "Receipt amount is incorrect",
+    ],
+    [
+      "rejected without a reason",
+      "PAYMENT_FAILURE",
+      "bank-transfer-rejected:",
+      null,
+    ],
+  ])(
+    "%s persists an in-app notification linked to the invoice and visible in the feed",
+    async (scenario, type, prefix, rejectionNotes) => {
+      const tx = { transaction: "bank-transfer-notification" };
+      let saved;
+      repository.create.mockImplementation(async (data) => {
+        saved = makeNotification({
+          ...data,
+          errandId: null,
+          assignmentId: null,
+        });
+        return saved;
+      });
+
+      if (scenario === "approved") {
+        await service.templates.paymentSuccess(
+          { userId, invoiceId, totalTokens: 28 },
+          tx,
+        );
+      } else {
+        await service.templates.bankTransferRejected(
+          { userId, invoiceId, rejectionNotes },
+          tx,
+        );
+      }
+
+      expect(repository.create).toHaveBeenCalledTimes(1);
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId,
+          notificationType: type,
+          channel: "IN_APP",
+          status: "PENDING",
+          idempotencyKey: prefix + invoiceId,
+          metadata:
+            scenario === "approved"
+              ? { invoiceId }
+              : { invoiceId, rejectionNotes },
+          message:
+            scenario === "approved"
+              ? "28 tokens were added to your wallet."
+              : rejectionNotes
+                ? "Your bank transfer was rejected: " + rejectionNotes
+                : "Your bank transfer could not be verified.",
+        }),
+        tx,
+      );
+      expect(repository.findUserPreference).not.toHaveBeenCalled();
+
+      repository.listForUser.mockResolvedValue([saved]);
+      repository.countForUser.mockResolvedValue(1);
+      repository.countUnreadForUser.mockResolvedValue(1);
+      const response = await request(app)
+        .get("/api/v1/notifications")
+        .set("Authorization", `Bearer ${token}`);
+      expect(response.statusCode).toBe(200);
+      expect(response.body.data.unreadCount).toBe(1);
+      expect(response.body.data.notifications[0]).toMatchObject({
+        type,
+        isRead: false,
+        message: saved.message,
+        metadata: expect.objectContaining({ invoiceId }),
+      });
+    },
+  );
+});
+
+test("identity acceptance notification describes trip eligibility in Arabic", async () => {
+  repository.create.mockResolvedValue(makeNotification());
+  await service.templates.identityVerificationApproved({
+    userId,
+    verificationId: invoiceId,
+  });
+  expect(repository.create).toHaveBeenCalledWith(
+    expect.objectContaining({
+      userId,
+      notificationType: "IDENTITY_VERIFICATION_APPROVED",
+      message:
+        "تم توثيق هويتك بنجاح. يمكنك الآن إنشاء رحلة، مع استيفاء باقي شروط النشر.",
+      metadata: { verificationId: invoiceId, verificationStatus: "VERIFIED" },
+    }),
+    undefined,
+  );
+});
+test("identity rejection notification contains the reason and invitation to retry", async () => {
+  repository.create.mockResolvedValue(makeNotification());
+  await service.templates.identityVerificationRejected({
+    userId,
+    verificationId: invoiceId,
+    rejectionReason: "الصورة غير واضحة",
+  });
+  expect(repository.create).toHaveBeenCalledWith(
+    expect.objectContaining({
+      userId,
+      notificationType: "IDENTITY_VERIFICATION_REJECTED",
+      message:
+        "تم رفض طلب توثيق هويتك بسبب: الصورة غير واضحة. يرجى إعادة المحاولة بصور جديدة.",
+      metadata: {
+        verificationId: invoiceId,
+        verificationStatus: "REJECTED",
+        rejectionReason: "الصورة غير واضحة",
+      },
+    }),
+    undefined,
+  );
+});

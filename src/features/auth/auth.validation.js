@@ -1,3 +1,165 @@
-const { createValidation } = require('../../utils/featureScaffold');
+const { z } = require("zod");
 
-module.exports = createValidation();
+const passwordSchema = z
+  .string()
+  .min(8, "Password must be at least 8 characters long")
+  .regex(/[A-Z]/, "Password must include at least one uppercase letter")
+  .regex(/\d/, "Password must include at least one number")
+  .regex(
+    /[^A-Za-z0-9]/,
+    "Password must include at least one special character",
+  );
+
+const registerSchema = z.object({
+  body: z.object({
+    fullName: z
+      .string()
+      .trim()
+      .min(2, "Full name must be at least 2 characters.")
+      .max(100, "Full name must not exceed 100 characters."),
+
+    phone: z
+      .string()
+      .trim()
+      .min(8, "Phone number is too short")
+      .max(20, "Phone number is too long"),
+
+    email: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .email("Email address must be valid")
+      .max(254, "Email address is too long"),
+
+    password: passwordSchema,
+
+    neighborhoodId: z.string().uuid("Neighborhood ID must be a valid UUID."),
+
+    termsAccepted: z.literal(true, {
+      message: "Terms and privacy policy must be accepted.",
+    }),
+  }).strict(),
+});
+
+const loginSchema = z.object({
+  body: z.object({
+    phone: z
+      .string()
+      .trim()
+      .min(8, "Phone number is too short")
+      .max(20, "Phone number is too long"),
+
+    password: z.string().min(1, "Password is required"),
+  }),
+});
+
+const phoneSchema = z.object({
+  body: z
+    .object({
+      phone: z
+        .string()
+        .trim()
+        .min(8, "Phone number is too short")
+        .max(20, "Phone number is too long"),
+    })
+    .strict(),
+});
+
+const verifyOtpSchema = z.object({
+  body: z.object({
+    phone: z
+      .string()
+      .trim()
+      .min(8, "Phone number is too short")
+      .max(20, "Phone number is too long"),
+
+    otp: z
+      .string()
+      .length(6, "OTP must be exactly 6 digits")
+      .regex(/^\d{6}$/, "OTP must contain digits only"),
+  }),
+});
+
+const refreshTokenSchema = z.object({
+  body: z.object({
+    refreshToken: z.string().min(1, "Refresh token is required"),
+  }),
+});
+
+const forgotPasswordSchema = z.object({
+  body: z
+    .object({
+      phone: z
+        .string()
+        .trim()
+        .min(8, "Phone number is too short")
+        .max(20, "Phone number is too long"),
+    })
+    .strict(),
+  params: z.object({}),
+  query: z.object({}),
+});
+
+const resetPasswordSchema = z.object({
+  body: z
+    .object({
+      phone: z
+        .string()
+        .trim()
+        .min(8, "Phone number is too short")
+        .max(20, "Phone number is too long"),
+      otp: z
+        .string()
+        .length(6, "OTP must be exactly 6 digits")
+        .regex(/^\d{6}$/, "OTP must contain digits only"),
+      newPassword: passwordSchema,
+    })
+    .strict(),
+  params: z.object({}),
+  query: z.object({}),
+});
+
+const changePasswordSchema = z.object({
+  body: z
+    .object({
+      currentPassword: z.string().min(1, "Current password is required"),
+      newPassword: passwordSchema,
+      confirmNewPassword: z.string().min(1, "Password confirmation is required"),
+      refreshToken: z.string().min(1, "Current refresh token is required"),
+    })
+    .strict()
+    .refine((data) => data.newPassword === data.confirmNewPassword, {
+      path: ["confirmNewPassword"],
+      message: "Password confirmation does not match",
+    }),
+  params: z.object({}).strict(),
+  query: z.object({}).strict(),
+});
+
+const cancelDeletionRequestSchema = phoneSchema;
+
+const cancelDeletionConfirmSchema = z.object({
+  body: z
+    .object({
+      phone: z.string().trim().min(8).max(20),
+      otp: z
+        .string()
+        .length(6)
+        .regex(/^\d{6}$/),
+      password: z.string().min(1, "Password is required"),
+    })
+    .strict(),
+});
+
+module.exports = {
+  registerSchema,
+  loginSchema,
+  phoneSchema,
+  verifyOtpSchema,
+  refreshTokenSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  changePasswordSchema,
+  cancelDeletionRequestSchema,
+  cancelDeletionConfirmSchema,
+};

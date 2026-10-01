@@ -1,5 +1,481 @@
-const { createService } = require('../../utils/featureScaffold');
-const { FEATURE_NAME } = require('./trips.constants');
-const repository = require('./trips.repository');
+const ApiError = require("../../utils/ApiError");
+const { isAccountVerifiedForAccess } = require("../auth/accountVerification");
 
-module.exports = createService(FEATURE_NAME, repository);
+const repository = require("./trips.repository");
+const deliveryPricingService = require("../deliveryPricing/deliveryPricing.service");
+const {
+  getAreaKeysForZone,
+  isAreaInZone,
+} = require("../locations/locations.catalog");
+
+const {
+  MIN_DEPARTURE_LEAD_MINUTES,
+  MAX_DEPARTURE_DAYS,
+} = require("./trips.constants");
+
+// Normalizes optional strings before comparison/storage.
+const normalizeOptionalText = (value) => {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  return value.trim();
+};
+
+// A round trip remains active until its expected return time.
+const calculateExpiresAt = (expectedReturnTime) => {
+  return new Date(expectedReturnTime);
+};
+
+const PICKED_UP_ASSIGNMENT_STATUSES = new Set([
+  "PICKED_UP",
+  "IN_TRANSIT",
+  "COMPLETED",
+]);
+
+const checklistStateForAssignment = (status) => ({
+  pickedUp: PICKED_UP_ASSIGNMENT_STATUSES.has(status),
+  delivered: status === "COMPLETED",
+});
+
+const compareByNameThenId = (left, right) =>
+  left.name.localeCompare(right.name) || left.id.localeCompare(right.id);
+
+const buildTripChecklist = (trip) => {
+  const categoryGroups = new Map();
+  let completed = 0;
+  let total = 0;
+
+  for (const assignment of trip.assignments) {
+    const state = checklistStateForAssignment(assignment.status);
+    const isCancelled = assignment.status === "CANCELLED";
+
+    for (const item of assignment.errand.items) {
+      if (!isCancelled) {
+        total += 1;
+        if (state.delivered) completed += 1;
+      }
+
+      if (!categoryGroups.has(item.category.id)) {
+        categoryGroups.set(item.category.id, {
+          category: { ...item.category },
+          items: [],
+        });
+      }
+
+      categoryGroups.get(item.category.id).items.push({
+        itemId: item.id,
+        name: item.name,
+        description: item.description,
+        quantity: item.quantity,
+        size: item.size,
+        isUrgent: item.isUrgent,
+        itemNote: item.itemNote,
+        errandId: assignment.errand.id,
+        assignmentId: assignment.id,
+        ...state,
+        status: assignment.status,
+      });
+    }
+  }
+
+  const categories = [...categoryGroups.values()]
+    .sort((left, right) =>
+      compareByNameThenId(left.category, right.category),
+    )
+    .map((group) => ({
+      ...group,
+      items: group.items.sort((left, right) =>
+        compareByNameThenId(
+          { name: left.name, id: left.itemId },
+          { name: right.name, id: right.itemId },
+        ),
+      ),
+    }));
+
+  return {
+    tripId: trip.id,
+    progress: {
+      completed,
+      total,
+      percentage: total === 0 ? 0 : Math.round((completed / total) * 100),
+    },
+    categories,
+  };
+};
+
+// Checks that the traveler can create trips.
+const validateTravelerForPosting = (traveler) => {
+  if (!traveler) {
+    throw new ApiError(404, "Traveler not found.");
+  }
+
+  if (traveler.status !== "ACTIVE") {
+    throw new ApiError(403, "User is not active.");
+  }
+
+  if (traveler.verificationStatus !== "VERIFIED") {
+    const error = new ApiError(
+      403,
+      "Identity verification is required before publishing a trip.",
+    );
+    error.code = "IDENTITY_VERIFICATION_REQUIRED";
+    error.verificationStatus = traveler.verificationStatus || "UNVERIFIED";
+    throw error;
+  }
+
+  if (!isAccountVerifiedForAccess(traveler)) {
+    throw new ApiError(
+      403,
+      "Account email must be verified before creating a trip.",
+    );
+  }
+
+  if (!traveler.profileCompleted) {
+    throw new ApiError(
+      400,
+      "Profile must be completed before creating a trip.",
+    );
+  }
+
+  if (!traveler.neighborhoodId || !traveler.neighborhood) {
+    throw new ApiError(
+      400,
+      "A neighborhood must be selected before creating a trip.",
+    );
+  }
+
+  if (!traveler.neighborhood.isActive) {
+    throw new ApiError(400, "The selected neighborhood is not active.");
+  }
+};
+
+// Compares a repeated create request with the existing trip.
+const isSameCreateRequest = (trip, data) => {
+  const existingDepartureTime = new Date(trip.departureTime).getTime();
+
+  const requestedDepartureTime = new Date(data.departureTime).getTime();
+
+  return (
+    trip.originType === data.originType &&
+    trip.destinationNeighborhoodId === data.destinationNeighborhoodId &&
+    (data.originType !== "CUSTOM_KEYWORD" ||
+      trip.neighborhoodId === data.originNeighborhoodId) &&
+    normalizeOptionalText(trip.customOriginKeyword) ===
+      normalizeOptionalText(data.customOriginKeyword) &&
+    trip.destinationKeyword.trim() === data.destinationKeyword.trim() &&
+    existingDepartureTime === requestedDepartureTime &&
+    new Date(trip.expectedReturnTime).getTime() ===
+      new Date(data.expectedReturnTime).getTime() &&
+    trip.maxCapacityClass === data.maxCapacityClass &&
+    trip.maxCapacityUnits === data.maxCapacityUnits &&
+    normalizeOptionalText(trip.notes) === normalizeOptionalText(data.notes)
+  );
+};
+
+// Creates a new trip.
+// Creating a trip does NOT deduct tokens in Phase 6.
+const createTrip = async (travelerId, data) => {
+  return repository.runTransaction(async (tx) => {
+    // Check idempotency first.
+    const existingTrip = await repository.findByTravelerAndClientKey(
+      travelerId,
+      data.clientRequestKey,
+      tx,
+    );
+
+    if (existingTrip) {
+      if (!isSameCreateRequest(existingTrip, data)) {
+        throw new ApiError(
+          409,
+          "Client request key has already been used with different trip data.",
+        );
+      }
+
+      return existingTrip;
+    }
+
+    const traveler = await repository.findTravelerForPosting(travelerId, tx);
+
+    validateTravelerForPosting(traveler);
+
+    const originNeighborhoodId =
+      data.originType === "CUSTOM_KEYWORD"
+        ? data.originNeighborhoodId
+        : traveler.neighborhoodId;
+
+    const quote = await deliveryPricingService.quoteByNeighborhoodIds(
+      originNeighborhoodId,
+      data.destinationNeighborhoodId,
+      tx,
+    );
+
+    const tripData = {
+      travelerId,
+      neighborhoodId: originNeighborhoodId,
+      destinationNeighborhoodId: data.destinationNeighborhoodId,
+      clientRequestKey: data.clientRequestKey,
+
+      originType: data.originType,
+
+      customOriginKeyword:
+        data.originType === "CUSTOM_KEYWORD"
+          ? data.customOriginKeyword.trim()
+          : null,
+
+      destinationKeyword: data.destinationKeyword.trim(),
+
+      deliveryFeeNis: quote.deliveryFeeNis,
+      pricingRule: quote.pricingRule,
+      pricingVersion: quote.pricingVersion,
+
+      departureTime: new Date(data.departureTime),
+      expectedReturnTime: new Date(data.expectedReturnTime),
+
+      maxCapacityClass: data.maxCapacityClass,
+
+      maxCapacityUnits: data.maxCapacityUnits,
+
+      // At creation, the full capacity is still available.
+      remainingCapacityUnits: data.maxCapacityUnits,
+
+      notes:
+        data.notes === undefined || data.notes === null
+          ? null
+          : data.notes.trim(),
+
+      status: "ACTIVE",
+
+      expiresAt: calculateExpiresAt(data.expectedReturnTime),
+    };
+
+    return repository.createTrip(tripData, tx);
+  });
+};
+
+// Returns a paginated list of trips.
+const getTrips = async (userId, filters = {}) => {
+  const {
+    originNeighborhoodId,
+    neighborhoodId,
+    destinationNeighborhoodId,
+    destinationKeyword,
+    status,
+    departureFrom,
+    departureTo,
+    mine = false,
+    skip = 0,
+    take = 20,
+  } = filters;
+  const resolvedOriginNeighborhoodId = originNeighborhoodId || neighborhoodId;
+  const originZoneKey = filters.originZoneKey || filters.originCity;
+  const destinationZoneKey =
+    filters.destinationZoneKey || filters.destinationCity;
+
+  const assertNeighborhoodInZone = async (neighborhoodIdToCheck, zoneKey, label) => {
+    if (!neighborhoodIdToCheck || !zoneKey) return;
+    const neighborhood = await repository.findActiveNeighborhoodById(
+      neighborhoodIdToCheck,
+    );
+    if (!neighborhood) {
+      throw new ApiError(400, `${label} neighborhood is missing, inactive, or invalid.`);
+    }
+    if (!isAreaInZone(neighborhood.key, zoneKey)) {
+      throw new ApiError(400, `${label} neighborhood does not belong to the requested zone.`);
+    }
+  };
+
+  await Promise.all([
+    assertNeighborhoodInZone(resolvedOriginNeighborhoodId, originZoneKey, "Origin"),
+    assertNeighborhoodInZone(destinationNeighborhoodId, destinationZoneKey, "Destination"),
+  ]);
+
+  const query = {
+    userId,
+    originNeighborhoodId: resolvedOriginNeighborhoodId,
+    originAreaKeys: originZoneKey
+      ? getAreaKeysForZone(originZoneKey)
+      : undefined,
+    destinationNeighborhoodId,
+    destinationAreaKeys: destinationZoneKey
+      ? getAreaKeysForZone(destinationZoneKey)
+      : undefined,
+    destinationKeyword,
+    status,
+    departureFrom,
+    departureTo,
+    mine,
+    skip,
+    take,
+  };
+
+  const [trips, total, summary] = await Promise.all([
+    repository.listTrips(query),
+    repository.countTrips(query),
+    mine ? repository.summarizeUserTrips(userId) : null,
+  ]);
+
+  return {
+    trips,
+    pagination: {
+      skip,
+      take,
+      total,
+    },
+    ...(summary ? { summary } : {}),
+  };
+};
+
+// Returns one trip by ID.
+const getTripById = async (tripId) => {
+  const trip = await repository.findById(tripId);
+
+  if (!trip) {
+    throw new ApiError(404, "Trip not found.");
+  }
+
+  return trip;
+};
+
+const getTripChecklist = async (userId, tripId) => {
+  const trip = await repository.findChecklistById(tripId);
+
+  if (!trip) {
+    throw new ApiError(404, "Trip not found.");
+  }
+
+  if (trip.travelerId !== userId) {
+    throw new ApiError(403, "Only the trip owner can view its checklist.");
+  }
+
+  return buildTripChecklist(trip);
+};
+
+// Verifies ownership and whether the trip can still be managed.
+const validateTripForManagement = (trip, travelerId) => {
+  if (!trip) {
+    throw new ApiError(404, "Trip not found.");
+  }
+
+  if (trip.travelerId !== travelerId) {
+    throw new ApiError(403, "You are not allowed to manage this trip.");
+  }
+
+  if (trip.status !== "ACTIVE") {
+    throw new ApiError(400, "Only active trips can be modified.");
+  }
+
+  const now = new Date();
+
+  if (trip.expiresAt <= now || trip.departureTime <= now) {
+    throw new ApiError(400, "Expired trips cannot be modified.");
+  }
+};
+
+// Updates an active trip owned by the traveler.
+const updateTrip = async (travelerId, tripId, data) => {
+  return repository.runTransaction(async (tx) => {
+    const trip = await repository.findById(tripId, tx);
+
+    validateTripForManagement(trip, travelerId);
+
+    if (await repository.hasAcceptedAssignment(tripId, tx)) {
+      throw new ApiError(
+        409,
+        "Trip cannot be updated after a proposal has been accepted.",
+      );
+    }
+
+    const updateData = {};
+
+    if (data.departureTime !== undefined) {
+      updateData.departureTime = new Date(data.departureTime);
+    }
+
+    if (data.expectedReturnTime !== undefined) {
+      updateData.expectedReturnTime = new Date(data.expectedReturnTime);
+      updateData.expiresAt = calculateExpiresAt(data.expectedReturnTime);
+    }
+
+    const effectiveDeparture = updateData.departureTime || trip.departureTime;
+    const effectiveReturn =
+      updateData.expectedReturnTime || trip.expectedReturnTime;
+    if (!effectiveReturn || effectiveReturn <= effectiveDeparture) {
+      throw new ApiError(
+        400,
+        "Expected return time must be after departure time.",
+      );
+    }
+
+    if (data.maxCapacityClass !== undefined) {
+      updateData.maxCapacityClass = data.maxCapacityClass;
+    }
+
+    if (data.maxCapacityUnits !== undefined) {
+      const usedCapacity = trip.maxCapacityUnits - trip.remainingCapacityUnits;
+
+      if (data.maxCapacityUnits < usedCapacity) {
+        throw new ApiError(
+          400,
+          "Maximum capacity cannot be lower than the already used capacity.",
+        );
+      }
+
+      updateData.maxCapacityUnits = data.maxCapacityUnits;
+
+      updateData.remainingCapacityUnits = data.maxCapacityUnits - usedCapacity;
+    }
+
+    if (data.notes !== undefined) {
+      updateData.notes = data.notes === null ? null : data.notes.trim();
+    }
+
+    return repository.updateTrip(tripId, updateData, tx);
+  });
+};
+
+// Cancels an active trip.
+// No token refund is performed because trip creation does not deduct tokens.
+const cancelTrip = async (travelerId, tripId) => {
+  return repository.runTransaction(async (tx) => {
+    const trip = await repository.findById(tripId, tx);
+
+    if (!trip) {
+      throw new ApiError(404, "Trip not found.");
+    }
+
+    if (trip.travelerId !== travelerId) {
+      throw new ApiError(403, "You are not allowed to cancel this trip.");
+    }
+
+    if (trip.status !== "ACTIVE") {
+      throw new ApiError(400, "Only active trips can be cancelled.");
+    }
+
+    const now = new Date();
+
+    if (trip.expiresAt <= now || trip.departureTime <= now) {
+      throw new ApiError(400, "Expired trips cannot be cancelled.");
+    }
+
+    return repository.updateTrip(
+      tripId,
+      {
+        status: "CANCELLED",
+      },
+      tx,
+    );
+  });
+};
+
+module.exports = {
+  calculateExpiresAt,
+  validateTravelerForPosting,
+  isSameCreateRequest,
+  createTrip,
+  getTrips,
+  getTripById,
+  getTripChecklist,
+  updateTrip,
+  cancelTrip,
+};

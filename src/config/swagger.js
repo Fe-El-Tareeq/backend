@@ -1,0 +1,7657 @@
+const swaggerJSDoc = require("swagger-jsdoc");
+const { zoneKeys } = require("../features/locations/locations.catalog");
+
+const zoneKeySchema = {
+  type: "string",
+  enum: zoneKeys,
+  description: "Stable application geographic zone identifier.",
+};
+
+const zoneKeyReference = { $ref: "#/components/schemas/ZoneKey" };
+
+const apiResponse = (dataSchema, example) => ({
+  type: "object",
+  required: ["success", "message"],
+  properties: {
+    success: {
+      type: "boolean",
+      example: true,
+    },
+    message: {
+      type: "string",
+    },
+    data: dataSchema || {
+      nullable: true,
+      example: null,
+    },
+  },
+  ...(example && { example }),
+});
+
+const errorResponse = (message, errors = []) => ({
+  description: message,
+  content: {
+    "application/json": {
+      schema: {
+        $ref: "#/components/schemas/ErrorResponse",
+      },
+      example: {
+        success: false,
+        message,
+        errors,
+      },
+    },
+  },
+});
+
+const matchIdParameter = {
+  name: "id",
+  in: "path",
+  required: true,
+  schema: {
+    type: "string",
+    format: "uuid",
+  },
+  description: "Source errand or trip ID that initiates the matching lookup.",
+};
+
+const matchLimitParameter = {
+  name: "limit",
+  in: "query",
+  required: false,
+  schema: {
+    type: "integer",
+    minimum: 1,
+    maximum: 20,
+    default: 10,
+  },
+  description: "Maximum number of ranked matches to return.",
+};
+
+const rankedTripsForErrandOperation = {
+  tags: ["Matching"],
+  summary: "Get ranked compatible trips for an errand",
+  description:
+    "The authenticated errand requester initiates this owner-only lookup from one OPEN, unexpired errand. Results are computed on read and return an empty matches array when no compatible trips pass the filters. Hard filters require authenticated ownership, an active origin and destination area pair, active unexpired future round trips, non-self traveler/requester pairs, compatible same/nearby origin and destination areas, enough capacity class and remaining capacity, and an expected return no later than the errand deadline. Results are ordered by matchScore descending, then earlier deadline/return time, then stable resource ID. Score fields include matchScore (overall normalized compatibility), destinationScore (destination fit), timeScore (return-time fit), loadScore (capacity usage fit), urgentBoost (urgent errand boost), and trustPenalty (deduction for low candidate trust).",
+  security: [{ bearerAuth: [] }],
+  parameters: [matchIdParameter, matchLimitParameter],
+  responses: {
+    200: {
+      description:
+        "Ranked compatible trips for the errand. Empty results return 200 with matches: [].",
+      content: {
+        "application/json": {
+          schema: {
+            $ref: "#/components/schemas/MatchingTripsResponse",
+          },
+        },
+      },
+    },
+    400: errorResponse("Validation failed or the errand is not matchable."),
+    401: { $ref: "#/components/responses/Unauthorized" },
+    403: errorResponse("Only the errand owner can view its matches."),
+    404: errorResponse("Errand not found."),
+    429: { $ref: "#/components/responses/TooManyRequests" },
+    500: { $ref: "#/components/responses/InternalServerError" },
+  },
+};
+
+const rankedErrandsForTripOperation = {
+  tags: ["Matching"],
+  summary: "Get ranked compatible errands for a trip",
+  description:
+    "The authenticated traveler initiates this owner-only lookup from one ACTIVE, unexpired trip with an expected return time. Results are computed on read and return an empty matches array when no compatible errands pass the filters. Hard filters require authenticated ownership, an active origin and destination area pair, open unexpired errands, non-self traveler/requester pairs, compatible same/nearby origin and destination areas, errand deadlines at or after the trip expected return, and enough trip capacity class and remaining capacity. Results are ordered by matchScore descending, then earlier deadline/return time, then stable resource ID. Score fields include matchScore (overall normalized compatibility), destinationScore (destination fit), timeScore (return-time fit), loadScore (capacity usage fit), urgentBoost (urgent errand boost), and trustPenalty (deduction for low candidate trust).",
+  security: [{ bearerAuth: [] }],
+  parameters: [matchIdParameter, matchLimitParameter],
+  responses: {
+    200: {
+      description:
+        "Ranked compatible errands for the trip. Empty results return 200 with matches: [].",
+      content: {
+        "application/json": {
+          schema: {
+            $ref: "#/components/schemas/MatchingErrandsResponse",
+          },
+        },
+      },
+    },
+    400: errorResponse("Validation failed or the trip is not matchable."),
+    401: { $ref: "#/components/responses/Unauthorized" },
+    403: errorResponse("Only the trip owner can view its matching errands."),
+    404: errorResponse("Trip not found."),
+    429: { $ref: "#/components/responses/TooManyRequests" },
+    500: { $ref: "#/components/responses/InternalServerError" },
+  },
+};
+
+const swaggerDefinition = {
+  openapi: "3.0.3",
+  info: {
+    title: "Fe El-Tareeq API",
+    version: "1.0.0",
+    description:
+      "Interactive API contract for the Fe El-Tareeq peer-to-peer micro-errand backend. The documented modules are Authentication, Users, Locations, Errands, Trips, Matching, Assignments, Chat, Ratings, Delivery Pricing, Wallet, and Payments.",
+  },
+  servers: [
+    {
+      url: "http://localhost:3000",
+      description: "Local development server",
+    },
+  ],
+  tags: [
+    {
+      name: "Health",
+      description: "Service availability checks.",
+    },
+    {
+      name: "Authentication",
+      description:
+        "Phone/password login, email-delivered verification and recovery OTPs, access-token refresh, and logout.",
+    },
+    {
+      name: "Admin Authentication",
+      description:
+        "Password-only authentication for the single configured dashboard administrator.",
+    },
+    {
+      name: "Users",
+      description: "Authenticated current-user profile APIs.",
+    },
+    {
+      name: "Locations",
+      description: "Public location lookup APIs used during registration.",
+    },
+    {
+      name: "Errands",
+      description: "Neighborhood notice-board errand posting and management.",
+    },
+    {
+      name: "Trips",
+      description:
+        "Authenticated traveler trip posting and management. Trips can be created, listed, viewed, updated, and cancelled.",
+    },
+    {
+      name: "Matching",
+      description:
+        "Phase 7 matching engine endpoints for discovering and ranking compatible errands and trips.",
+    },
+    {
+      name: "Assignments",
+      description:
+        "Assignment lifecycle APIs that convert accepted matches into active deliveries.",
+    },
+    {
+      name: "Chat",
+      description:
+        "Low-bandwidth assignment chat APIs for authenticated requesters and travelers.",
+    },
+    {
+      name: "Ratings",
+      description:
+        "Post-completion mutual ratings, trust scores, pending prompts, and earned badges.",
+    },
+    {
+      name: "Delivery Pricing",
+      description:
+        "Server-side delivery pricing preview and fee calculation APIs.",
+    },
+    {
+      name: "Wallet",
+      description: "Authenticated token wallet and transaction history APIs.",
+    },
+    {
+      name: "Payments",
+      description:
+        "Phase 11 token packages, QR invoices, mock payment confirmation, and signed webhook processing.",
+    },
+    {
+      name: "Notifications",
+      description: "In-app user notifications and read-state APIs.",
+    },
+    {
+      name: "Support",
+      description:
+        "Authenticated support tickets, safety reports, and administrative follow-up APIs.",
+    },
+    {
+      name: "Legal",
+      description:
+        "Current legal document versions and authenticated acceptance records.",
+    },
+  ],
+  components: {
+    securitySchemes: {
+      bearerAuth: {
+        type: "http",
+        scheme: "bearer",
+        bearerFormat: "JWT",
+        description: "Use the format: Authorization: Bearer <access-token>",
+      },
+    },
+    schemas: {
+      ApiSuccessResponse: apiResponse(),
+      ErrorDetail: {
+        type: "object",
+        required: ["field", "message"],
+        properties: {
+          field: {
+            type: "string",
+            example: "body.phone",
+          },
+          message: {
+            type: "string",
+            example: "Phone number is too short",
+          },
+        },
+      },
+      ErrorResponse: {
+        type: "object",
+        required: ["success", "message", "errors"],
+        properties: {
+          success: {
+            type: "boolean",
+            example: false,
+          },
+          message: {
+            type: "string",
+            example: "Validation failed",
+          },
+          errors: {
+            type: "array",
+            items: {
+              $ref: "#/components/schemas/ErrorDetail",
+            },
+          },
+        },
+      },
+      ProposalCreateRequest: {
+        type: "object",
+        required: ["errandId", "tripId", "clientRequestKey", "type"],
+        properties: {
+          errandId: { type: "string", format: "uuid" },
+          tripId: { type: "string", format: "uuid" },
+          clientRequestKey: {
+            type: "string",
+            format: "uuid",
+            description:
+              "Idempotency key generated by the client for safe retries.",
+          },
+          type: {
+            type: "string",
+            enum: ["TRAVELER_OFFER", "REQUESTER_REQUEST"],
+          },
+          message: {
+            type: "string",
+            minLength: 1,
+            maxLength: 500,
+            nullable: true,
+          },
+        },
+      },
+      Proposal: {
+        type: "object",
+        properties: {
+          id: { type: "string", format: "uuid" },
+          errandId: { type: "string", format: "uuid" },
+          tripId: { type: "string", format: "uuid" },
+          initiatedById: { type: "string", format: "uuid" },
+          type: {
+            type: "string",
+            enum: ["TRAVELER_OFFER", "REQUESTER_REQUEST"],
+          },
+          status: {
+            type: "string",
+            enum: ["PENDING", "ACCEPTED", "REJECTED", "WITHDRAWN", "EXPIRED"],
+          },
+          message: { type: "string", nullable: true },
+          rejectionReason: {
+            type: "string",
+            nullable: true,
+            enum: [
+              "REJECTED_BY_OWNER",
+              "ANOTHER_PROPOSAL_ACCEPTED",
+              "TRIP_CAPACITY_FULL",
+            ],
+          },
+          rejectionNote: { type: "string", nullable: true, maxLength: 255 },
+          readAt: { type: "string", format: "date-time", nullable: true },
+          createdAt: { type: "string", format: "date-time" },
+          acceptedAt: { type: "string", format: "date-time", nullable: true },
+          rejectedAt: { type: "string", format: "date-time", nullable: true },
+          withdrawnAt: { type: "string", format: "date-time", nullable: true },
+        },
+      },
+      RegisterRequest: {
+        type: "object",
+        required: [
+          "fullName",
+          "phone",
+          "email",
+          "password",
+          "neighborhoodId",
+          "termsAccepted",
+        ],
+        properties: {
+          fullName: {
+            type: "string",
+            minLength: 2,
+            maxLength: 100,
+            description: "Trimmed before validation and persistence.",
+            example: "Leenah Alborsh",
+          },
+          phone: {
+            type: "string",
+            minLength: 8,
+            maxLength: 20,
+            description:
+              "Dedicated frontend test phone. Use the exact local format shown; phone values are not normalized automatically.",
+            example: "0599000000",
+          },
+          email: {
+            type: "string",
+            format: "email",
+            maxLength: 254,
+            description: "Trimmed and lowercased before persistence.",
+            example: "test-user@example.com",
+          },
+          password: {
+            type: "string",
+            format: "password",
+            minLength: 8,
+            pattern: "^(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{8,}$",
+            description:
+              "Must be at least 8 characters and include one uppercase letter, one number, and one special character.",
+            example: "Strong1!",
+          },
+          neighborhoodId: {
+            type: "string",
+            format: "uuid",
+            description:
+              "Must be selected from an existing active neighborhood returned by GET /api/v1/locations/neighborhoods.",
+            example: "60a32850-bd3f-444a-84b4-c750abf6ecb6",
+          },
+          termsAccepted: {
+            type: "boolean",
+            enum: [true],
+            description:
+              "Required consent checkbox. Must be true. The backend snapshots the current terms and privacy versions and records the acceptance automatically after successful OTP verification.",
+            example: true,
+          },
+        },
+      },
+      LoginRequest: {
+        type: "object",
+        required: ["phone", "password"],
+        properties: {
+          phone: {
+            type: "string",
+            minLength: 8,
+            maxLength: 20,
+            description:
+              "Verified test account phone. Normal login requires phone and password only; OTP is not part of this request.",
+            example: "0599000000",
+          },
+          password: {
+            type: "string",
+            format: "password",
+            minLength: 1,
+            example: "Strong1!",
+          },
+        },
+      },
+      AdminLoginRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["phone", "password"],
+        properties: {
+          phone: {
+            type: "string",
+            minLength: 8,
+            maxLength: 20,
+            example: "0590000000",
+          },
+          password: {
+            type: "string",
+            format: "password",
+            minLength: 1,
+            example: "Example1!",
+          },
+        },
+      },
+      AdminRefreshTokenRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["refreshToken"],
+        properties: {
+          refreshToken: {
+            type: "string",
+            minLength: 1,
+            example: "<admin-refresh-token>",
+          },
+        },
+      },
+      AdminUserSummary: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "phone", "role"],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          phone: { type: "string", example: "0590000000" },
+          role: { type: "string", enum: ["SUPER_ADMIN"] },
+        },
+      },
+      AdminAuthTokens: {
+        type: "object",
+        required: [
+          "accessToken",
+          "refreshToken",
+          "tokenType",
+          "accessTokenExpiresIn",
+          "refreshTokenExpiresIn",
+        ],
+        properties: {
+          accessToken: { type: "string", description: "Opaque access JWT." },
+          refreshToken: {
+            type: "string",
+            description: "Opaque rotating refresh JWT.",
+          },
+          tokenType: { type: "string", enum: ["Bearer"] },
+          accessTokenExpiresIn: { type: "string", example: "15m" },
+          refreshTokenExpiresIn: { type: "string", example: "7d" },
+        },
+      },
+      OtpRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["phone"],
+        properties: {
+          phone: {
+            type: "string",
+            minLength: 8,
+            maxLength: 20,
+            example: "0599000000",
+          },
+        },
+      },
+      OtpVerifyRequest: {
+        type: "object",
+        required: ["phone", "otp"],
+        properties: {
+          phone: {
+            type: "string",
+            minLength: 8,
+            maxLength: 20,
+            example: "0599000000",
+          },
+          otp: {
+            type: "string",
+            minLength: 6,
+            maxLength: 6,
+            pattern: "^\\d{6}$",
+            example: "000000",
+          },
+        },
+      },
+      RefreshTokenRequest: {
+        type: "object",
+        required: ["refreshToken"],
+        properties: {
+          refreshToken: {
+            type: "string",
+            minLength: 1,
+            example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+          },
+        },
+      },
+      LogoutRequest: {
+        allOf: [
+          {
+            $ref: "#/components/schemas/RefreshTokenRequest",
+          },
+        ],
+      },
+      ForgotPasswordRequest: {
+        allOf: [
+          {
+            $ref: "#/components/schemas/OtpRequest",
+          },
+        ],
+      },
+      ResetPasswordRequest: {
+        type: "object",
+        required: ["phone", "otp", "newPassword"],
+        additionalProperties: false,
+        properties: {
+          phone: {
+            type: "string",
+            minLength: 8,
+            maxLength: 20,
+            example: "0599000000",
+          },
+          otp: {
+            type: "string",
+            minLength: 6,
+            maxLength: 6,
+            pattern: "^\\d{6}$",
+            example: "000000",
+          },
+          newPassword: {
+            type: "string",
+            format: "password",
+            minLength: 8,
+            pattern: "^(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{8,}$",
+            description:
+              "Must include an uppercase letter, a number, and a special character.",
+            example: "NewStrong1!",
+          },
+        },
+      },
+      UserSummary: {
+        type: "object",
+        required: ["id", "phone", "role", "status"],
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid",
+            example: "0f46f56f-32d1-4fd4-84d2-69bc2b077d8f",
+          },
+          phone: {
+            type: "string",
+            example: "+970599123456",
+          },
+          role: {
+            type: "string",
+            enum: ["USER", "SUPER_ADMIN"],
+            example: "USER",
+          },
+          status: {
+            type: "string",
+            enum: ["ACTIVE", "SUSPENDED", "BANNED", "DEACTIVATED"],
+            example: "ACTIVE",
+          },
+          verificationStatus: {
+            type: "string",
+            enum: ["UNVERIFIED", "PENDING_REVIEW", "VERIFIED", "REJECTED"],
+          },
+          isVerified: { type: "boolean", example: false },
+          city: {
+            type: "object",
+            nullable: true,
+            properties: {
+              key: { type: "string", example: "GAZA_CITY" },
+              nameAr: { type: "string", example: "مدينة غزة" },
+              nameEn: { type: "string", example: "Gaza City" },
+            },
+          },
+          statistics: {
+            type: "object",
+            properties: {
+              publishedErrandsCount: { type: "integer", minimum: 0 },
+              tripsCount: { type: "integer", minimum: 0 },
+              averageRating: { type: "number", nullable: true },
+              ratingCount: { type: "integer", minimum: 0 },
+              tokenBalance: { type: "integer", minimum: 0 },
+            },
+          },
+        },
+      },
+      ZoneKey: zoneKeySchema,
+      Neighborhood: {
+        type: "object",
+        required: ["id", "name", "governorate"],
+        nullable: true,
+        properties: {
+          key: {
+            type: "string",
+            example: "AN_NASER",
+            description:
+              "Stable catalog local-area identifier bridging this DB neighborhood to gaza-areas.json.",
+          },
+          zoneKey: {
+            allOf: [zoneKeyReference],
+            nullable: true,
+            description:
+              "Stable application zone key derived from the geographic catalog.",
+          },
+          id: {
+            type: "string",
+            format: "uuid",
+            example: "60a32850-bd3f-444a-84b4-c750abf6ecb6",
+          },
+          name: {
+            type: "string",
+            example: "Ash Shujaiyeh",
+          },
+          governorate: {
+            type: "string",
+            example: "Gaza City",
+          },
+          isActive: {
+            type: "boolean",
+            example: true,
+          },
+        },
+      },
+      NeighborhoodListData: {
+        type: "object",
+        required: ["neighborhoods"],
+        properties: {
+          neighborhoods: {
+            type: "array",
+            items: {
+              $ref: "#/components/schemas/Neighborhood",
+            },
+          },
+        },
+      },
+      City: {
+        type: "object",
+        required: ["key", "nameAr", "nameEn", "neighborhoodsCount"],
+        properties: {
+          key: {
+            ...zoneKeySchema,
+            example: "GAZA_CITY",
+            description:
+              "Stable application zone key; the cities route name is retained for backward compatibility.",
+          },
+          nameAr: { type: "string", example: "مدينة غزة" },
+          nameEn: { type: "string", example: "Gaza City" },
+          neighborhoodsCount: { type: "integer", minimum: 0, example: 16 },
+        },
+      },
+      CityListData: {
+        type: "object",
+        required: ["cities"],
+        properties: {
+          cities: {
+            type: "array",
+            items: { $ref: "#/components/schemas/City" },
+          },
+        },
+      },
+      UserProfile: {
+        type: "object",
+        required: [
+          "id",
+          "phone",
+          "fullName",
+          "role",
+          "trustScore",
+          "neighborhoodId",
+          "profileCompleted",
+          "status",
+        ],
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid",
+            example: "0f46f56f-32d1-4fd4-84d2-69bc2b077d8f",
+          },
+          phone: {
+            type: "string",
+            example: "+970599123456",
+          },
+          email: {
+            type: "string",
+            format: "email",
+            nullable: true,
+            readOnly: true,
+            example: "test-user@example.com",
+          },
+          fullName: {
+            type: "string",
+            nullable: true,
+            example: "Maya Nasser",
+          },
+          profileImageUrl: {
+            type: "string",
+            format: "uri",
+            nullable: true,
+            example:
+              "https://project.supabase.co/storage/v1/object/public/profile-images/user-id/image.jpg",
+          },
+          role: {
+            type: "string",
+            enum: ["USER", "SUPER_ADMIN"],
+            example: "USER",
+          },
+          trustScore: {
+            type: "number",
+            format: "decimal",
+            example: 70,
+          },
+          neighborhoodId: {
+            type: "string",
+            format: "uuid",
+            nullable: true,
+            example: "60a32850-bd3f-444a-84b4-c750abf6ecb6",
+          },
+          profileCompleted: {
+            type: "boolean",
+            example: true,
+          },
+          phoneVerifiedAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+            example: "2026-08-17T09:15:00.000Z",
+          },
+          emailVerifiedAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+            example: "2026-09-30T09:15:00.000Z",
+          },
+          status: {
+            type: "string",
+            enum: ["ACTIVE", "SUSPENDED", "BANNED", "DEACTIVATED"],
+            example: "ACTIVE",
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time",
+            example: "2026-08-17T09:00:00.000Z",
+          },
+          updatedAt: {
+            type: "string",
+            format: "date-time",
+            example: "2026-08-17T09:20:00.000Z",
+          },
+          neighborhood: {
+            $ref: "#/components/schemas/Neighborhood",
+          },
+        },
+      },
+      UserProfileUpdateRequest: {
+        type: "object",
+        minProperties: 1,
+        properties: {
+          fullName: {
+            type: "string",
+            minLength: 2,
+            maxLength: 100,
+            description: "Trimmed before validation and persistence.",
+            example: "Maya Nasser",
+          },
+          neighborhoodId: {
+            type: "string",
+            format: "uuid",
+            example: "60a32850-bd3f-444a-84b4-c750abf6ecb6",
+          },
+        },
+        description:
+          "Provide at least one of fullName or neighborhoodId. neighborhoodId must reference an active neighborhood.",
+      },
+      NotificationSettings: {
+        type: "object",
+        required: [
+          "newTripsEnabled",
+          "chatMessagesEnabled",
+          "requestUpdatesEnabled",
+        ],
+        properties: {
+          newTripsEnabled: { type: "boolean", example: true },
+          chatMessagesEnabled: { type: "boolean", example: true },
+          requestUpdatesEnabled: { type: "boolean", example: true },
+        },
+      },
+      NotificationSettingsUpdateRequest: {
+        type: "object",
+        minProperties: 1,
+        additionalProperties: false,
+        properties: {
+          newTripsEnabled: { type: "boolean" },
+          chatMessagesEnabled: { type: "boolean" },
+          requestUpdatesEnabled: { type: "boolean" },
+        },
+      },
+      UserSettingsData: {
+        type: "object",
+        required: ["notifications"],
+        properties: {
+          notifications: { $ref: "#/components/schemas/NotificationSettings" },
+        },
+      },
+      ErrandItemCreateRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["categoryId", "name", "quantity", "size"],
+        properties: {
+          categoryId: {
+            type: "string",
+            format: "uuid",
+            description: "Must reference an active category.",
+          },
+          name: { type: "string", minLength: 2, maxLength: 120 },
+          description: {
+            type: "string",
+            minLength: 2,
+            maxLength: 1000,
+            nullable: true,
+          },
+          quantity: { type: "integer", minimum: 1, example: 2 },
+          size: {
+            type: "string",
+            enum: ["ENVELOPE", "SMALL", "MEDIUM", "LARGE"],
+          },
+          isUrgent: { type: "boolean", default: false },
+          itemNote: {
+            type: "string",
+            maxLength: 500,
+            nullable: true,
+          },
+        },
+      },
+      ErrandItem: {
+        allOf: [
+          { $ref: "#/components/schemas/ErrandItemCreateRequest" },
+          {
+            type: "object",
+            required: ["id"],
+            properties: {
+              id: { type: "string", format: "uuid" },
+              category: { type: "object" },
+            },
+          },
+        ],
+      },
+      ErrandImage: {
+        type: "object",
+        required: ["id", "imageUrl", "position"],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          imageUrl: { type: "string", format: "uri" },
+          position: { type: "integer", minimum: 0 },
+        },
+      },
+      ErrandCreateRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "clientRequestKey",
+          "pickupNeighborhoodId",
+          "destinationKeyword",
+          "items",
+        ],
+        properties: {
+          clientRequestKey: {
+            type: "string",
+            format: "uuid",
+            description:
+              "Offline idempotency key. Reusing the same key with identical data returns the existing errand without another wallet debit.",
+            example: "60a32850-bd3f-444a-84b4-c750abf6ecb8",
+          },
+          pickupNeighborhoodId: {
+            type: "string",
+            format: "uuid",
+            description:
+              "Neighborhood where the requested item will be bought or picked up.",
+          },
+          title: {
+            type: "string",
+            minLength: 3,
+            maxLength: 80,
+            description:
+              "Optional display title; defaults to the first item name.",
+            example: "Buy medicine",
+          },
+          itemsDescription: {
+            type: "string",
+            minLength: 3,
+            maxLength: 1000,
+            description:
+              "Optional aggregate description; generated from items when omitted.",
+            example: "One box of Panadol",
+          },
+          items: {
+            type: "array",
+            minItems: 1,
+            maxItems: 20,
+            items: { $ref: "#/components/schemas/ErrandItemCreateRequest" },
+          },
+          destinationKeyword: {
+            type: "string",
+            minLength: 2,
+            maxLength: 150,
+            example: "Central Pharmacy",
+          },
+          isInterZone: {
+            type: "boolean",
+            default: false,
+            example: false,
+          },
+          neededByTime: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+            description:
+              "Must be a future ISO datetime when provided. Also controls expiration for Phase 5.",
+            example: "2026-08-20T10:00:00.000Z",
+          },
+          voiceNoteUrl: {
+            type: "string",
+            format: "uri",
+            nullable: true,
+            example: null,
+          },
+          voiceNoteDurationSec: {
+            type: "integer",
+            minimum: 0,
+            maximum: 30,
+            nullable: true,
+            example: null,
+          },
+          imageUrls: {
+            type: "array",
+            maxItems: 5,
+            description:
+              "Optional ordered images for the overall request. Upload files first, then send their public URLs.",
+            items: {
+              type: "string",
+              format: "uri",
+              maxLength: 2048,
+            },
+            example: [
+              "https://storage.example.com/errands/photo-1.jpg",
+              "https://storage.example.com/errands/photo-2.jpg",
+            ],
+          },
+        },
+      },
+      ErrandUpdateRequest: {
+        type: "object",
+        minProperties: 1,
+        properties: {
+          categoryId: {
+            type: "string",
+            format: "uuid",
+          },
+          pickupNeighborhoodId: {
+            type: "string",
+            format: "uuid",
+          },
+          title: {
+            type: "string",
+            minLength: 3,
+            maxLength: 80,
+          },
+          itemsDescription: {
+            type: "string",
+            minLength: 3,
+            maxLength: 1000,
+          },
+          destinationKeyword: {
+            type: "string",
+            minLength: 2,
+            maxLength: 150,
+          },
+          weightClass: {
+            type: "string",
+            enum: ["LIGHT", "MEDIUM", "HEAVY"],
+          },
+          isUrgent: {
+            type: "boolean",
+          },
+          isInterZone: {
+            type: "boolean",
+          },
+          neededByTime: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+          },
+          voiceNoteUrl: {
+            type: "string",
+            format: "uri",
+            nullable: true,
+          },
+          voiceNoteDurationSec: {
+            type: "integer",
+            minimum: 0,
+            maximum: 30,
+            nullable: true,
+          },
+        },
+        description:
+          "Only the requester can update OPEN errands. requesterId, neighborhoodId, status, token cost, transaction IDs, and createdAt are immutable.",
+      },
+      ErrandCancelRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["cancellationReason"],
+        properties: {
+          cancellationReason: {
+            type: "string",
+            minLength: 3,
+            maxLength: 255,
+            example: "The requested items are no longer needed.",
+          },
+        },
+      },
+      Errand: {
+        type: "object",
+        required: [
+          "id",
+          "requesterId",
+          "neighborhoodId",
+          "clientRequestKey",
+          "title",
+          "itemsDescription",
+          "destinationKeyword",
+          "weightClass",
+          "isUrgent",
+          "isInterZone",
+          "priorityScore",
+          "calculatedFeeNis",
+          "postTokenCost",
+          "status",
+          "items",
+          "images",
+          "expiresAt",
+          "createdAt",
+          "updatedAt",
+        ],
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid",
+          },
+          requesterId: {
+            type: "string",
+            format: "uuid",
+          },
+          categoryId: {
+            type: "string",
+            format: "uuid",
+            nullable: true,
+          },
+          neighborhoodId: {
+            type: "string",
+            format: "uuid",
+          },
+          destinationNeighborhoodId: {
+            type: "string",
+            format: "uuid",
+            nullable: true,
+            description: "Stored pickup neighborhood ID.",
+          },
+          clientRequestKey: {
+            type: "string",
+            format: "uuid",
+          },
+          title: {
+            type: "string",
+          },
+          itemsDescription: {
+            type: "string",
+          },
+          destinationKeyword: {
+            type: "string",
+          },
+          weightClass: {
+            type: "string",
+            enum: ["LIGHT", "MEDIUM", "HEAVY"],
+          },
+          isUrgent: {
+            type: "boolean",
+          },
+          isInterZone: {
+            type: "boolean",
+          },
+          priorityScore: {
+            type: "number",
+            example: 8,
+          },
+          calculatedFeeNis: {
+            type: "number",
+            example: 5,
+          },
+          postTokenCost: {
+            type: "integer",
+            example: 1,
+          },
+          postTokenTransactionId: {
+            type: "string",
+            format: "uuid",
+            nullable: true,
+          },
+          voiceNoteUrl: {
+            type: "string",
+            nullable: true,
+          },
+          voiceNoteDurationSec: {
+            type: "integer",
+            nullable: true,
+          },
+          status: {
+            type: "string",
+            enum: ["OPEN", "MATCHED", "CANCELLED", "EXPIRED", "COMPLETED"],
+          },
+          cancellationReason: {
+            type: "string",
+            nullable: true,
+            maxLength: 255,
+          },
+          items: {
+            type: "array",
+            items: { $ref: "#/components/schemas/ErrandItem" },
+          },
+          images: {
+            type: "array",
+            items: { $ref: "#/components/schemas/ErrandImage" },
+          },
+          neededByTime: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+          },
+          expiresAt: {
+            type: "string",
+            format: "date-time",
+          },
+          category: {
+            type: "object",
+            nullable: true,
+          },
+          neighborhood: {
+            $ref: "#/components/schemas/Neighborhood",
+          },
+          requester: {
+            type: "object",
+            properties: {
+              id: {
+                type: "string",
+                format: "uuid",
+              },
+              fullName: {
+                type: "string",
+                nullable: true,
+              },
+              trustScore: {
+                type: "number",
+              },
+            },
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time",
+          },
+          updatedAt: {
+            type: "string",
+            format: "date-time",
+          },
+        },
+      },
+      ErrandListData: {
+        type: "object",
+        required: ["errands", "pagination"],
+        properties: {
+          errands: {
+            type: "array",
+            items: {
+              $ref: "#/components/schemas/Errand",
+            },
+          },
+          pagination: {
+            type: "object",
+            required: ["skip", "take", "total"],
+            properties: {
+              skip: {
+                type: "integer",
+                example: 0,
+              },
+              take: {
+                type: "integer",
+                example: 20,
+              },
+              total: {
+                type: "integer",
+                example: 1,
+              },
+            },
+          },
+        },
+      },
+      TripCreateRequest: {
+        type: "object",
+        required: [
+          "clientRequestKey",
+          "originType",
+          "destinationKeyword",
+          "destinationNeighborhoodId",
+          "departureTime",
+          "expectedReturnTime",
+          "maxCapacityClass",
+          "maxCapacityUnits",
+        ],
+        properties: {
+          clientRequestKey: {
+            type: "string",
+            format: "uuid",
+            description:
+              "Idempotency key generated by the client. Reusing the same key with identical trip data returns the existing trip.",
+            example: "880e8400-e29b-41d4-a716-446655440001",
+          },
+          originType: {
+            type: "string",
+            enum: ["DEFAULT_NEIGHBORHOOD", "CUSTOM_KEYWORD"],
+            description:
+              "DEFAULT_NEIGHBORHOOD uses the traveler's saved neighborhood. CUSTOM_KEYWORD requires customOriginKeyword.",
+            example: "DEFAULT_NEIGHBORHOOD",
+          },
+          customOriginKeyword: {
+            type: "string",
+            nullable: true,
+            minLength: 2,
+            maxLength: 150,
+            description: "Required when originType is CUSTOM_KEYWORD.",
+            example: "Al Manara Square",
+          },
+          originNeighborhoodId: {
+            type: "string",
+            format: "uuid",
+            description: "Required when originType is CUSTOM_KEYWORD.",
+          },
+          destinationKeyword: {
+            type: "string",
+            minLength: 2,
+            maxLength: 150,
+            example: "Birzeit University",
+          },
+          destinationNeighborhoodId: {
+            type: "string",
+            format: "uuid",
+            description:
+              "Structured destination used for pricing and matching.",
+          },
+          departureTime: {
+            type: "string",
+            format: "date-time",
+            description:
+              "Must be at least 15 minutes from now and no more than 3 days in the future.",
+            example: "2026-08-23T10:30:00+03:00",
+          },
+          expectedReturnTime: {
+            type: "string",
+            format: "date-time",
+            description:
+              "Required return time; must be after departureTime and is used for delivery matching.",
+            example: "2026-08-23T13:30:00+03:00",
+          },
+          maxCapacityClass: {
+            type: "string",
+            enum: ["LIGHT", "MEDIUM", "HEAVY"],
+            example: "MEDIUM",
+          },
+          maxCapacityUnits: {
+            type: "integer",
+            minimum: 1,
+            example: 3,
+          },
+          notes: {
+            type: "string",
+            nullable: true,
+            minLength: 1,
+            maxLength: 120,
+            example: "Leaving from the main street",
+          },
+        },
+      },
+      TripUpdateRequest: {
+        type: "object",
+        minProperties: 1,
+        properties: {
+          departureTime: {
+            type: "string",
+            format: "date-time",
+            description:
+              "Must be at least 15 minutes from now and no more than 3 days in the future.",
+            example: "2026-08-23T11:00:00+03:00",
+          },
+          expectedReturnTime: {
+            type: "string",
+            format: "date-time",
+            description: "Must be after the effective departure time.",
+          },
+          maxCapacityClass: {
+            type: "string",
+            enum: ["LIGHT", "MEDIUM", "HEAVY"],
+            example: "HEAVY",
+          },
+          maxCapacityUnits: {
+            type: "integer",
+            minimum: 1,
+            example: 4,
+          },
+          notes: {
+            type: "string",
+            nullable: true,
+            minLength: 1,
+            maxLength: 120,
+            example: "Updated trip notes",
+          },
+        },
+        description:
+          "Only departureTime, maxCapacityClass, maxCapacityUnits, and notes can be updated. Origin and destination cannot be changed.",
+      },
+      TripTravelerSummary: {
+        type: "object",
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid",
+          },
+          fullName: {
+            type: "string",
+            nullable: true,
+            example: "Maya Nasser",
+          },
+          trustScore: {
+            type: "number",
+            example: 70,
+          },
+        },
+      },
+      Trip: {
+        type: "object",
+        required: [
+          "id",
+          "travelerId",
+          "neighborhoodId",
+          "clientRequestKey",
+          "destinationKeyword",
+          "originType",
+          "departureTime",
+          "maxCapacityClass",
+          "maxCapacityUnits",
+          "remainingCapacityUnits",
+          "status",
+          "expiresAt",
+          "createdAt",
+          "updatedAt",
+        ],
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid",
+          },
+          travelerId: {
+            type: "string",
+            format: "uuid",
+          },
+          neighborhoodId: {
+            type: "string",
+            format: "uuid",
+          },
+          destinationNeighborhoodId: {
+            type: "string",
+            format: "uuid",
+            nullable: true,
+          },
+          deliveryFeeNis: {
+            type: "integer",
+            minimum: 2,
+            maximum: 15,
+            nullable: true,
+            example: 5,
+          },
+          pricingRule: {
+            type: "string",
+            enum: [
+              "AREA_OVERRIDE",
+              "SAME_AREA",
+              "NEARBY_AREA",
+              "SAME_ZONE",
+              "ZONE_RATE",
+            ],
+            nullable: true,
+          },
+          pricingVersion: {
+            type: "integer",
+            minimum: 1,
+            nullable: true,
+            example: 1,
+          },
+          clientRequestKey: {
+            type: "string",
+            format: "uuid",
+          },
+          destinationKeyword: {
+            type: "string",
+            example: "Birzeit University",
+          },
+          originType: {
+            type: "string",
+            enum: ["DEFAULT_NEIGHBORHOOD", "CUSTOM_KEYWORD"],
+            example: "DEFAULT_NEIGHBORHOOD",
+          },
+          customOriginKeyword: {
+            type: "string",
+            nullable: true,
+            example: null,
+          },
+          departureTime: {
+            type: "string",
+            format: "date-time",
+          },
+          expectedReturnTime: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+          },
+          maxCapacityClass: {
+            type: "string",
+            enum: ["LIGHT", "MEDIUM", "HEAVY"],
+            example: "MEDIUM",
+          },
+          maxCapacityUnits: {
+            type: "integer",
+            minimum: 1,
+            example: 3,
+          },
+          remainingCapacityUnits: {
+            type: "integer",
+            minimum: 0,
+            example: 3,
+          },
+          notes: {
+            type: "string",
+            nullable: true,
+            example: "Leaving from the main street",
+          },
+          status: {
+            type: "string",
+            enum: ["ACTIVE", "CANCELLED", "EXPIRED", "COMPLETED"],
+            example: "ACTIVE",
+          },
+          expiresAt: {
+            type: "string",
+            format: "date-time",
+          },
+          neighborhood: {
+            $ref: "#/components/schemas/Neighborhood",
+          },
+          traveler: {
+            $ref: "#/components/schemas/TripTravelerSummary",
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time",
+          },
+          updatedAt: {
+            type: "string",
+            format: "date-time",
+          },
+        },
+      },
+      TripListData: {
+        type: "object",
+        required: ["trips", "pagination"],
+        properties: {
+          trips: {
+            type: "array",
+            items: {
+              $ref: "#/components/schemas/Trip",
+            },
+          },
+          pagination: {
+            type: "object",
+            required: ["skip", "take", "total"],
+            properties: {
+              skip: {
+                type: "integer",
+                example: 0,
+              },
+              take: {
+                type: "integer",
+                example: 20,
+              },
+              total: {
+                type: "integer",
+                example: 1,
+              },
+            },
+          },
+        },
+      },
+      MatchingScore: {
+        type: "object",
+        required: [
+          "matchScore",
+          "destinationScore",
+          "timeScore",
+          "loadScore",
+          "urgentBoost",
+          "trustPenalty",
+        ],
+        properties: {
+          matchScore: {
+            type: "number",
+            minimum: 0,
+            maximum: 100,
+            example: 86.32,
+            description:
+              "Overall normalized compatibility score. Matching results are primarily ranked highest to lowest by this field.",
+          },
+          destinationScore: {
+            type: "number",
+            example: 40,
+            description:
+              "Contribution for exact or nearby destination compatibility.",
+          },
+          timeScore: {
+            type: "number",
+            example: 22.5,
+            description:
+              "Contribution for how well the trip expected return fits the errand deadline.",
+          },
+          loadScore: {
+            type: "number",
+            example: 5,
+            description:
+              "Contribution based on the errand weight class relative to available trip capacity.",
+          },
+          urgentBoost: {
+            type: "number",
+            example: 10,
+            description: "Additional score applied when the errand is urgent.",
+          },
+          trustPenalty: {
+            type: "number",
+            example: 0,
+            description:
+              "Score deduction when the candidate user's trust score is below the matching baseline.",
+          },
+        },
+      },
+      MatchingTripResult: {
+        type: "object",
+        required: ["trip", "score"],
+        properties: {
+          trip: {
+            $ref: "#/components/schemas/Trip",
+          },
+          score: {
+            $ref: "#/components/schemas/MatchingScore",
+          },
+        },
+      },
+      MatchingErrandResult: {
+        type: "object",
+        required: ["errand", "score"],
+        properties: {
+          errand: {
+            $ref: "#/components/schemas/Errand",
+          },
+          score: {
+            $ref: "#/components/schemas/MatchingScore",
+          },
+        },
+      },
+      MatchingTripsData: {
+        type: "object",
+        required: ["matches", "limit", "recalculatedAt"],
+        properties: {
+          matches: {
+            type: "array",
+            description:
+              "Ranked compatible trips. An empty array means no candidate passed the matching filters.",
+            items: {
+              $ref: "#/components/schemas/MatchingTripResult",
+            },
+          },
+          limit: {
+            type: "integer",
+            minimum: 1,
+            maximum: 20,
+            example: 10,
+          },
+          recalculatedAt: {
+            type: "string",
+            format: "date-time",
+            description: "Timestamp when the matching results were computed.",
+          },
+        },
+      },
+      MatchingErrandsData: {
+        type: "object",
+        required: ["matches", "limit", "recalculatedAt"],
+        properties: {
+          matches: {
+            type: "array",
+            description:
+              "Ranked compatible errands. An empty array means no candidate passed the matching filters.",
+            items: {
+              $ref: "#/components/schemas/MatchingErrandResult",
+            },
+          },
+          limit: {
+            type: "integer",
+            minimum: 1,
+            maximum: 20,
+            example: 10,
+          },
+          recalculatedAt: {
+            type: "string",
+            format: "date-time",
+            description: "Timestamp when the matching results were computed.",
+          },
+        },
+      },
+      AssignmentCancelRequest: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          cancellationReason: {
+            type: "string",
+            maxLength: 255,
+            description:
+              "Optional short reason stored with the cancelled assignment.",
+          },
+        },
+      },
+      EstimatedDeliveryTimeRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["estimatedDeliveryAt"],
+        properties: {
+          estimatedDeliveryAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+            description:
+              "Optional traveler-provided future delivery estimate. Send null to clear it.",
+          },
+        },
+      },
+      AssignmentChatRoom: {
+        type: "object",
+        nullable: true,
+        properties: {
+          id: { type: "string", format: "uuid" },
+          assignmentId: { type: "string", format: "uuid" },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+          lastMessageAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+          },
+        },
+      },
+      Assignment: {
+        type: "object",
+        required: [
+          "id",
+          "errandId",
+          "travelerId",
+          "tripId",
+          "acceptanceSource",
+          "acceptTokenTransactionId",
+          "status",
+          "acceptedAt",
+        ],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          errandId: { type: "string", format: "uuid" },
+          travelerId: { type: "string", format: "uuid" },
+          tripId: { type: "string", format: "uuid", nullable: true },
+          acceptanceSource: {
+            type: "string",
+            enum: ["DIRECT", "TRIP_MATCH", "PROPOSAL"],
+          },
+          agreedDeliveryFeeNis: { type: "integer", nullable: true, example: 5 },
+          pricingVersion: { type: "integer", nullable: true, example: 1 },
+          acceptTokenTransactionId: {
+            type: "string",
+            format: "uuid",
+            description:
+              "Wallet ledger entry for the 1-token assignment acceptance debit.",
+          },
+          status: {
+            type: "string",
+            enum: [
+              "ACCEPTED",
+              "PICKED_UP",
+              "IN_TRANSIT",
+              "COMPLETED",
+              "CANCELLED",
+            ],
+          },
+          acceptedAt: { type: "string", format: "date-time" },
+          pickedUpAt: { type: "string", format: "date-time", nullable: true },
+          inTransitAt: { type: "string", format: "date-time", nullable: true },
+          estimatedDeliveryAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+          },
+          completedAt: { type: "string", format: "date-time", nullable: true },
+          cancelledAt: { type: "string", format: "date-time", nullable: true },
+          cancelledByUserId: { type: "string", format: "uuid", nullable: true },
+          cancellationReason: { type: "string", nullable: true },
+          errand: { $ref: "#/components/schemas/Errand" },
+          trip: { $ref: "#/components/schemas/Trip" },
+          traveler: { $ref: "#/components/schemas/TripTravelerSummary" },
+          chatRoom: { $ref: "#/components/schemas/AssignmentChatRoom" },
+          ratingPrompt: {
+            type: "object",
+            nullable: true,
+            description:
+              "Returned on completion so the frontend opens the required rating screen.",
+            properties: {
+              required: { type: "boolean", example: true },
+              assignmentId: { type: "string", format: "uuid" },
+              reviewedUser: {
+                $ref: "#/components/schemas/TripTravelerSummary",
+              },
+              reviewedRole: { type: "string", enum: ["TRAVELER"] },
+            },
+          },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+        },
+      },
+      AssignmentListData: {
+        type: "object",
+        required: ["assignments", "pagination"],
+        properties: {
+          assignments: {
+            type: "array",
+            items: { $ref: "#/components/schemas/Assignment" },
+          },
+          pagination: {
+            type: "object",
+            required: ["skip", "take", "total"],
+            properties: {
+              skip: { type: "integer", example: 0 },
+              take: { type: "integer", example: 20 },
+              total: { type: "integer", example: 1 },
+            },
+          },
+        },
+      },
+      ErrandTrackingStage: {
+        type: "object",
+        required: ["stage", "key", "labelAr", "completed", "reachedAt"],
+        properties: {
+          stage: { type: "integer", minimum: 1, maximum: 4 },
+          key: {
+            type: "string",
+            enum: ["PUBLISHED", "ACCEPTED", "IN_TRANSIT", "DELIVERED"],
+          },
+          labelAr: { type: "string" },
+          completed: { type: "boolean" },
+          reachedAt: { type: "string", format: "date-time", nullable: true },
+        },
+      },
+      ErrandTrackingTraveler: {
+        type: "object",
+        nullable: true,
+        properties: {
+          id: { type: "string", format: "uuid" },
+          fullName: { type: "string", nullable: true },
+          profileImageUrl: { type: "string", format: "uri", nullable: true },
+          averageRating: { type: "number", nullable: true, example: 4.75 },
+          ratingCount: { type: "integer", minimum: 0 },
+          completedTripsCount: { type: "integer", minimum: 0 },
+          isVerified: { type: "boolean" },
+          joinedYear: { type: "integer", example: 2024 },
+          acceptanceMessage: { type: "string", nullable: true },
+        },
+      },
+      ErrandTrackingData: {
+        type: "object",
+        required: [
+          "errandId",
+          "errandStatus",
+          "currentStage",
+          "progressPercentage",
+          "stages",
+          "isEstimatedTimeProvided",
+          "cancelled",
+        ],
+        properties: {
+          errandId: { type: "string", format: "uuid" },
+          errandStatus: { type: "string" },
+          assignmentStatus: { type: "string", nullable: true },
+          currentStage: { type: "integer", minimum: 1, maximum: 4 },
+          progressPercentage: { type: "integer", enum: [25, 50, 67, 100] },
+          stages: {
+            type: "array",
+            minItems: 4,
+            maxItems: 4,
+            items: { $ref: "#/components/schemas/ErrandTrackingStage" },
+          },
+          estimatedDeliveryAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+          },
+          isEstimatedTimeProvided: { type: "boolean" },
+          cancelled: { type: "boolean" },
+          cancellationReason: { type: "string", nullable: true },
+          traveler: { $ref: "#/components/schemas/ErrandTrackingTraveler" },
+        },
+      },
+      TripChecklistProgress: {
+        type: "object",
+        required: ["completed", "total", "percentage"],
+        properties: {
+          completed: {
+            type: "integer",
+            minimum: 0,
+            description: "Number of non-cancelled checklist items delivered.",
+          },
+          total: {
+            type: "integer",
+            minimum: 0,
+            description: "Number of non-cancelled checklist items.",
+          },
+          percentage: {
+            type: "integer",
+            minimum: 0,
+            maximum: 100,
+            description:
+              "Rounded delivered percentage; zero when total is zero.",
+          },
+        },
+      },
+      TripChecklistCategory: {
+        type: "object",
+        required: ["id", "name", "icon"],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          name: { type: "string" },
+          icon: { type: "string", nullable: true },
+        },
+      },
+      TripChecklistItem: {
+        type: "object",
+        required: [
+          "itemId",
+          "name",
+          "description",
+          "quantity",
+          "size",
+          "isUrgent",
+          "itemNote",
+          "errandId",
+          "assignmentId",
+          "pickedUp",
+          "delivered",
+          "status",
+        ],
+        properties: {
+          itemId: { type: "string", format: "uuid" },
+          name: { type: "string" },
+          description: { type: "string", nullable: true },
+          quantity: {
+            type: "integer",
+            minimum: 1,
+            description:
+              "Stored item quantity; one checklist row represents one ErrandItem.",
+          },
+          size: {
+            type: "string",
+            enum: ["ENVELOPE", "SMALL", "MEDIUM", "LARGE"],
+          },
+          isUrgent: { type: "boolean" },
+          itemNote: { type: "string", nullable: true },
+          errandId: { type: "string", format: "uuid" },
+          assignmentId: { type: "string", format: "uuid" },
+          pickedUp: {
+            type: "boolean",
+            description:
+              "True for PICKED_UP, IN_TRANSIT, and COMPLETED assignments.",
+          },
+          delivered: {
+            type: "boolean",
+            description: "True only for COMPLETED assignments.",
+          },
+          status: {
+            type: "string",
+            enum: [
+              "ACCEPTED",
+              "PICKED_UP",
+              "IN_TRANSIT",
+              "COMPLETED",
+              "CANCELLED",
+            ],
+            description:
+              "Assignment lifecycle status. Cancelled items remain visible and are excluded from progress.",
+          },
+        },
+      },
+      TripChecklistCategoryGroup: {
+        type: "object",
+        required: ["category", "items"],
+        properties: {
+          category: { $ref: "#/components/schemas/TripChecklistCategory" },
+          items: {
+            type: "array",
+            items: { $ref: "#/components/schemas/TripChecklistItem" },
+          },
+        },
+      },
+      TripChecklistData: {
+        type: "object",
+        required: ["tripId", "progress", "categories"],
+        properties: {
+          tripId: { type: "string", format: "uuid" },
+          progress: { $ref: "#/components/schemas/TripChecklistProgress" },
+          categories: {
+            type: "array",
+            items: {
+              $ref: "#/components/schemas/TripChecklistCategoryGroup",
+            },
+          },
+        },
+      },
+      Faq: {
+        type: "object",
+        required: ["id", "question", "answer"],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          question: { type: "string", maxLength: 300 },
+          answer: { type: "string", maxLength: 3000 },
+          isActive: { type: "boolean" },
+          displayOrder: { type: "integer", minimum: 0 },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+        },
+      },
+      SupportConfig: {
+        type: "object",
+        required: ["isAvailable", "phones", "email", "workingHours", "faqs"],
+        properties: {
+          isAvailable: { type: "boolean" },
+          availableAgents: { type: "integer", minimum: 0 },
+          averageResponseMinutes: { type: "integer", minimum: 0 },
+          phone: {
+            type: "string",
+            nullable: true,
+            description: "Compatibility alias for the first value in phones.",
+          },
+          phones: { type: "array", items: { type: "string" } },
+          email: { type: "string", format: "email" },
+          workingHours: {
+            type: "object",
+            required: ["days", "from", "to"],
+            properties: {
+              days: { type: "string" },
+              from: { type: "string", example: "09:00" },
+              to: { type: "string", example: "17:00" },
+            },
+          },
+          faqs: {
+            type: "array",
+            description: "Active FAQs only, ordered by displayOrder.",
+            items: { $ref: "#/components/schemas/Faq" },
+          },
+        },
+      },
+      SupportReportCreateRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["clientRequestKey", "type", "description"],
+        properties: {
+          clientRequestKey: { type: "string", format: "uuid" },
+          type: {
+            type: "string",
+            enum: [
+              "FRAUD_OR_SCAM",
+              "PROHIBITED_OR_DANGEROUS_ITEM",
+              "ABUSE_OR_THREAT",
+              "FAKE_ACCOUNT",
+              "FAILURE_TO_FULFILL",
+              "DAMAGED_OR_MISSING_ITEM",
+              "TECHNICAL_ISSUE",
+              "OTHER",
+            ],
+          },
+          description: { type: "string", minLength: 10, maxLength: 1500 },
+          reportedUserId: { type: "string", format: "uuid" },
+          assignmentId: { type: "string", format: "uuid" },
+          errandId: { type: "string", format: "uuid" },
+          tripId: { type: "string", format: "uuid" },
+          attachChatHistory: { type: "boolean", default: false },
+          chatRoomId: {
+            type: "string",
+            format: "uuid",
+            description: "Required only when attachChatHistory=true.",
+          },
+        },
+      },
+      SupportReportEvidence: {
+        type: "object",
+        description:
+          "Immutable last-50-message snapshot available only to the configured dashboard administrator.",
+        properties: {
+          id: { type: "string", format: "uuid" },
+          chatRoomId: { type: "string", format: "uuid", nullable: true },
+          messageCount: { type: "integer", minimum: 0, maximum: 50 },
+          snapshotTakenAt: { type: "string", format: "date-time" },
+          snapshot: { type: "object", additionalProperties: true },
+        },
+      },
+      RatingCreateRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["assignmentId", "ratingStars"],
+        properties: {
+          assignmentId: { type: "string", format: "uuid" },
+          ratingStars: { type: "integer", minimum: 1, maximum: 5 },
+          comments: { type: "string", maxLength: 500, nullable: true },
+          feedbackTags: {
+            type: "array",
+            maxItems: 5,
+            uniqueItems: true,
+            items: {
+              type: "string",
+              enum: [
+                "GOOD_COMMUNICATION",
+                "ON_TIME",
+                "RESPECTFUL",
+                "CAREFUL_HANDLING",
+                "HELPFUL",
+                "LATE",
+                "POOR_COMMUNICATION",
+                "ITEM_PROBLEM",
+              ],
+            },
+          },
+          paymentModalityConfirmed: {
+            type: "string",
+            nullable: true,
+            enum: ["CASH", "BARTER"],
+          },
+        },
+      },
+      Rating: {
+        type: "object",
+        required: [
+          "id",
+          "assignmentId",
+          "reviewerId",
+          "reviewedUserId",
+          "ratingStars",
+          "createdAt",
+        ],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          assignmentId: { type: "string", format: "uuid" },
+          reviewerId: { type: "string", format: "uuid" },
+          reviewedUserId: { type: "string", format: "uuid" },
+          ratingStars: { type: "integer", minimum: 1, maximum: 5 },
+          comments: { type: "string", nullable: true },
+          paymentModalityConfirmed: {
+            type: "string",
+            nullable: true,
+            enum: ["CASH", "BARTER"],
+          },
+          feedbackTags: {
+            type: "array",
+            items: { type: "object", properties: { tag: { type: "string" } } },
+          },
+          reviewer: { $ref: "#/components/schemas/TripTravelerSummary" },
+          reviewedUser: { $ref: "#/components/schemas/TripTravelerSummary" },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+        },
+      },
+      ChatUserSummary: {
+        type: "object",
+        required: ["id", "fullName"],
+        description:
+          "Safe public participant summary. Phone, auth, and wallet fields are never exposed by Chat responses.",
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid",
+            example: "550e8400-e29b-41d4-a716-446655440000",
+          },
+          fullName: {
+            type: "string",
+            example: "Leenah Alborsh",
+          },
+          trustScore: {
+            type: "integer",
+            minimum: 0,
+            maximum: 100,
+            example: 80,
+          },
+          profileImageUrl: {
+            type: "string",
+            nullable: true,
+            example: null,
+          },
+        },
+      },
+      ChatMessage: {
+        type: "object",
+        required: [
+          "id",
+          "roomId",
+          "senderId",
+          "clientMessageKey",
+          "type",
+          "isRead",
+          "sentAt",
+        ],
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid",
+            example: "950e8400-e29b-41d4-a716-446655440000",
+          },
+          roomId: {
+            type: "string",
+            format: "uuid",
+            example: "650e8400-e29b-41d4-a716-446655440000",
+          },
+          senderId: {
+            type: "string",
+            format: "uuid",
+            example: "550e8400-e29b-41d4-a716-446655440000",
+          },
+          clientMessageKey: {
+            type: "string",
+            format: "uuid",
+            description:
+              "Client-generated idempotency key scoped to the sender.",
+            example: "150e8400-e29b-41d4-a716-446655440000",
+          },
+          type: {
+            type: "string",
+            enum: ["TEXT", "VOICE", "IMAGE"],
+            example: "TEXT",
+          },
+          text: {
+            type: "string",
+            nullable: true,
+            maxLength: 500,
+            example: "I'm on the way",
+          },
+          voiceNoteUrl: {
+            type: "string",
+            nullable: true,
+            example: null,
+          },
+          voiceNoteDurationSec: {
+            type: "integer",
+            nullable: true,
+            minimum: 0,
+            maximum: 30,
+            example: null,
+          },
+          voiceNoteSizeBytes: {
+            type: "integer",
+            nullable: true,
+            minimum: 1,
+            maximum: 512000,
+            example: null,
+          },
+          voiceMimeType: {
+            type: "string",
+            nullable: true,
+            enum: ["audio/webm", "audio/ogg", "audio/mp4"],
+            example: null,
+          },
+          imageUrl: {
+            type: "string",
+            nullable: true,
+            example: null,
+          },
+          imageSizeBytes: {
+            type: "integer",
+            nullable: true,
+            minimum: 1,
+            maximum: 307200,
+            example: null,
+          },
+          imageMimeType: {
+            type: "string",
+            nullable: true,
+            enum: ["image/jpeg", "image/png", "image/webp"],
+            example: null,
+          },
+          isRead: {
+            type: "boolean",
+            description:
+              "Existing per-message read flag. Phase 9 exposes it but does not add edit/delete endpoints.",
+            example: false,
+          },
+          readAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+            example: null,
+          },
+          sentAt: {
+            type: "string",
+            format: "date-time",
+            example: "2026-08-29T08:10:00.000Z",
+          },
+          sender: {
+            $ref: "#/components/schemas/ChatUserSummary",
+          },
+        },
+      },
+      ChatRoom: {
+        type: "object",
+        required: [
+          "id",
+          "assignmentId",
+          "assignment",
+          "participants",
+          "createdAt",
+          "updatedAt",
+        ],
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid",
+            example: "650e8400-e29b-41d4-a716-446655440000",
+          },
+          assignmentId: {
+            type: "string",
+            format: "uuid",
+            example: "750e8400-e29b-41d4-a716-446655440000",
+          },
+          assignment: {
+            type: "object",
+            required: ["id", "status", "errandId"],
+            properties: {
+              id: {
+                type: "string",
+                format: "uuid",
+              },
+              status: {
+                type: "string",
+                enum: [
+                  "ACCEPTED",
+                  "PICKED_UP",
+                  "IN_TRANSIT",
+                  "COMPLETED",
+                  "CANCELLED",
+                ],
+                description:
+                  "Sending is allowed only while status is ACCEPTED, PICKED_UP, or IN_TRANSIT.",
+              },
+              errandId: {
+                type: "string",
+                format: "uuid",
+              },
+              tripId: {
+                type: "string",
+                format: "uuid",
+                nullable: true,
+              },
+              acceptedAt: {
+                type: "string",
+                format: "date-time",
+              },
+              completedAt: {
+                type: "string",
+                format: "date-time",
+                nullable: true,
+              },
+              cancelledAt: {
+                type: "string",
+                format: "date-time",
+                nullable: true,
+              },
+              errand: {
+                type: "object",
+                nullable: true,
+                properties: {
+                  id: {
+                    type: "string",
+                    format: "uuid",
+                  },
+                  title: {
+                    type: "string",
+                  },
+                  status: {
+                    type: "string",
+                  },
+                },
+              },
+            },
+          },
+          participants: {
+            type: "object",
+            required: ["requester", "traveler"],
+            properties: {
+              requester: {
+                $ref: "#/components/schemas/ChatUserSummary",
+              },
+              traveler: {
+                $ref: "#/components/schemas/ChatUserSummary",
+              },
+            },
+          },
+          lastMessageAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time",
+          },
+          updatedAt: {
+            type: "string",
+            format: "date-time",
+          },
+        },
+      },
+      ChatRoomSummary: {
+        allOf: [
+          {
+            $ref: "#/components/schemas/ChatRoom",
+          },
+          {
+            type: "object",
+            properties: {
+              latestMessage: {
+                nullable: true,
+                allOf: [{ $ref: "#/components/schemas/ChatMessage" }],
+              },
+              unreadCount: {
+                type: "integer",
+                minimum: 0,
+                example: 1,
+              },
+            },
+          },
+        ],
+      },
+      ChatRoomsData: {
+        type: "object",
+        required: ["rooms"],
+        properties: {
+          rooms: {
+            type: "array",
+            description:
+              "Only rooms where the authenticated user is the requester or traveler are returned.",
+            items: {
+              $ref: "#/components/schemas/ChatRoomSummary",
+            },
+          },
+        },
+      },
+      ChatRoomData: {
+        type: "object",
+        required: ["room"],
+        properties: {
+          room: {
+            $ref: "#/components/schemas/ChatRoom",
+          },
+        },
+      },
+      ChatMessagesData: {
+        type: "object",
+        required: ["messages", "pagination"],
+        properties: {
+          messages: {
+            type: "array",
+            items: {
+              $ref: "#/components/schemas/ChatMessage",
+            },
+          },
+          pagination: {
+            type: "object",
+            required: ["order", "limit", "hasMore", "nextBefore"],
+            properties: {
+              order: {
+                type: "string",
+                enum: ["desc"],
+                description:
+                  "Messages are returned newest first, then by stable message ID descending.",
+              },
+              limit: {
+                type: "integer",
+                minimum: 1,
+                maximum: 100,
+                example: 30,
+              },
+              hasMore: {
+                type: "boolean",
+                example: true,
+              },
+              nextBefore: {
+                type: "string",
+                format: "uuid",
+                nullable: true,
+                description:
+                  "Use this message ID as before on the next request to fetch older messages.",
+              },
+            },
+          },
+        },
+      },
+      ChatSyncData: {
+        type: "object",
+        required: ["messages", "sync"],
+        properties: {
+          messages: {
+            type: "array",
+            description:
+              "Only messages with sentAt greater than since and no later than serverTime are returned.",
+            items: {
+              $ref: "#/components/schemas/ChatMessage",
+            },
+          },
+          sync: {
+            type: "object",
+            required: ["serverTime", "nextSince", "limit"],
+            properties: {
+              serverTime: {
+                type: "string",
+                format: "date-time",
+              },
+              nextSince: {
+                type: "string",
+                format: "date-time",
+                description:
+                  "Send this value as since on the next sync request.",
+              },
+              limit: {
+                type: "integer",
+                minimum: 1,
+                maximum: 100,
+                example: 30,
+              },
+            },
+          },
+        },
+      },
+      ChatReadData: {
+        type: "object",
+        required: ["read"],
+        properties: {
+          read: {
+            type: "object",
+            required: ["count", "readAt"],
+            properties: {
+              count: {
+                type: "integer",
+                minimum: 0,
+                description:
+                  "Number of incoming unread messages marked as read.",
+                example: 2,
+              },
+              readAt: {
+                type: "string",
+                format: "date-time",
+              },
+            },
+          },
+        },
+      },
+      SendTextMessageRequest: {
+        type: "object",
+        required: ["clientMessageKey", "type", "text"],
+        additionalProperties: false,
+        properties: {
+          clientMessageKey: {
+            type: "string",
+            format: "uuid",
+          },
+          type: {
+            type: "string",
+            enum: ["TEXT"],
+          },
+          text: {
+            type: "string",
+            minLength: 1,
+            maxLength: 500,
+            description: "Trimmed before storage; blank text is rejected.",
+          },
+        },
+      },
+      SendVoiceMessageRequest: {
+        type: "object",
+        required: [
+          "clientMessageKey",
+          "type",
+          "voiceNoteUrl",
+          "voiceNoteDurationSec",
+          "voiceNoteSizeBytes",
+          "voiceMimeType",
+        ],
+        additionalProperties: false,
+        properties: {
+          clientMessageKey: {
+            type: "string",
+            format: "uuid",
+          },
+          type: {
+            type: "string",
+            enum: ["VOICE"],
+          },
+          voiceNoteUrl: {
+            type: "string",
+            description:
+              "Metadata URL only. Phase 9 does not implement chat audio storage. Frontend must record/compress audio before upload and only send the resulting compact URL.",
+          },
+          voiceNoteDurationSec: {
+            type: "integer",
+            minimum: 0,
+            maximum: 30,
+          },
+          voiceNoteSizeBytes: {
+            type: "integer",
+            minimum: 1,
+            maximum: 512000,
+            description: "Voice note must not exceed 500 KB.",
+          },
+          voiceMimeType: {
+            type: "string",
+            enum: ["audio/webm", "audio/ogg", "audio/mp4"],
+          },
+        },
+      },
+      SendImageMessageRequest: {
+        type: "object",
+        required: [
+          "clientMessageKey",
+          "type",
+          "imageUrl",
+          "imageSizeBytes",
+          "imageMimeType",
+        ],
+        additionalProperties: false,
+        properties: {
+          clientMessageKey: {
+            type: "string",
+            format: "uuid",
+          },
+          type: {
+            type: "string",
+            enum: ["IMAGE"],
+          },
+          imageUrl: {
+            type: "string",
+            description:
+              "Exactly one compressed image URL. Original large camera images and base64/binary payloads are not accepted by the chat API.",
+          },
+          imageSizeBytes: {
+            type: "integer",
+            minimum: 1,
+            maximum: 307200,
+            description: "Image must not exceed 300 KB.",
+          },
+          imageMimeType: {
+            type: "string",
+            enum: ["image/jpeg", "image/png", "image/webp"],
+          },
+        },
+      },
+      Wallet: {
+        type: "object",
+        required: [
+          "id",
+          "userId",
+          "tokenBalance",
+          "totalTokensPurchased",
+          "totalTokensSpent",
+          "createdAt",
+          "updatedAt",
+        ],
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid",
+            example: "ad0f7a16-c362-4714-a65d-9f11272ef746",
+          },
+          userId: {
+            type: "string",
+            format: "uuid",
+            example: "0f46f56f-32d1-4fd4-84d2-69bc2b077d8f",
+          },
+          totalTokensPurchased: {
+            type: "integer",
+            minimum: 0,
+            description:
+              "Completed TOKEN_TOP_UP tokens, including package bonuses; excludes signup bonuses, refunds and admin credits.",
+          },
+          totalTokensSpent: {
+            type: "integer",
+            minimum: 0,
+            description:
+              "Gross tokens debited for errands, trips, acceptance and admin debits; refunds do not reduce this total.",
+          },
+          tokenBalance: {
+            type: "integer",
+            example: 3,
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time",
+            example: "2026-08-17T09:00:00.000Z",
+          },
+          updatedAt: {
+            type: "string",
+            format: "date-time",
+            example: "2026-08-17T09:00:00.000Z",
+          },
+        },
+      },
+      WalletTransaction: {
+        type: "object",
+        required: [
+          "id",
+          "transactionType",
+          "tokenAmount",
+          "balanceBefore",
+          "balanceAfter",
+          "createdAt",
+        ],
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid",
+            example: "17268c0e-0748-4108-a486-dce6d1da412e",
+          },
+          status: {
+            type: "string",
+            enum: [
+              "SUCCESS",
+              "PENDING",
+              "PENDING_VERIFICATION",
+              "FAILED",
+              "EXPIRED",
+            ],
+            description:
+              "SUCCESS for committed ledger entries; otherwise the payment invoice status.",
+          },
+          source: {
+            type: "string",
+            enum: ["WALLET_TRANSACTION", "PAYMENT_INVOICE"],
+          },
+          paymentInvoiceId: { type: "string", format: "uuid", nullable: true },
+          rejectionNotes: { type: "string", nullable: true },
+          paymentMethod: {
+            type: "string",
+            enum: ["QR", "OTP", "BANK_TRANSFER"],
+          },
+          referenceCode: { type: "string", nullable: true },
+          transactionType: {
+            type: "string",
+            enum: [
+              "TOKEN_TOP_UP",
+              "ERRAND_POST_DEBIT",
+              "TRIP_POST_DEBIT",
+              "ERRAND_ACCEPT_DEBIT",
+              "ADMIN_CREDIT",
+              "ADMIN_DEBIT",
+              "REFUND",
+              "SIGNUP_BONUS",
+            ],
+            example: "SIGNUP_BONUS",
+          },
+          tokenAmount: {
+            type: "integer",
+            example: 3,
+          },
+          balanceBefore: {
+            type: "integer",
+            nullable: true,
+            example: 0,
+          },
+          balanceAfter: {
+            type: "integer",
+            nullable: true,
+            example: 3,
+          },
+          referenceType: {
+            type: "string",
+            nullable: true,
+            example: "USER",
+          },
+          referenceId: {
+            type: "string",
+            format: "uuid",
+            nullable: true,
+            example: "0f46f56f-32d1-4fd4-84d2-69bc2b077d8f",
+          },
+          idempotencyKey: {
+            type: "string",
+            nullable: true,
+            example: "signup-bonus:0f46f56f-32d1-4fd4-84d2-69bc2b077d8f",
+          },
+          description: {
+            type: "string",
+            nullable: true,
+            example: "Initial signup bonus",
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time",
+            example: "2026-08-17T09:00:00.000Z",
+          },
+        },
+      },
+      WalletTransactionsData: {
+        type: "object",
+        required: ["transactions", "pagination"],
+        properties: {
+          transactions: {
+            type: "array",
+            items: {
+              $ref: "#/components/schemas/WalletTransaction",
+            },
+          },
+          pagination: {
+            type: "object",
+            required: ["skip", "take", "total"],
+            properties: {
+              skip: {
+                type: "integer",
+                minimum: 0,
+                default: 0,
+                example: 0,
+              },
+              take: {
+                type: "integer",
+                minimum: 1,
+                maximum: 100,
+                default: 20,
+                example: 20,
+              },
+              total: {
+                type: "integer",
+                example: 1,
+              },
+            },
+          },
+        },
+      },
+      TokenPackage: {
+        type: "object",
+        required: [
+          "id",
+          "name",
+          "tokenAmount",
+          "bonusTokens",
+          "totalTokens",
+          "priceNis",
+          "currency",
+          "discountPercentage",
+          "features",
+          "savingsText",
+          "hasSearchPriority",
+        ],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          name: { type: "string", example: "المتوسطة" },
+          tokenAmount: { type: "integer", example: 25 },
+          bonusTokens: { type: "integer", example: 0 },
+          totalTokens: { type: "integer", example: 25 },
+          priceNis: { type: "number", format: "double", example: 10 },
+          currency: { type: "string", enum: ["NIS"] },
+          discountPercentage: { type: "integer", example: 20 },
+          features: {
+            type: "array",
+            items: { type: "string" },
+            example: ["خصم 20%"],
+          },
+          savingsText: { type: "string", example: "وفّر 2.5 ₪" },
+          hasSearchPriority: { type: "boolean", example: false },
+          isActive: { type: "boolean", example: true },
+        },
+      },
+      BankTransferAccount: {
+        type: "object",
+        required: ["beneficiaryName", "bankName"],
+        properties: {
+          beneficiaryName: { type: "string" },
+          accountNumber: { type: "string", nullable: true },
+          iban: { type: "string", nullable: true },
+          bankName: { type: "string" },
+        },
+      },
+      PaymentInvoice: {
+        type: "object",
+        required: [
+          "id",
+          "clientRequestKey",
+          "tokenPackageId",
+          "totalTokens",
+          "amountNis",
+          "currency",
+          "paymentProvider",
+          "paymentMethod",
+          "status",
+          "createdAt",
+          "expiresAt",
+        ],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          clientRequestKey: {
+            type: "string",
+            format: "uuid",
+            nullable: true,
+            description:
+              "Null only for legacy invoices created before Phase 11.",
+          },
+          tokenPackageId: { type: "string", format: "uuid" },
+          tokenAmount: { type: "integer", example: 25 },
+          bonusTokens: { type: "integer", example: 3 },
+          totalTokens: { type: "integer", example: 28 },
+          amountNis: { type: "number", format: "double", example: 12 },
+          currency: { type: "string", enum: ["NIS"] },
+          paymentProvider: {
+            type: "string",
+            enum: ["MOCK", "JAWWAL_PAY", "BANK_TRANSFER"],
+          },
+          paymentMethod: {
+            type: "string",
+            enum: ["QR", "OTP", "BANK_TRANSFER"],
+          },
+          referenceCode: {
+            type: "string",
+            nullable: true,
+            example: "ORD-MT06H0QG-6D8F1A0B42",
+          },
+          hasTransferReceipt: { type: "boolean" },
+          rejectionNotes: { type: "string", nullable: true },
+          reviewedAt: { type: "string", format: "date-time", nullable: true },
+          paymentPhone: {
+            type: "string",
+            nullable: true,
+            description: "Masked phone number used by the OTP mock flow.",
+          },
+          otpExpiresAt: { type: "string", format: "date-time", nullable: true },
+          otpResendAvailableAt: {
+            type: "string",
+            format: "date-time",
+            nullable: true,
+          },
+          providerInvoiceId: {
+            type: "string",
+            nullable: true,
+            example: "mock-invoice-uuid",
+          },
+          qrCodePayload: {
+            type: "string",
+            nullable: true,
+            example: "feeltareeq://payments/mock?invoiceId=uuid",
+          },
+          paymentUrl: { type: "string", nullable: true },
+          status: {
+            type: "string",
+            enum: [
+              "PENDING",
+              "PENDING_VERIFICATION",
+              "PAID",
+              "FAILED",
+              "EXPIRED",
+            ],
+          },
+          createdAt: { type: "string", format: "date-time" },
+          expiresAt: { type: "string", format: "date-time" },
+          paidAt: { type: "string", format: "date-time", nullable: true },
+          failedAt: { type: "string", format: "date-time", nullable: true },
+          tokenPackage: { $ref: "#/components/schemas/TokenPackage" },
+          walletTransaction: {
+            nullable: true,
+            allOf: [{ $ref: "#/components/schemas/WalletTransaction" }],
+          },
+        },
+      },
+      NotificationMetadata: {
+        type: "object",
+        additionalProperties: true,
+        description:
+          "Lightweight navigation metadata only, such as errandId, tripId, assignmentId, chatRoomId, messageId, invoiceId, status, or actorUserId. Sensitive payment, auth, phone, and provider details are not exposed.",
+        properties: {
+          errandId: { type: "string", format: "uuid" },
+          tripId: { type: "string", format: "uuid" },
+          assignmentId: { type: "string", format: "uuid" },
+          chatRoomId: { type: "string", format: "uuid" },
+          messageId: { type: "string", format: "uuid" },
+          invoiceId: { type: "string", format: "uuid" },
+        },
+      },
+      Notification: {
+        type: "object",
+        required: [
+          "id",
+          "type",
+          "channel",
+          "title",
+          "message",
+          "status",
+          "isRead",
+          "createdAt",
+          "metadata",
+        ],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          type: {
+            type: "string",
+            example: "NEW_CHAT_MESSAGE",
+          },
+          channel: {
+            type: "string",
+            enum: ["IN_APP"],
+            description:
+              "Phase 12 exposes in-app notifications only. SMS and WhatsApp remain provider-ready schema values, not delivered channels.",
+          },
+          title: { type: "string", example: "New chat message" },
+          message: {
+            type: "string",
+            example: "You have a new message about an assignment.",
+          },
+          status: {
+            type: "string",
+            enum: ["PENDING", "SENT", "FAILED", "READ"],
+            description:
+              "Unread in-app notifications are any records whose status is not READ. Mark-read is idempotent.",
+          },
+          isRead: { type: "boolean", example: false },
+          createdAt: {
+            type: "string",
+            format: "date-time",
+            description:
+              "Creation timestamp used by clients to group notifications as today, yesterday, or earlier in the user's local timezone.",
+          },
+          readAt: { type: "string", format: "date-time", nullable: true },
+          metadata: { $ref: "#/components/schemas/NotificationMetadata" },
+        },
+      },
+      NotificationListData: {
+        type: "object",
+        required: ["notifications", "unreadCount", "pagination"],
+        properties: {
+          notifications: {
+            type: "array",
+            items: { $ref: "#/components/schemas/Notification" },
+          },
+          unreadCount: {
+            type: "integer",
+            minimum: 0,
+            description:
+              "All unread notifications for the user, independent of tab and pagination.",
+          },
+          pagination: {
+            type: "object",
+            required: ["skip", "take", "total"],
+            properties: {
+              skip: { type: "integer", minimum: 0, default: 0 },
+              take: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+              total: { type: "integer", minimum: 0, example: 4 },
+            },
+          },
+        },
+      },
+      NotificationUnreadCountData: {
+        type: "object",
+        required: ["count"],
+        properties: {
+          count: { type: "integer", minimum: 0, example: 4 },
+        },
+      },
+      NotificationMarkReadData: {
+        type: "object",
+        required: ["notification"],
+        properties: {
+          notification: { $ref: "#/components/schemas/Notification" },
+        },
+      },
+      NotificationMarkAllReadData: {
+        type: "object",
+        required: ["updatedCount"],
+        properties: {
+          updatedCount: {
+            type: "integer",
+            minimum: 0,
+            description:
+              "Number of unread notifications changed to READ for the authenticated user.",
+            example: 3,
+          },
+        },
+      },
+      AuthTokens: {
+        type: "object",
+        required: [
+          "accessToken",
+          "refreshToken",
+          "tokenType",
+          "accessTokenExpiresIn",
+          "refreshTokenExpiresIn",
+        ],
+        properties: {
+          accessToken: {
+            type: "string",
+            example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+          },
+          refreshToken: {
+            type: "string",
+            example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+          },
+          tokenType: {
+            type: "string",
+            example: "Bearer",
+          },
+          accessTokenExpiresIn: {
+            type: "string",
+            example: "15m",
+          },
+          refreshTokenExpiresIn: {
+            type: "string",
+            example: "7d",
+          },
+        },
+      },
+      VerifyOtpData: {
+        allOf: [
+          {
+            type: "object",
+            required: ["user"],
+            properties: {
+              user: {
+                $ref: "#/components/schemas/UserSummary",
+              },
+            },
+          },
+          {
+            $ref: "#/components/schemas/AuthTokens",
+          },
+        ],
+      },
+      RefreshData: {
+        $ref: "#/components/schemas/AuthTokens",
+      },
+      HealthResponse: apiResponse(null, {
+        success: true,
+        message: "API is running",
+        data: null,
+      }),
+      RegisterResponse: apiResponse(
+        {
+          type: "object",
+          required: ["expiresInMinutes"],
+          properties: {
+            expiresInMinutes: {
+              type: "integer",
+              example: 2,
+            },
+          },
+        },
+        {
+          success: true,
+          message: "Registration verification code sent successfully",
+          data: {
+            expiresInMinutes: 2,
+          },
+        },
+      ),
+      LoginResponse: apiResponse({
+        allOf: [
+          {
+            type: "object",
+            required: ["user"],
+            properties: {
+              user: {
+                $ref: "#/components/schemas/UserSummary",
+              },
+            },
+          },
+          {
+            $ref: "#/components/schemas/AuthTokens",
+          },
+        ],
+      }),
+      AdminLoginResponse: apiResponse({
+        allOf: [
+          {
+            type: "object",
+            required: ["user"],
+            properties: {
+              user: { $ref: "#/components/schemas/AdminUserSummary" },
+            },
+          },
+          { $ref: "#/components/schemas/AdminAuthTokens" },
+        ],
+      }),
+      AdminRefreshResponse: apiResponse({
+        $ref: "#/components/schemas/AdminAuthTokens",
+      }),
+      AdminMeResponse: apiResponse({
+        type: "object",
+        required: ["user"],
+        properties: {
+          user: { $ref: "#/components/schemas/AdminUserSummary" },
+        },
+      }),
+      OtpRequestResponse: apiResponse(
+        {
+          type: "object",
+          required: ["expiresInMinutes"],
+          properties: {
+            expiresInMinutes: {
+              type: "integer",
+              example: 2,
+            },
+          },
+        },
+        {
+          success: true,
+          message: "Verification code sent successfully",
+          data: {
+            expiresInMinutes: 2,
+          },
+        },
+      ),
+      VerifyOtpResponse: apiResponse({
+        $ref: "#/components/schemas/VerifyOtpData",
+      }),
+      RefreshResponse: apiResponse({
+        $ref: "#/components/schemas/RefreshData",
+      }),
+      LogoutResponse: apiResponse(null, {
+        success: true,
+        message: "Logged out successfully",
+        data: null,
+      }),
+      ForgotPasswordResponse: apiResponse(
+        {
+          type: "object",
+          required: ["expiresInMinutes"],
+          properties: {
+            expiresInMinutes: {
+              type: "integer",
+              example: 2,
+            },
+          },
+        },
+        {
+          success: true,
+          message: "If an account exists, a reset code has been sent.",
+          data: {
+            expiresInMinutes: 2,
+          },
+        },
+      ),
+      ResetPasswordResponse: apiResponse(null, {
+        success: true,
+        message: "Password reset successfully. Please log in again.",
+        data: null,
+      }),
+      UserProfileResponse: apiResponse({
+        $ref: "#/components/schemas/UserProfile",
+      }),
+      UserSettingsResponse: apiResponse({
+        $ref: "#/components/schemas/UserSettingsData",
+      }),
+      NeighborhoodListResponse: apiResponse({
+        $ref: "#/components/schemas/NeighborhoodListData",
+      }),
+      CityListResponse: apiResponse({
+        $ref: "#/components/schemas/CityListData",
+      }),
+      ErrandResponse: apiResponse({
+        type: "object",
+        required: ["errand"],
+        properties: {
+          errand: {
+            $ref: "#/components/schemas/Errand",
+          },
+        },
+      }),
+      ErrandListResponse: apiResponse({
+        $ref: "#/components/schemas/ErrandListData",
+      }),
+      ErrandTrackingResponse: apiResponse({
+        type: "object",
+        required: ["tracking"],
+        properties: {
+          tracking: { $ref: "#/components/schemas/ErrandTrackingData" },
+        },
+      }),
+      TripResponse: apiResponse({
+        $ref: "#/components/schemas/Trip",
+      }),
+      TripListResponse: apiResponse({
+        $ref: "#/components/schemas/TripListData",
+      }),
+      TripChecklistResponse: apiResponse(
+        { $ref: "#/components/schemas/TripChecklistData" },
+        {
+          success: true,
+          message: "Trip checklist retrieved successfully.",
+          data: {
+            tripId: "880e8400-e29b-41d4-a716-446655440000",
+            progress: { completed: 0, total: 0, percentage: 0 },
+            categories: [],
+          },
+        },
+      ),
+      MatchingTripsResponse: apiResponse({
+        $ref: "#/components/schemas/MatchingTripsData",
+      }),
+      MatchingErrandsResponse: apiResponse({
+        $ref: "#/components/schemas/MatchingErrandsData",
+      }),
+      AssignmentResponse: apiResponse({
+        type: "object",
+        required: ["assignment"],
+        properties: {
+          assignment: {
+            $ref: "#/components/schemas/Assignment",
+          },
+        },
+      }),
+      AssignmentListResponse: apiResponse({
+        $ref: "#/components/schemas/AssignmentListData",
+      }),
+      ChatRoomsResponse: apiResponse({
+        $ref: "#/components/schemas/ChatRoomsData",
+      }),
+      ChatRoomResponse: apiResponse({
+        $ref: "#/components/schemas/ChatRoomData",
+      }),
+      ChatMessagesResponse: apiResponse({
+        $ref: "#/components/schemas/ChatMessagesData",
+      }),
+      ChatSendMessageResponse: apiResponse({
+        type: "object",
+        required: ["message"],
+        properties: {
+          message: {
+            $ref: "#/components/schemas/ChatMessage",
+          },
+        },
+      }),
+      ChatSyncResponse: apiResponse({
+        $ref: "#/components/schemas/ChatSyncData",
+      }),
+      ChatReadResponse: apiResponse({
+        $ref: "#/components/schemas/ChatReadData",
+      }),
+      WalletResponse: apiResponse({
+        $ref: "#/components/schemas/Wallet",
+      }),
+      WalletTransactionsResponse: apiResponse({
+        $ref: "#/components/schemas/WalletTransactionsData",
+      }),
+      TokenPackagesResponse: apiResponse({
+        type: "object",
+        required: ["packages"],
+        properties: {
+          packages: {
+            type: "array",
+            items: { $ref: "#/components/schemas/TokenPackage" },
+          },
+        },
+      }),
+      PaymentInvoiceResponse: apiResponse({
+        type: "object",
+        required: ["invoice"],
+        properties: {
+          invoice: { $ref: "#/components/schemas/PaymentInvoice" },
+        },
+      }),
+      CreatePaymentInvoiceResponse: apiResponse({
+        type: "object",
+        required: ["created", "invoice"],
+        properties: {
+          created: { type: "boolean" },
+          invoice: { $ref: "#/components/schemas/PaymentInvoice" },
+          bankAccount: { $ref: "#/components/schemas/BankTransferAccount" },
+          mockOtp: {
+            type: "string",
+            description:
+              "Non-production mock code for completing the OTP flow.",
+          },
+        },
+      }),
+      NotificationListResponse: apiResponse({
+        $ref: "#/components/schemas/NotificationListData",
+      }),
+      NotificationUnreadCountResponse: apiResponse({
+        $ref: "#/components/schemas/NotificationUnreadCountData",
+      }),
+      NotificationMarkReadResponse: apiResponse({
+        $ref: "#/components/schemas/NotificationMarkReadData",
+      }),
+      NotificationMarkAllReadResponse: apiResponse({
+        $ref: "#/components/schemas/NotificationMarkAllReadData",
+      }),
+    },
+    responses: {
+      ValidationFailed: errorResponse("Validation failed", [
+        {
+          field: "body.phone",
+          message: "Phone number is too short",
+        },
+      ]),
+      Unauthorized: errorResponse("Authentication is required."),
+      Forbidden: errorResponse("User is not active."),
+      NotFound: errorResponse("Requested record was not found."),
+      Conflict: errorResponse("A record with this value already exists."),
+      TooManyRequests: errorResponse(
+        "Too many requests. Please try again later.",
+      ),
+      InternalServerError: errorResponse("Internal server error"),
+    },
+  },
+  paths: {
+    "/health": {
+      get: {
+        tags: ["Health"],
+        summary: "Check API health",
+        description:
+          "Returns a simple success response when the API is running.",
+        responses: {
+          200: {
+            description: "API is running.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/HealthResponse",
+                },
+                example: {
+                  success: true,
+                  message: "API is running",
+                },
+              },
+            },
+          },
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/api/v1/auth/register": {
+      post: {
+        tags: ["Authentication"],
+        summary: "Register and request email verification",
+        description:
+          "Requires a normalized email and termsAccepted=true, snapshots the current legal versions, stores an expiring pending registration, and sends an email verification code through Resend. No user row or tokens are created until phone plus OTP verification succeeds. The user, wallet, and legal acceptance are then created atomically. Phone remains the login identifier.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/RegisterRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description:
+              "Registration and current legal-version consent prepared, and verification OTP created. No user, legal acceptance, or tokens are created until OTP verification succeeds.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/RegisterResponse",
+                },
+              },
+            },
+          },
+          400: {
+            description:
+              "Validation failed or the selected neighborhood does not exist or is inactive.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ErrorResponse",
+                },
+                examples: {
+                  validation: {
+                    value: {
+                      success: false,
+                      message: "Validation failed",
+                      errors: [
+                        {
+                          field: "body.neighborhoodId",
+                          message: "Neighborhood ID must be a valid UUID.",
+                        },
+                      ],
+                    },
+                  },
+                  inactiveNeighborhood: {
+                    value: {
+                      success: false,
+                      message:
+                        "Selected neighborhood does not exist or is inactive.",
+                      errors: [],
+                    },
+                  },
+                },
+              },
+            },
+          },
+          409: errorResponse("A user with this phone already exists."),
+          503: errorResponse("Unable to deliver the verification code."),
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/api/v1/auth/login": {
+      post: {
+        tags: ["Authentication"],
+        summary: "Log in with phone and password",
+        description:
+          "Authenticates with phone and password. Email-era users require emailVerifiedAt. As temporary migration compatibility, legacy users with no email may use their historical phoneVerifiedAt state. A user with an unverified email cannot use phoneVerifiedAt as a bypass.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/LoginRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Login succeeded and tokens were issued.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/LoginResponse",
+                },
+              },
+            },
+          },
+          400: {
+            $ref: "#/components/responses/ValidationFailed",
+          },
+          401: errorResponse("Invalid phone or password."),
+          403: {
+            description:
+              "Account email is not verified, or the user is suspended or banned.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ErrorResponse",
+                },
+                examples: {
+                  unverified: {
+                    value: {
+                      success: false,
+                      message: "Account email is not verified.",
+                      errors: [],
+                    },
+                  },
+                  inactive: {
+                    value: {
+                      success: false,
+                      message: "User is not active.",
+                      errors: [],
+                    },
+                  },
+                },
+              },
+            },
+          },
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/api/v1/auth/request-otp": {
+      post: {
+        tags: ["Authentication"],
+        summary: "Resend the registration email OTP",
+        description:
+          "Resends a six-digit EMAIL_VERIFICATION code to the normalized email already stored with the pending phone registration. Clients cannot choose SMS or WhatsApp. A 60-second cooldown applies; after successful delivery, older usable registration codes are invalidated. The code expires after two minutes and allows at most three attempts.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/OtpRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Verification code delivered successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/OtpRequestResponse",
+                },
+              },
+            },
+          },
+          400: {
+            $ref: "#/components/responses/ValidationFailed",
+          },
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          503: errorResponse("Unable to deliver the verification code."),
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/api/v1/auth/verify-otp": {
+      post: {
+        tags: ["Authentication"],
+        summary: "Verify registration email OTP and receive tokens",
+        description:
+          "Accepts phone plus OTP and verifies the latest EMAIL_VERIFICATION code bound to that phone's pending normalized email. Success atomically consumes the code, creates the user with emailVerifiedAt, creates the wallet, records legal acceptance, deletes pending registration, and returns tokens. It does not set phoneVerifiedAt.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/OtpVerifyRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "OTP verified and tokens issued.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/VerifyOtpResponse",
+                },
+              },
+            },
+          },
+          400: {
+            description:
+              "Validation failed, OTP was already used, or OTP has expired.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ErrorResponse",
+                },
+                examples: {
+                  validation: {
+                    value: {
+                      success: false,
+                      message: "Validation failed",
+                      errors: [
+                        {
+                          field: "body.otp",
+                          message: "OTP must be exactly 6 digits",
+                        },
+                      ],
+                    },
+                  },
+                  expired: {
+                    value: {
+                      success: false,
+                      message: "OTP has expired.",
+                      errors: [],
+                    },
+                  },
+                },
+              },
+            },
+          },
+          401: errorResponse("Invalid OTP."),
+          404: errorResponse("OTP not found."),
+          429: errorResponse("Too many OTP attempts."),
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/api/v1/auth/refresh": {
+      post: {
+        tags: ["Authentication"],
+        summary: "Refresh access credentials",
+        description:
+          "Validates a refresh token, revokes it, and returns a new access token and refresh token pair.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/RefreshTokenRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Token refreshed successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/RefreshResponse",
+                },
+              },
+            },
+          },
+          400: {
+            $ref: "#/components/responses/ValidationFailed",
+          },
+          401: {
+            description:
+              "Refresh token is invalid, missing from storage, revoked, or expired.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ErrorResponse",
+                },
+                examples: {
+                  invalid: {
+                    value: {
+                      success: false,
+                      message: "Invalid refresh token.",
+                      errors: [],
+                    },
+                  },
+                  revoked: {
+                    value: {
+                      success: false,
+                      message: "Refresh token has been revoked.",
+                      errors: [],
+                    },
+                  },
+                },
+              },
+            },
+          },
+          403: {
+            $ref: "#/components/responses/Forbidden",
+          },
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/api/v1/auth/logout": {
+      post: {
+        tags: ["Authentication"],
+        summary: "Log out a refresh token",
+        description:
+          "Revokes the provided refresh token when it exists and is not already revoked. The endpoint returns success even when the token is not found.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/LogoutRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Logout completed.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/LogoutResponse",
+                },
+              },
+            },
+          },
+          400: {
+            $ref: "#/components/responses/ValidationFailed",
+          },
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/api/v1/auth/forgot-password": {
+      post: {
+        tags: ["Authentication"],
+        summary: "Request a password-reset OTP",
+        description:
+          "Accepts phone and, only when the account has a verified email, sends a purpose-scoped PASSWORD_RESET code to that stored email. Existing, missing, legacy no-email, and ineligible accounts receive the same generic response; no full email or verification state is exposed.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/ForgotPasswordRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Generic password-reset request response.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ForgotPasswordResponse",
+                },
+              },
+            },
+          },
+          400: {
+            $ref: "#/components/responses/ValidationFailed",
+          },
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/api/v1/auth/reset-password": {
+      post: {
+        tags: ["Authentication"],
+        summary: "Reset a password using a password-reset OTP",
+        description:
+          "Validates the latest unused PASSWORD_RESET code for the same phone and its current verified email, replaces the password hash, consumes the code, and revokes every active refresh token. Login remains phone plus the new password.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/ResetPasswordRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Password replaced and existing sessions revoked.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ResetPasswordResponse",
+                },
+              },
+            },
+          },
+          400: {
+            description: "Validation failed or reset code is missing/expired.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ErrorResponse",
+                },
+              },
+            },
+          },
+          401: errorResponse("Invalid password reset code."),
+          409: errorResponse("Password reset code is no longer available."),
+          429: errorResponse("Too many OTP attempts."),
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/api/v1/auth/change-password": {
+      post: {
+        tags: ["Authentication"],
+        summary: "Change current user's password",
+        description:
+          "Changes the password, keeps the supplied current refresh-token session active, and revokes every other active refresh token.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: [
+                  "currentPassword",
+                  "newPassword",
+                  "confirmNewPassword",
+                  "refreshToken",
+                ],
+                properties: {
+                  currentPassword: { type: "string", format: "password" },
+                  newPassword: {
+                    type: "string",
+                    format: "password",
+                    minLength: 8,
+                  },
+                  confirmNewPassword: { type: "string", format: "password" },
+                  refreshToken: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: "Password changed and other sessions revoked." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: errorResponse("Current password or refresh token is invalid."),
+        },
+      },
+    },
+    "/api/v1/auth/cancel-deletion/request-otp": {
+      post: {
+        tags: ["Authentication"],
+        summary: "Request an OTP to cancel scheduled account deletion",
+        description:
+          "Accepts phone and always returns a generic response. A purpose-scoped code is emailed only when the account is deactivated, inside its recovery window, and already has a verified email. A replacement email is never accepted.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/OtpRequest" },
+            },
+          },
+        },
+        responses: {
+          200: { description: "Generic account recovery response." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+        },
+      },
+    },
+    "/api/v1/auth/cancel-deletion/confirm": {
+      post: {
+        tags: ["Authentication"],
+        summary: "Cancel account deletion and reactivate the account",
+        description:
+          "Requires phone, current password, and an ACCOUNT_REACTIVATION code delivered to the account's existing verified email. It clears deletion dates, restores ACTIVE status, and issues fresh tokens.",
+        responses: {
+          200: { description: "Account reactivated and fresh tokens issued." },
+          400: errorResponse("Account recovery request is invalid or expired."),
+          401: errorResponse("Invalid verification code or password."),
+        },
+      },
+    },
+    "/api/v1/locations/cities": {
+      get: {
+        tags: ["Locations"],
+        summary: "List supported cities",
+        description:
+          "Returns the six supported application geographic zones. The route name is retained for compatibility; each stable key is the canonical zoneKey clients should store and use.",
+        responses: {
+          200: {
+            description: "Supported cities retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/CityListResponse" },
+              },
+            },
+          },
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/locations/neighborhoods": {
+      get: {
+        tags: ["Locations"],
+        summary: "List active neighborhoods",
+        description:
+          "Returns active DB-backed neighborhoods whose stable key bridges to the geographic catalog. Prefer zoneKey; city is a backward-compatible alias. Different values for both return 400.",
+        parameters: [
+          {
+            name: "zoneKey",
+            in: "query",
+            required: false,
+            description:
+              "Canonical stable zone key returned by the cities endpoint.",
+            schema: zoneKeyReference,
+          },
+          {
+            name: "city",
+            in: "query",
+            required: false,
+            deprecated: true,
+            description: "Backward-compatible alias for zoneKey.",
+            schema: zoneKeyReference,
+          },
+        ],
+        responses: {
+          200: {
+            description: "Active neighborhoods retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/NeighborhoodListResponse",
+                },
+              },
+            },
+          },
+          400: errorResponse("Unsupported city key."),
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/api/v1/errands": {
+      get: {
+        tags: ["Errands"],
+        summary: "List neighborhood errands",
+        description:
+          "Returns errands using canonical zone keys and DB neighborhood IDs. Neighborhood keys bridge DB rows to the catalog. City parameters are backward-compatible aliases.",
+        security: [
+          {
+            bearerAuth: [],
+          },
+        ],
+        parameters: [
+          {
+            name: "neighborhoodId",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+            deprecated: true,
+            description: "Legacy alias for originNeighborhoodId.",
+          },
+          {
+            name: "originZoneKey",
+            in: "query",
+            required: false,
+            schema: zoneKeyReference,
+          },
+          {
+            name: "originCity",
+            in: "query",
+            required: false,
+            schema: zoneKeyReference,
+            deprecated: true,
+            description: "Backward-compatible alias for originZoneKey.",
+          },
+          {
+            name: "originNeighborhoodId",
+            in: "query",
+            required: false,
+            schema: { type: "string", format: "uuid" },
+          },
+          {
+            name: "destinationZoneKey",
+            in: "query",
+            required: false,
+            schema: zoneKeyReference,
+          },
+          {
+            name: "destinationCity",
+            in: "query",
+            required: false,
+            schema: zoneKeyReference,
+            deprecated: true,
+            description: "Backward-compatible alias for destinationZoneKey.",
+          },
+          {
+            name: "destinationNeighborhoodId",
+            in: "query",
+            required: false,
+            schema: { type: "string", format: "uuid" },
+          },
+          {
+            name: "status",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              enum: ["OPEN", "MATCHED", "CANCELLED", "EXPIRED", "COMPLETED"],
+            },
+          },
+          {
+            name: "mine",
+            in: "query",
+            required: false,
+            description:
+              "When true, returns the authenticated user's errands across all statuses unless status is supplied.",
+            schema: { type: "boolean", default: false },
+          },
+          {
+            name: "categoryId",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+          },
+          {
+            name: "urgent",
+            in: "query",
+            required: false,
+            schema: {
+              type: "boolean",
+            },
+          },
+          {
+            name: "skip",
+            in: "query",
+            required: false,
+            schema: {
+              type: "integer",
+              minimum: 0,
+              default: 0,
+            },
+          },
+          {
+            name: "take",
+            in: "query",
+            required: false,
+            schema: {
+              type: "integer",
+              minimum: 1,
+              maximum: 50,
+              default: 20,
+            },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Errands retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ErrandListResponse",
+                },
+              },
+            },
+          },
+          400: {
+            $ref: "#/components/responses/ValidationFailed",
+          },
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+      post: {
+        tags: ["Errands"],
+        summary: "Create an errand",
+        description:
+          "Creates an OPEN multi-item errand and all errand_items in one database transaction, then atomically debits exactly 1 posting token with wallet transaction type ERRAND_POST_DEBIT. clientRequestKey makes unstable-network retries safe; conflicting reuse returns 409.",
+        security: [
+          {
+            bearerAuth: [],
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/ErrandCreateRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description: "Errand created successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ErrandResponse",
+                },
+              },
+            },
+          },
+          400: errorResponse(
+            "Validation failed, profile is incomplete, category is inactive, or token balance is insufficient.",
+          ),
+          401: {
+            $ref: "#/components/responses/Unauthorized",
+          },
+          403: {
+            $ref: "#/components/responses/Forbidden",
+          },
+          409: errorResponse(
+            "Client request key has already been used with different errand data.",
+          ),
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/api/v1/errands/{id}": {
+      get: {
+        tags: ["Errands"],
+        summary: "Get errand details",
+        description:
+          "Returns a safe errand view with category, neighborhood, and requester summary. Password hashes, refresh tokens, and wallet internals are never returned.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Errand retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ErrandResponse",
+                },
+              },
+            },
+          },
+          400: {
+            $ref: "#/components/responses/ValidationFailed",
+          },
+          404: errorResponse("Errand not found."),
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+      patch: {
+        tags: ["Errands"],
+        summary: "Update own open errand",
+        description:
+          "Only the requester can update an OPEN errand. Derived fee, priority, and expiration are recalculated. Posting tokens are not debited again for edits.",
+        security: [
+          {
+            bearerAuth: [],
+          },
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/ErrandUpdateRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Errand updated successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ErrandResponse",
+                },
+              },
+            },
+          },
+          400: errorResponse(
+            "Validation failed or errand cannot be updated in its current status.",
+          ),
+          401: {
+            $ref: "#/components/responses/Unauthorized",
+          },
+          403: errorResponse("You are not allowed to modify this errand."),
+          404: errorResponse("Errand not found."),
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/api/v1/errands/{id}/cancel": {
+      post: {
+        tags: ["Errands"],
+        summary: "Cancel own open errand",
+        description:
+          "Only the requester can cancel an OPEN errand. A cancellation reason is required and stored. The record is kept and status is set to CANCELLED; the posting token is not refunded.",
+        security: [
+          {
+            bearerAuth: [],
+          },
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/ErrandCancelRequest" },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Errand cancelled successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ErrandResponse",
+                },
+              },
+            },
+          },
+          400: errorResponse(
+            "Validation failed or errand cannot be cancelled in its current status.",
+          ),
+          401: {
+            $ref: "#/components/responses/Unauthorized",
+          },
+          403: errorResponse("You are not allowed to modify this errand."),
+          404: errorResponse("Errand not found."),
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/api/v1/errands/{id}/tracking": {
+      get: {
+        tags: ["Errands"],
+        summary: "Track my errand through four delivery stages",
+        description:
+          "Requester-only tracking timeline: published (25%), accepted (50%), in transit (67%), and delivered (100%). Includes the assigned traveler summary and traveler-provided optional ETA.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Errand tracking retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ErrandTrackingResponse",
+                },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Only the requester can track this errand."),
+          404: errorResponse("Errand not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/matching/errands/{id}": {
+      get: rankedTripsForErrandOperation,
+    },
+    "/api/v1/trips": {
+      get: {
+        tags: ["Trips"],
+        summary: "List trips",
+        description:
+          "Returns trips using the same canonical zone keys and DB neighborhood IDs as errands. City parameters are backward-compatible aliases; destinationKeyword remains free text.",
+        security: [
+          {
+            bearerAuth: [],
+          },
+        ],
+        parameters: [
+          {
+            name: "originZoneKey",
+            in: "query",
+            required: false,
+            schema: zoneKeyReference,
+          },
+          {
+            name: "originCity",
+            in: "query",
+            required: false,
+            deprecated: true,
+            description: "Backward-compatible alias for originZoneKey.",
+            schema: zoneKeyReference,
+          },
+          {
+            name: "originNeighborhoodId",
+            in: "query",
+            required: false,
+            schema: { type: "string", format: "uuid" },
+          },
+          {
+            name: "neighborhoodId",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+            deprecated: true,
+            description: "Legacy alias for originNeighborhoodId.",
+          },
+          {
+            name: "destinationZoneKey",
+            in: "query",
+            required: false,
+            schema: zoneKeyReference,
+          },
+          {
+            name: "destinationCity",
+            in: "query",
+            required: false,
+            deprecated: true,
+            description: "Backward-compatible alias for destinationZoneKey.",
+            schema: zoneKeyReference,
+          },
+          {
+            name: "destinationNeighborhoodId",
+            in: "query",
+            required: false,
+            schema: { type: "string", format: "uuid" },
+          },
+          {
+            name: "destinationKeyword",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              minLength: 2,
+              maxLength: 150,
+            },
+          },
+          {
+            name: "status",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              enum: ["ACTIVE", "CANCELLED", "EXPIRED", "COMPLETED"],
+            },
+          },
+          {
+            name: "departureFrom",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              format: "date-time",
+            },
+          },
+          {
+            name: "departureTo",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              format: "date-time",
+            },
+          },
+          {
+            name: "mine",
+            in: "query",
+            required: false,
+            schema: {
+              type: "boolean",
+              default: false,
+            },
+          },
+          {
+            name: "skip",
+            in: "query",
+            required: false,
+            schema: {
+              type: "integer",
+              minimum: 0,
+              default: 0,
+            },
+          },
+          {
+            name: "take",
+            in: "query",
+            required: false,
+            schema: {
+              type: "integer",
+              minimum: 1,
+              maximum: 50,
+              default: 20,
+            },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Trips retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/TripListResponse",
+                },
+              },
+            },
+          },
+          400: {
+            $ref: "#/components/responses/ValidationFailed",
+          },
+          401: {
+            $ref: "#/components/responses/Unauthorized",
+          },
+          403: {
+            $ref: "#/components/responses/Forbidden",
+          },
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+      post: {
+        tags: ["Trips"],
+        summary: "Create a trip",
+        description:
+          "Creates an ACTIVE trip for the authenticated traveler. Creating a trip does not deduct a token. Token charging is deferred until the traveler accepts an errand/request in the later matching flow. clientRequestKey provides idempotency for unstable-network retries.",
+        security: [
+          {
+            bearerAuth: [],
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/TripCreateRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description: "Trip created successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/TripResponse",
+                },
+              },
+            },
+          },
+          400: errorResponse(
+            "Validation failed, traveler profile is incomplete, or trip data is invalid.",
+          ),
+          401: {
+            $ref: "#/components/responses/Unauthorized",
+          },
+          403: {
+            $ref: "#/components/responses/Forbidden",
+          },
+          409: errorResponse(
+            "Client request key has already been used with different trip data.",
+          ),
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/api/v1/trips/{id}": {
+      get: {
+        tags: ["Trips"],
+        summary: "Get trip details",
+        description:
+          "Returns safe trip details. Authentication is required and sensitive traveler information is not exposed.",
+        security: [
+          {
+            bearerAuth: [],
+          },
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Trip retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/TripResponse",
+                },
+              },
+            },
+          },
+          400: {
+            $ref: "#/components/responses/ValidationFailed",
+          },
+          401: {
+            $ref: "#/components/responses/Unauthorized",
+          },
+          403: {
+            $ref: "#/components/responses/Forbidden",
+          },
+          404: errorResponse("Trip not found."),
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+      patch: {
+        tags: ["Trips"],
+        summary: "Update own active trip",
+        description:
+          "Only the trip owner can update an ACTIVE future trip. Editable fields are departureTime, maxCapacityClass, maxCapacityUnits, and notes. Origin and destination cannot be changed after publishing.",
+        security: [
+          {
+            bearerAuth: [],
+          },
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/TripUpdateRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Trip updated successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/TripResponse",
+                },
+              },
+            },
+          },
+          400: errorResponse(
+            "Validation failed or trip cannot be updated in its current status.",
+          ),
+          401: {
+            $ref: "#/components/responses/Unauthorized",
+          },
+          403: errorResponse("You are not allowed to modify this trip."),
+          404: errorResponse("Trip not found."),
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/api/v1/trips/{id}/checklist": {
+      get: {
+        tags: ["Trips"],
+        summary: "Get the trip execution checklist",
+        description:
+          "Returns the trip owner's assigned errand items grouped by category. Pickup and delivery flags are derived from assignment status. Cancelled assignment items remain visible but are excluded from progress totals.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            description: "DB identifier of the trip.",
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: {
+            description:
+              "Trip checklist retrieved successfully. A trip without assignments returns zero progress and an empty categories array.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/TripChecklistResponse",
+                },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Only the trip owner can view its checklist."),
+          404: errorResponse("Trip not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/trips/{id}/cancel": {
+      post: {
+        tags: ["Trips"],
+        summary: "Cancel own active trip",
+        description:
+          "Only the traveler who owns the trip can cancel an ACTIVE trip. The trip is preserved and its status becomes CANCELLED. No token refund is created because Phase 6 does not charge a token when the trip is posted.",
+        security: [
+          {
+            bearerAuth: [],
+          },
+        ],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Trip cancelled successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/TripResponse",
+                },
+              },
+            },
+          },
+          400: errorResponse(
+            "Validation failed or trip cannot be cancelled in its current status.",
+          ),
+          401: {
+            $ref: "#/components/responses/Unauthorized",
+          },
+          403: errorResponse("You are not allowed to modify this trip."),
+          404: errorResponse("Trip not found."),
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/api/v1/matching/trips/{id}": {
+      get: rankedErrandsForTripOperation,
+    },
+    "/api/v1/proposals": {
+      post: {
+        tags: ["Proposals"],
+        summary: "Send a traveler offer or requester trip request",
+        description:
+          "Creates a PENDING proposal without charging tokens or reserving capacity. TRAVELER_OFFER must be initiated by the trip owner; REQUESTER_REQUEST must be initiated by the errand owner. The backend revalidates matching compatibility. clientRequestKey makes identical retries safe.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/ProposalCreateRequest" },
+            },
+          },
+        },
+        responses: {
+          201: { description: "Proposal created successfully." },
+          200: {
+            description: "Identical retry returned the existing proposal.",
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse(
+            "Only the required errand or trip owner can create this proposal type.",
+          ),
+          404: errorResponse("Errand or trip not found."),
+          409: errorResponse("A proposal for this pair already exists."),
+        },
+      },
+    },
+    "/api/v1/proposals/inbox": {
+      get: {
+        tags: ["Proposals"],
+        summary: "List all proposals received by the current user",
+        description:
+          "Unified incoming-offers inbox across the user's errands and trips. Each proposal includes the related errand items and images.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "status",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: ["PENDING", "ACCEPTED", "REJECTED", "WITHDRAWN", "EXPIRED"],
+            },
+          },
+          { name: "unread", in: "query", schema: { type: "boolean" } },
+          {
+            name: "skip",
+            in: "query",
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
+        ],
+        responses: {
+          200: { description: "Proposal inbox retrieved successfully." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/api/v1/proposals/sent": {
+      get: {
+        tags: ["Proposals"],
+        summary: "List proposals sent by the current user",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "status",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: ["PENDING", "ACCEPTED", "REJECTED", "WITHDRAWN", "EXPIRED"],
+            },
+          },
+          {
+            name: "skip",
+            in: "query",
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
+        ],
+        responses: {
+          200: { description: "Sent proposals retrieved successfully." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/api/v1/errands/{id}/proposals": {
+      get: {
+        tags: ["Proposals"],
+        summary: "List incoming offers for my errand",
+        description:
+          "Owner-only inbox with filtering for every proposal status. Returns summary counts and pagination.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+          {
+            name: "status",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: ["PENDING", "ACCEPTED", "REJECTED", "WITHDRAWN", "EXPIRED"],
+            },
+          },
+          {
+            name: "skip",
+            in: "query",
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
+        ],
+        responses: {
+          200: {
+            description:
+              "Errand proposals and status summary retrieved successfully.",
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse(
+            "Only the errand owner can view incoming proposals.",
+          ),
+          404: errorResponse("Errand not found."),
+        },
+      },
+    },
+    "/api/v1/trips/{id}/proposals": {
+      get: {
+        tags: ["Proposals"],
+        summary: "List incoming requests for my trip",
+        description:
+          "Owner-only inbox with filtering for every proposal status and summary counts for the design tabs.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+          {
+            name: "status",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: ["PENDING", "ACCEPTED", "REJECTED", "WITHDRAWN", "EXPIRED"],
+            },
+          },
+          {
+            name: "skip",
+            in: "query",
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
+        ],
+        responses: {
+          200: {
+            description:
+              "Trip proposals and status summary retrieved successfully.",
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse(
+            "Only the trip owner can view incoming proposals.",
+          ),
+          404: errorResponse("Trip not found."),
+        },
+      },
+    },
+    "/api/v1/proposals/{id}/accept": {
+      post: {
+        tags: ["Proposals"],
+        summary: "Accept a pending proposal",
+        description:
+          "Receiver-only action. Atomically creates the assignment, charges the traveler one token, reserves capacity, marks the errand MATCHED, creates chat, accepts this proposal, and rejects other pending proposals for the same errand.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: {
+            description:
+              "Proposal accepted and assignment created successfully.",
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Only the proposal receiver can accept it."),
+          404: errorResponse("Proposal not found."),
+          409: errorResponse(
+            "Proposal is not pending, expired, or the errand is no longer available.",
+          ),
+        },
+      },
+    },
+    "/api/v1/proposals/{id}/reject": {
+      post: {
+        tags: ["Proposals"],
+        summary: "Reject a pending proposal",
+        description:
+          "Receiver-only action. Stores REJECTED_BY_OWNER and does not charge tokens or affect other errands.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: false,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  rejectionNote: {
+                    type: "string",
+                    minLength: 3,
+                    maxLength: 255,
+                  },
+                },
+                additionalProperties: false,
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: "Proposal rejected successfully." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Only the proposal receiver can reject it."),
+          404: errorResponse("Proposal not found."),
+          409: errorResponse("Only pending proposals can be rejected."),
+        },
+      },
+    },
+    "/api/v1/proposals/{id}/read": {
+      post: {
+        tags: ["Proposals"],
+        summary: "Mark an incoming proposal as read",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: { description: "Proposal marked as read." },
+          403: errorResponse("Only the proposal receiver can mark it read."),
+          404: errorResponse("Proposal not found."),
+        },
+      },
+    },
+    "/api/v1/proposals/{id}/withdraw": {
+      post: {
+        tags: ["Proposals"],
+        summary: "Withdraw a pending proposal",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: { description: "Proposal withdrawn successfully." },
+          403: errorResponse("Only the proposal sender can withdraw it."),
+          404: errorResponse("Proposal not found."),
+          409: errorResponse("Only pending proposals can be withdrawn."),
+        },
+      },
+    },
+    "/api/v1/assignments": {
+      get: {
+        tags: ["Assignments"],
+        summary: "List my assignments",
+        description:
+          "Returns only assignments where the authenticated user is either the requester of the errand or the traveler on the assignment.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "skip",
+            in: "query",
+            required: false,
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            required: false,
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Assignments retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AssignmentListResponse" },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/assignments/{id}": {
+      get: {
+        tags: ["Assignments"],
+        summary: "Get assignment details",
+        description:
+          "Requester/traveler-only assignment detail. Unrelated authenticated users cannot read the assignment.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Assignment retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AssignmentResponse" },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("You are not allowed to access this assignment."),
+          404: errorResponse("Assignment not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/assignments/{id}/pickup": {
+      post: {
+        tags: ["Assignments"],
+        summary: "Mark assignment picked up",
+        description:
+          "Traveler-only action. Valid transition: ACCEPTED to PICKED_UP.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Assignment marked as picked up.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AssignmentResponse" },
+              },
+            },
+          },
+          400: errorResponse(
+            "Only accepted assignments can be marked as picked up.",
+          ),
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse(
+            "Only the traveler can mark this assignment as picked up.",
+          ),
+          404: errorResponse("Assignment not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/assignments/{id}/start-delivery": {
+      post: {
+        tags: ["Assignments"],
+        summary: "Start assignment delivery",
+        description:
+          "Traveler-only action. Valid transition: PICKED_UP to IN_TRANSIT.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: false,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  estimatedDeliveryAt: {
+                    type: "string",
+                    format: "date-time",
+                    nullable: true,
+                    description:
+                      "Optional future ETA selected by the traveler; the backend does not calculate it.",
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Assignment delivery started.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AssignmentResponse" },
+              },
+            },
+          },
+          400: errorResponse("Only picked up assignments can start delivery."),
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Only the traveler can start delivery."),
+          404: errorResponse("Assignment not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/assignments/{id}/estimated-delivery-time": {
+      patch: {
+        tags: ["Assignments"],
+        summary: "Update the traveler-provided delivery estimate",
+        description:
+          "Traveler-only action available after pickup and before completion. The ETA must be in the future; null clears it.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/EstimatedDeliveryTimeRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Estimated delivery time updated.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AssignmentResponse" },
+              },
+            },
+          },
+          400: errorResponse(
+            "ETA is not in the future or assignment status does not allow updates.",
+          ),
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse(
+            "Only the assigned traveler can update the estimated delivery time.",
+          ),
+          404: errorResponse("Assignment not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/assignments/{id}/complete": {
+      post: {
+        tags: ["Assignments"],
+        summary: "Complete assignment",
+        description:
+          "Requester-only action. Valid transition: IN_TRANSIT to COMPLETED. On success the errand becomes COMPLETED, traveler delivery badges are evaluated, and ratingPrompt tells the frontend to open the rating screen.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Assignment completed successfully.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AssignmentResponse" },
+              },
+            },
+          },
+          400: errorResponse("Only in-transit assignments can be completed."),
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse(
+            "Only the requester can complete this assignment.",
+          ),
+          404: errorResponse("Assignment not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/assignments/{id}/cancel": {
+      post: {
+        tags: ["Assignments"],
+        summary: "Cancel accepted assignment",
+        description:
+          "Requester or traveler action. Valid transition: ACCEPTED to CANCELLED only. Cancellation restores the trip capacity and reopens the errand, but does not refund the 1-token accept debit. Existing chat room history is retained.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: false,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/AssignmentCancelRequest" },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Assignment cancelled successfully.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AssignmentResponse" },
+              },
+            },
+          },
+          400: errorResponse("Only accepted assignments can be cancelled."),
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse(
+            "Only the requester or traveler can cancel this assignment.",
+          ),
+          404: errorResponse("Assignment not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/ratings": {
+      post: {
+        tags: ["Ratings"],
+        summary: "Rate the other assignment participant",
+        description:
+          "Requester and traveler may each submit exactly one immutable rating after COMPLETED. Identical retries are idempotent. Trust is recalculated from all received stars using a 70-point prior weighted as five ratings; comments, tags, and payment modality do not affect trust. No wallet token is charged.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/RatingCreateRequest" },
+            },
+          },
+        },
+        responses: {
+          201: { description: "Rating submitted successfully." },
+          200: { description: "Identical retry returned without a duplicate." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse(
+            "Only assignment participants can submit a rating.",
+          ),
+          404: errorResponse("Assignment not found."),
+          409: errorResponse(
+            "Assignment is incomplete or this participant already submitted a different rating.",
+          ),
+        },
+      },
+    },
+    "/api/v1/ratings/pending": {
+      get: {
+        tags: ["Ratings"],
+        summary: "List my pending ratings",
+        description:
+          "Returns completed assignments the user has not rated; this supports a required frontend prompt without blocking login or unrelated APIs.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "skip",
+            in: "query",
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
+        ],
+        responses: {
+          200: { description: "Pending ratings retrieved successfully." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/api/v1/ratings/me/received": {
+      get: {
+        tags: ["Ratings"],
+        summary: "List ratings I received",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "skip",
+            in: "query",
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
+        ],
+        responses: {
+          200: { description: "Received ratings retrieved successfully." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/api/v1/ratings/me/summary": {
+      get: {
+        tags: ["Ratings"],
+        summary: "Get my trust, rating summary, and badges",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: { description: "Rating summary retrieved successfully." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/api/v1/ratings/assignments/{assignmentId}": {
+      get: {
+        tags: ["Ratings"],
+        summary: "Get ratings for one assignment",
+        description:
+          "Visible immediately, only to the assignment requester and traveler.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "assignmentId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: { description: "Assignment ratings retrieved successfully." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse(
+            "Only assignment participants can view these ratings.",
+          ),
+          404: errorResponse("Assignment not found."),
+        },
+      },
+    },
+    "/api/v1/chat-rooms": {
+      get: {
+        tags: ["Chat"],
+        summary: "List current user's chat rooms",
+        description:
+          "Returns compact chat room summaries only for rooms where the authenticated user is either the assignment requester or traveler. ChatRoom rows are unique per assignmentId; Phase 9 does not create duplicate rooms and expects assignment creation to provision them once the Phase 8 assignment lifecycle is merged. Latest message preview and unread count are included from existing message metadata when available.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: "Chat rooms retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ChatRoomsResponse",
+                },
+              },
+            },
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/chat-rooms/{roomId}": {
+      get: {
+        tags: ["Chat"],
+        summary: "Get chat room details",
+        description:
+          "Returns one assignment chat room for an authenticated participant. The requester and traveler are identified from the related assignment; unrelated users receive 403 and missing rooms receive 404. The response contains compact assignment and participant summaries only.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "roomId",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+            description: "Chat room ID.",
+          },
+        ],
+        responses: {
+          200: {
+            description: "Chat room retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ChatRoomResponse",
+                },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("You are not allowed to access this chat room."),
+          404: errorResponse("Chat room not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/chat-rooms/{roomId}/messages": {
+      get: {
+        tags: ["Chat"],
+        summary: "List chat room messages",
+        description:
+          "Lists messages for an authenticated requester or traveler in a chat room. Messages are returned newest first with deterministic sentAt desc, id desc ordering. Use the nextBefore message ID to fetch older messages. Empty rooms or exhausted pages return 200 with messages: [].",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "roomId",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+          },
+          {
+            name: "limit",
+            in: "query",
+            required: false,
+            schema: {
+              type: "integer",
+              minimum: 1,
+              maximum: 100,
+              default: 30,
+            },
+            description: "Maximum messages to return.",
+          },
+          {
+            name: "before",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+            description:
+              "Message ID cursor. When supplied, returns older messages before that message.",
+          },
+        ],
+        responses: {
+          200: {
+            description: "Chat messages retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ChatMessagesResponse",
+                },
+              },
+            },
+          },
+          400: errorResponse("Validation failed or before cursor is invalid."),
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("You are not allowed to access this chat room."),
+          404: errorResponse("Chat room not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+      post: {
+        tags: ["Chat"],
+        summary: "Send a chat message",
+        description:
+          "Sends one TEXT, VOICE, or IMAGE metadata message as an authenticated assignment participant. TEXT messages are trimmed, must be non-empty, and cannot exceed 500 characters. VOICE messages require voiceNoteUrl, voiceNoteDurationSec <= 30, voiceNoteSizeBytes <= 500 KB, and voiceMimeType of audio/webm, audio/ogg, or audio/mp4. IMAGE messages contain exactly one compressed imageUrl, imageSizeBytes <= 300 KB, and imageMimeType of image/jpeg, image/png, or image/webp. Mixed text/media payloads, multiple images, base64, and binary uploads are rejected. Chat media storage is not implemented here: clients must compress and upload media before calling this endpoint and must not send original large camera images. clientMessageKey provides offline retry idempotency scoped to sender: the same sender/key/payload returns the existing message, while the same sender/key with different payload returns 409. Sending is allowed while the assignment is ACCEPTED, PICKED_UP, or IN_TRANSIT. COMPLETED or CANCELLED assignments remain readable but reject new sends with 409.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "roomId",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                oneOf: [
+                  { $ref: "#/components/schemas/SendTextMessageRequest" },
+                  { $ref: "#/components/schemas/SendVoiceMessageRequest" },
+                  { $ref: "#/components/schemas/SendImageMessageRequest" },
+                ],
+                discriminator: {
+                  propertyName: "type",
+                },
+              },
+              examples: {
+                text: {
+                  value: {
+                    clientMessageKey: "150e8400-e29b-41d4-a716-446655440000",
+                    type: "TEXT",
+                    text: "I'm on the way",
+                  },
+                },
+                voice: {
+                  value: {
+                    clientMessageKey: "250e8400-e29b-41d4-a716-446655440000",
+                    type: "VOICE",
+                    voiceNoteUrl: "https://media.example.test/voice/1.ogg",
+                    voiceNoteDurationSec: 18,
+                    voiceNoteSizeBytes: 120000,
+                    voiceMimeType: "audio/ogg",
+                  },
+                },
+                image: {
+                  value: {
+                    clientMessageKey: "350e8400-e29b-41d4-a716-446655440000",
+                    type: "IMAGE",
+                    imageUrl: "https://media.example.test/chat/image-1.webp",
+                    imageSizeBytes: 240000,
+                    imageMimeType: "image/webp",
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description: "Chat message sent successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ChatSendMessageResponse",
+                },
+              },
+            },
+          },
+          200: {
+            description:
+              "Idempotent retry returned the existing message without creating a duplicate.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ChatSendMessageResponse",
+                },
+              },
+            },
+          },
+          400: errorResponse("Validation failed."),
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("You are not allowed to access this chat room."),
+          404: errorResponse("Chat room not found."),
+          409: errorResponse(
+            "Client message key has already been used with different message data, or assignment is closed.",
+          ),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/chat-rooms/{roomId}/sync": {
+      get: {
+        tags: ["Chat"],
+        summary: "Delta sync chat messages",
+        description:
+          "Returns only messages created after the required since timestamp and no later than the server sync timestamp. This endpoint is for low-bandwidth mobile/PWA sync and intentionally does not return full chat history without a cursor. Empty deltas return 200 with messages: []. Use sync.nextSince as the next request's since value.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "roomId",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+          },
+          {
+            name: "since",
+            in: "query",
+            required: true,
+            schema: {
+              type: "string",
+              format: "date-time",
+            },
+            description:
+              "ISO timestamp from the last successful sync. Required to avoid returning whole history.",
+          },
+          {
+            name: "limit",
+            in: "query",
+            required: false,
+            schema: {
+              type: "integer",
+              minimum: 1,
+              maximum: 100,
+              default: 30,
+            },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Chat messages synced successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ChatSyncResponse",
+                },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("You are not allowed to access this chat room."),
+          404: errorResponse("Chat room not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/chat-rooms/{roomId}/read": {
+      post: {
+        tags: ["Chat"],
+        summary: "Mark incoming chat messages read",
+        description:
+          "Marks unread messages in the room as read when they were sent by the other assignment participant. This uses the existing per-message isRead/readAt fields and does not add message edit or delete behavior.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "roomId",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid",
+            },
+          },
+        ],
+        requestBody: {
+          required: false,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: false,
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Incoming messages marked read successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ChatReadResponse",
+                },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("You are not allowed to access this chat room."),
+          404: errorResponse("Chat room not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/users/me": {
+      get: {
+        tags: ["Users"],
+        summary: "Get current user profile",
+        description:
+          "Returns the authenticated user's profile, including neighborhood details when a neighborhood is set.",
+        security: [
+          {
+            bearerAuth: [],
+          },
+        ],
+        responses: {
+          200: {
+            description: "User profile retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/UserProfileResponse",
+                },
+              },
+            },
+          },
+          401: {
+            $ref: "#/components/responses/Unauthorized",
+          },
+          403: {
+            $ref: "#/components/responses/Forbidden",
+          },
+          404: errorResponse("User not found."),
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+      patch: {
+        tags: ["Users"],
+        summary: "Update current user profile",
+        description:
+          "Updates fullName, neighborhoodId, or both for the authenticated user. The profileCompleted flag is recalculated after the update.",
+        security: [
+          {
+            bearerAuth: [],
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/UserProfileUpdateRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "User profile updated successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/UserProfileResponse",
+                },
+              },
+            },
+          },
+          400: {
+            description:
+              "Validation failed or the selected neighborhood does not exist or is inactive.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ErrorResponse",
+                },
+                examples: {
+                  validation: {
+                    value: {
+                      success: false,
+                      message: "Validation failed",
+                      errors: [
+                        {
+                          field: "body",
+                          message:
+                            "At least one field must be provided for update.",
+                        },
+                      ],
+                    },
+                  },
+                  inactiveNeighborhood: {
+                    value: {
+                      success: false,
+                      message:
+                        "Selected neighborhood does not exist or is inactive.",
+                      errors: [],
+                    },
+                  },
+                },
+              },
+            },
+          },
+          401: {
+            $ref: "#/components/responses/Unauthorized",
+          },
+          403: {
+            $ref: "#/components/responses/Forbidden",
+          },
+          404: errorResponse("User not found."),
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+      delete: {
+        tags: ["Users"],
+        summary: "Deactivate and schedule permanent account deletion",
+        description:
+          "Requires the current password and DELETE confirmation. Active operations block the request. The account is disabled immediately, all sessions are revoked, and the account with all related data is permanently deleted after the configured 30-day retention period.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["password", "confirmation"],
+                properties: {
+                  password: { type: "string", format: "password" },
+                  confirmation: { type: "string", enum: ["DELETE"] },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description:
+              "Account deactivated and scheduled for permanent deletion.",
+          },
+          401: errorResponse("Current password is incorrect."),
+          409: errorResponse(
+            "Account cannot be deactivated while active operations exist.",
+          ),
+        },
+      },
+    },
+    "/api/v1/users/me/settings": {
+      get: {
+        tags: ["Users"],
+        summary: "Get current user settings",
+        description:
+          "Returns notification preferences for the authenticated user. Users without a stored preference row receive enabled defaults.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: "User settings retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/UserSettingsResponse" },
+              },
+            },
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: errorResponse("User not found."),
+        },
+      },
+    },
+    "/api/v1/users/me/settings/notifications": {
+      patch: {
+        tags: ["Users"],
+        summary: "Update notification preferences",
+        description:
+          "Partially updates optional notification categories. Payment and security notifications are essential and are not disabled by these settings.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/NotificationSettingsUpdateRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Notification settings updated successfully.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/UserSettingsResponse" },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: errorResponse("User not found."),
+        },
+      },
+    },
+    "/api/v1/legal/current": {
+      get: {
+        tags: ["Legal"],
+        summary: "Get current legal document versions",
+        responses: {
+          200: {
+            description: "Current legal versions retrieved successfully.",
+          },
+        },
+      },
+    },
+    "/api/v1/legal/acceptances": {
+      post: {
+        tags: ["Legal"],
+        summary: "Accept current terms and privacy versions",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          201: { description: "Legal acceptance recorded successfully." },
+          409: errorResponse(
+            "Only the current legal document versions can be accepted.",
+          ),
+        },
+      },
+    },
+    "/api/v1/users/me/profile-image": {
+      put: {
+        tags: ["Users"],
+        summary: "Upload or replace current user's profile image",
+        description:
+          "Accepts one JPEG, PNG, or WebP image up to 5 MB. Replacing an image removes the previous stored object after the database is updated.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                required: ["image"],
+                properties: { image: { type: "string", format: "binary" } },
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Profile image updated successfully.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/UserProfileResponse" },
+              },
+            },
+          },
+          400: errorResponse(
+            "Profile image is missing, invalid, unsupported, or exceeds 5 MB.",
+          ),
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: errorResponse("User not found."),
+          502: errorResponse("Could not upload profile image."),
+          503: errorResponse("Profile image storage is not configured."),
+        },
+      },
+      delete: {
+        tags: ["Users"],
+        summary: "Delete current user's profile image",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: "Profile image deleted successfully.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/UserProfileResponse" },
+              },
+            },
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: errorResponse("User not found."),
+        },
+      },
+    },
+    "/api/v1/users/me/identity-verification": {
+      post: {
+        tags: ["Users"],
+        summary: "Submit identity verification documents",
+        description:
+          "Uploads the private front ID, back ID, and selfie images together and changes the user's verification status to PENDING_REVIEW.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                required: ["idFrontImage", "idBackImage", "selfieImage"],
+                properties: {
+                  idFrontImage: { type: "string", format: "binary" },
+                  idBackImage: { type: "string", format: "binary" },
+                  selfieImage: { type: "string", format: "binary" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: "Identity verification submitted for review." },
+          400: errorResponse("All three valid images up to 5 MB are required."),
+          409: errorResponse(
+            "Identity is verified or a request is already pending.",
+          ),
+          503: errorResponse("Identity document storage is not configured."),
+        },
+      },
+    },
+    "/api/v1/admin/payments/invoices": {
+      get: {
+        tags: ["Admin"],
+        summary: "List bank transfer invoices for review",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "status",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: ["PENDING_VERIFICATION", "PAID", "FAILED"],
+              default: "PENDING_VERIFICATION",
+            },
+          },
+          {
+            name: "skip",
+            in: "query",
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
+        ],
+        responses: {
+          200: {
+            description:
+              "Bank transfer invoices with user, package, reference, and short-lived signed receipt URL.",
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+        },
+      },
+    },
+    "/api/v1/admin/payments/invoices/{id}/approve": {
+      post: {
+        tags: ["Admin"],
+        summary: "Approve a bank transfer invoice",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: {
+            description:
+              "Invoice paid, wallet credited once, and user notified.",
+          },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: errorResponse("Bank transfer invoice was not found."),
+          409: errorResponse(
+            "Invoice has already been reviewed or has no receipt.",
+          ),
+        },
+      },
+    },
+    "/api/v1/admin/payments/invoices/{id}/reject": {
+      post: {
+        tags: ["Admin"],
+        summary: "Reject a bank transfer invoice",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["notes"],
+                additionalProperties: false,
+                properties: {
+                  notes: { type: "string", minLength: 3, maxLength: 500 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description:
+              "Invoice failed, rejection note saved, and user notified.",
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: errorResponse("Bank transfer invoice was not found."),
+          409: errorResponse(
+            "Invoice has already been reviewed or has no receipt.",
+          ),
+        },
+      },
+    },
+    "/api/v1/admin/auth/login": {
+      post: {
+        tags: ["Admin Authentication"],
+        summary: "Log in to the admin dashboard",
+        description:
+          "Password-only login for the one ACTIVE, appropriately verified SUPER_ADMIN whose user ID exactly matches ADMIN_USER_ID. Email-era admins require emailVerifiedAt; legacy admins without email may temporarily use phoneVerifiedAt. All identity, password, verification, status, role, and allowlist failures use the same response.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/AdminLoginRequest" },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Administrator login succeeded.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AdminLoginResponse" },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: errorResponse("Invalid phone or password."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+        },
+      },
+    },
+    "/api/v1/admin/auth/refresh": {
+      post: {
+        tags: ["Admin Authentication"],
+        summary: "Rotate admin dashboard tokens",
+        description:
+          "Validates and rotates the persisted hashed refresh token, then rechecks the user's current ACTIVE status, SUPER_ADMIN role, and exact backend-configured administrator identity before issuing new tokens.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/AdminRefreshTokenRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Admin tokens rotated successfully.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AdminRefreshResponse" },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: errorResponse("Invalid refresh token."),
+          403: errorResponse("Dashboard administrator access is required."),
+        },
+      },
+    },
+    "/api/v1/admin/auth/logout": {
+      post: {
+        tags: ["Admin Authentication"],
+        summary: "Log out an admin dashboard session",
+        description:
+          "Revokes the supplied refresh token using the shared refresh-token store.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/AdminRefreshTokenRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Admin dashboard session logged out.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LogoutResponse" },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+        },
+      },
+    },
+    "/api/v1/admin/auth/me": {
+      get: {
+        tags: ["Admin Authentication"],
+        summary: "Get the current dashboard administrator",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: "Safe dashboard identity data.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AdminMeResponse" },
+              },
+            },
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Dashboard administrator access is required."),
+        },
+      },
+    },
+    "/api/v1/admin/verifications": {
+      get: {
+        tags: ["Admin"],
+        summary: "List identity verification submissions",
+        description:
+          "Defaults to ALL. Search matches user name (case-insensitive) or phone. Statistics count every status within the search, independent of the selected status and page. Items include documentCount=3, availableDocumentCount, documentsStatus (AVAILABLE/PENDING_DELETION/DELETED) and nullable documentsDeletedAt.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "search",
+            in: "query",
+            schema: { type: "string", minLength: 1, maxLength: 100 },
+            description: "Search by name or phone.",
+          },
+          {
+            name: "status",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: [
+                "ALL",
+                "UNVERIFIED",
+                "PENDING_REVIEW",
+                "VERIFIED",
+                "REJECTED",
+              ],
+              default: "ALL",
+            },
+          },
+          {
+            name: "skip",
+            in: "query",
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
+        ],
+        responses: {
+          200: {
+            description:
+              "Returns data.verifications, data.pagination (skip, take, total) and data.statistics (total, PENDING_REVIEW, VERIFIED, REJECTED, UNVERIFIED).",
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+        },
+      },
+    },
+    "/api/v1/admin/verifications/{id}": {
+      get: {
+        tags: ["Admin"],
+        summary: "Get an identity verification",
+        description:
+          "Pending and approved requests include five-minute signed document URLs. Rejected requests return documents=null, including while deletion is pending. DELETED and documentsDeletedAt are set only after storage deletion succeeds. Request history and rejectionReason remain available.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: { description: "Verification retrieved." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: errorResponse("Identity verification not found."),
+        },
+      },
+    },
+    "/api/v1/admin/verifications/{id}/approve": {
+      post: {
+        tags: ["Admin"],
+        summary: "Approve an identity verification",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: { description: "Verification approved and user notified." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          409: errorResponse("Verification was already reviewed."),
+        },
+      },
+    },
+    "/api/v1/admin/verifications/{id}/reject": {
+      post: {
+        tags: ["Admin"],
+        summary: "Reject an identity verification",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["reason"],
+                properties: {
+                  reason: { type: "string", minLength: 3, maxLength: 500 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description:
+              "Verification rejected and user notified with the reason. Document deletion is durably queued; response documentsStatus=PENDING_DELETION. The worker retries failures. Re-submission creates a separate request.",
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          409: errorResponse("Verification was already reviewed."),
+        },
+      },
+    },
+    "/api/v1/admin/faqs": {
+      get: {
+        tags: ["Admin", "Support"],
+        summary: "List FAQs for administration",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "isActive", in: "query", schema: { type: "boolean" } },
+          {
+            name: "skip",
+            in: "query",
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
+        ],
+        responses: {
+          200: { description: "FAQs retrieved successfully." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+        },
+      },
+      post: {
+        tags: ["Admin", "Support"],
+        summary: "Create an FAQ",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                required: ["question", "answer"],
+                properties: {
+                  question: { type: "string", minLength: 3, maxLength: 300 },
+                  answer: { type: "string", minLength: 3, maxLength: 3000 },
+                  displayOrder: { type: "integer", minimum: 0, default: 0 },
+                  isActive: { type: "boolean", default: true },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: "FAQ created successfully." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          403: { $ref: "#/components/responses/Forbidden" },
+        },
+      },
+    },
+    "/api/v1/admin/faqs/reorder": {
+      patch: {
+        tags: ["Admin", "Support"],
+        summary: "Reorder FAQs atomically",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["items"],
+                properties: {
+                  items: {
+                    type: "array",
+                    minItems: 1,
+                    maxItems: 100,
+                    items: {
+                      type: "object",
+                      required: ["id", "displayOrder"],
+                      properties: {
+                        id: { type: "string", format: "uuid" },
+                        displayOrder: { type: "integer", minimum: 0 },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: "FAQs reordered successfully." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: errorResponse("FAQ not found."),
+        },
+      },
+    },
+    "/api/v1/admin/faqs/{id}": {
+      patch: {
+        tags: ["Admin", "Support"],
+        summary: "Update or activate/deactivate an FAQ",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  question: { type: "string", minLength: 3, maxLength: 300 },
+                  answer: { type: "string", minLength: 3, maxLength: 3000 },
+                  displayOrder: { type: "integer", minimum: 0 },
+                  isActive: { type: "boolean" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: "FAQ updated successfully." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: errorResponse("FAQ not found."),
+        },
+      },
+      delete: {
+        tags: ["Admin", "Support"],
+        summary: "Soft-delete an FAQ by deactivating it",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: { description: "FAQ deactivated successfully." },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: errorResponse("FAQ not found."),
+        },
+      },
+    },
+    "/api/v1/delivery-pricing/quote": {
+      get: {
+        tags: ["Delivery Pricing"],
+        summary: "Preview the server-calculated delivery price",
+        description:
+          "Uses the authenticated user's neighborhood unless originNeighborhoodId is supplied. Clients cannot submit or edit the calculated fee.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "originNeighborhoodId",
+            in: "query",
+            required: false,
+            schema: { type: "string", format: "uuid" },
+          },
+          {
+            name: "destinationNeighborhoodId",
+            in: "query",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: { description: "Delivery price calculated successfully." },
+          400: errorResponse("Neighborhood IDs are invalid or inactive."),
+          401: { $ref: "#/components/responses/Unauthorized" },
+          422: errorResponse(
+            "Delivery pricing is not configured for this route.",
+          ),
+        },
+      },
+    },
+    "/api/v1/support/config": {
+      get: {
+        tags: ["Support"],
+        summary: "Get support contact information and active FAQs",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: "Support configuration retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    success: { type: "boolean" },
+                    message: { type: "string" },
+                    data: { $ref: "#/components/schemas/SupportConfig" },
+                  },
+                },
+              },
+            },
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/api/v1/support/tickets": {
+      get: {
+        tags: ["Support"],
+        summary: "List current user's support tickets",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: { description: "Support tickets retrieved successfully." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+      post: {
+        tags: ["Support"],
+        summary: "Create a support ticket",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: [
+                  "clientRequestKey",
+                  "clientMessageKey",
+                  "category",
+                  "message",
+                ],
+                properties: {
+                  clientRequestKey: { type: "string", format: "uuid" },
+                  clientMessageKey: {
+                    type: "string",
+                    format: "uuid",
+                    description:
+                      "Client-generated idempotency key for the first ticket message.",
+                  },
+                  category: {
+                    type: "string",
+                    enum: [
+                      "PAYMENT_ISSUE",
+                      "OPEN_REQUEST",
+                      "CANCEL_REQUEST",
+                      "GENERAL_INQUIRY",
+                    ],
+                  },
+                  message: { type: "string", minLength: 2, maxLength: 1000 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: "Support ticket created successfully." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/api/v1/support/tickets/{id}": {
+      get: {
+        tags: ["Support"],
+        summary: "Get a support ticket with messages",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: { description: "Support ticket retrieved successfully." },
+          404: errorResponse("Support ticket not found."),
+        },
+      },
+    },
+    "/api/v1/support/tickets/{id}/messages": {
+      post: {
+        tags: ["Support"],
+        summary: "Send a support message",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          201: { description: "Support message processed successfully." },
+          409: errorResponse("Closed support tickets cannot receive messages."),
+        },
+      },
+    },
+    "/api/v1/support/admin/tickets": {
+      get: {
+        tags: ["Support"],
+        summary: "List support tickets for administrators",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: { description: "Support tickets retrieved successfully." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Administrator access is required."),
+        },
+      },
+    },
+    "/api/v1/support/admin/tickets/{id}/status": {
+      patch: {
+        tags: ["Support"],
+        summary: "Update a support ticket status",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["status"],
+                properties: {
+                  status: {
+                    type: "string",
+                    enum: [
+                      "OPEN",
+                      "IN_PROGRESS",
+                      "WAITING_FOR_USER",
+                      "RESOLVED",
+                      "CLOSED",
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: "Support ticket status updated successfully." },
+          403: errorResponse("Administrator access is required."),
+          404: errorResponse("Support ticket not found."),
+        },
+      },
+    },
+    "/api/v1/support/reports": {
+      get: {
+        tags: ["Support"],
+        summary: "List current user's reports",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: { description: "Reports retrieved successfully." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+      post: {
+        tags: ["Support"],
+        summary: "Submit a support report",
+        description:
+          "Creates an idempotent report and assigns priority on the server. When attachChatHistory=true, chatRoomId is required, ownership is verified, and an immutable snapshot of at most the latest 50 messages is stored atomically. Evidence is never returned in ordinary user report responses.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/SupportReportCreateRequest",
+              },
+              examples: {
+                withoutChat: {
+                  value: {
+                    clientRequestKey: "750e8400-e29b-41d4-a716-446655440001",
+                    type: "TECHNICAL_ISSUE",
+                    description:
+                      "The application stopped while creating an errand.",
+                    attachChatHistory: false,
+                  },
+                },
+                withChat: {
+                  value: {
+                    clientRequestKey: "750e8400-e29b-41d4-a716-446655440002",
+                    type: "ABUSE_OR_THREAT",
+                    description:
+                      "The other participant sent threatening messages.",
+                    reportedUserId: "550e8400-e29b-41d4-a716-446655440002",
+                    attachChatHistory: true,
+                    chatRoomId: "650e8400-e29b-41d4-a716-446655440004",
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: "Report submitted successfully." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: errorResponse("Report context not found."),
+          409: errorResponse(
+            "The idempotency key was reused with different data.",
+          ),
+        },
+      },
+    },
+    "/api/v1/support/reports/{id}": {
+      get: {
+        tags: ["Support"],
+        summary: "Get current user's report",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: { description: "Report retrieved successfully." },
+          404: errorResponse("Report not found."),
+        },
+      },
+    },
+    "/api/v1/support/reports/admin": {
+      get: {
+        tags: ["Support"],
+        summary: "List safety reports for administrators",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: { description: "Reports retrieved successfully." },
+          403: errorResponse("Administrator access is required."),
+        },
+      },
+    },
+    "/api/v1/support/reports/admin/{id}": {
+      get: {
+        tags: ["Support"],
+        summary: "Get a safety report with immutable chat evidence",
+        description:
+          "Configured dashboard administrator only. The evidence snapshot is intentionally excluded from user report details and all list responses.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: { description: "Report evidence retrieved successfully." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: errorResponse("Administrator access is required."),
+          404: errorResponse("Report not found."),
+        },
+      },
+      patch: {
+        tags: ["Support"],
+        summary: "Update a safety report",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["status"],
+                properties: {
+                  status: {
+                    type: "string",
+                    enum: ["SUBMITTED", "UNDER_REVIEW", "RESOLVED", "REJECTED"],
+                  },
+                  adminNotes: { type: "string", maxLength: 1500 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: "Report updated successfully." },
+          403: errorResponse("Administrator access is required."),
+          404: errorResponse("Report not found."),
+        },
+      },
+    },
+    "/api/v1/notifications": {
+      get: {
+        tags: ["Notifications"],
+        summary: "List in-app notifications",
+        description:
+          "Returns a flat, newest-first, paginated list of in-app notifications belonging only to the authenticated user. Clients may group the returned page as today, yesterday, or earlier using createdAt and the user's local timezone; the API does not return temporal groups. unreadCount always covers all unread notifications, independent of tab and pagination. Payment notifications remain available under all. This endpoint does not expose provider payloads, phone numbers, or sensitive payment/auth data.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "tab",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              enum: ["all", "unread", "trips", "errands", "messages"],
+              default: "all",
+            },
+          },
+          {
+            name: "status",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              enum: ["UNREAD", "PENDING", "SENT", "FAILED", "READ"],
+            },
+            description:
+              "Optional read-state/status filter. UNREAD means any notification whose status is not READ.",
+          },
+          {
+            name: "skip",
+            in: "query",
+            required: false,
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            required: false,
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Notifications retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/NotificationListResponse",
+                },
+                example: {
+                  success: true,
+                  message: "Notifications retrieved successfully.",
+                  data: {
+                    notifications: [
+                      {
+                        id: "650e8400-e29b-41d4-a716-446655440001",
+                        type: "NEW_CHAT_MESSAGE",
+                        channel: "IN_APP",
+                        title: "New chat message",
+                        message: "You have a new message about an assignment.",
+                        status: "PENDING",
+                        isRead: false,
+                        createdAt: "2026-09-05T08:00:00.000Z",
+                        readAt: null,
+                        metadata: {
+                          errandId: "750e8400-e29b-41d4-a716-446655440001",
+                          assignmentId: "850e8400-e29b-41d4-a716-446655440001",
+                          chatRoomId: "950e8400-e29b-41d4-a716-446655440001",
+                        },
+                      },
+                    ],
+                    unreadCount: 4,
+                    pagination: { skip: 0, take: 20, total: 1 },
+                  },
+                },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" },
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/notifications/unread-count": {
+      get: {
+        tags: ["Notifications"],
+        summary: "Get unread notification count",
+        description:
+          "Returns a compact count of the authenticated user's unread in-app notifications. Unread means status is not READ.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: "Unread notification count retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/NotificationUnreadCountResponse",
+                },
+                example: {
+                  success: true,
+                  message: "Unread notification count retrieved successfully.",
+                  data: { count: 4 },
+                },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" },
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/notifications/{id}/read": {
+      post: {
+        tags: ["Notifications"],
+        summary: "Mark one notification read",
+        description:
+          "Idempotently marks one notification belonging to the authenticated user as READ and sets readAt when it was previously unread. Repeating the call for an already-read notification succeeds without extra side effects.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+            description: "Notification ID.",
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: false,
+              },
+              example: {},
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Notification marked read successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/NotificationMarkReadResponse",
+                },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: errorResponse("Notification not found."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/notifications/read-all": {
+      post: {
+        tags: ["Notifications"],
+        summary: "Mark all notifications read",
+        description:
+          "Marks all unread notifications for the authenticated user as READ in one update and returns the number of rows changed. Notifications belonging to other users are never updated.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: false,
+              },
+              example: {},
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Notifications marked read successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/NotificationMarkAllReadResponse",
+                },
+                example: {
+                  success: true,
+                  message: "Notifications marked read successfully.",
+                  data: { updatedCount: 3 },
+                },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          403: { $ref: "#/components/responses/Forbidden" },
+          404: { $ref: "#/components/responses/NotFound" },
+          429: { $ref: "#/components/responses/TooManyRequests" },
+          500: { $ref: "#/components/responses/InternalServerError" },
+        },
+      },
+    },
+    "/api/v1/payments/packages": {
+      get: {
+        tags: ["Payments"],
+        summary: "List active token packages",
+        description:
+          "Returns server-controlled package prices and token quantities. Clients must not calculate or submit package pricing.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: "Active token packages retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/TokenPackagesResponse" },
+              },
+            },
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          429: { $ref: "#/components/responses/TooManyRequests" },
+        },
+      },
+    },
+    "/api/v1/payments/invoices/{id}/receipt": {
+      post: {
+        tags: ["Payments"],
+        summary: "Upload a bank transfer receipt",
+        description:
+          "Uploads one private PNG, JPG, or PDF receipt up to 5 MB for an owned bank transfer invoice awaiting verification.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "multipart/form-data": {
+              schema: {
+                type: "object",
+                required: ["receipt"],
+                properties: { receipt: { type: "string", format: "binary" } },
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Receipt uploaded; invoice is awaiting admin review.",
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: errorResponse("Invoice was not found."),
+          409: errorResponse("Invoice is not awaiting transfer verification."),
+          503: errorResponse("Payment receipt storage is not configured."),
+        },
+      },
+    },
+    "/api/v1/payments/invoices": {
+      post: {
+        tags: ["Payments"],
+        summary:
+          "Create a token top-up invoice using QR, OTP, or bank transfer",
+        description:
+          "Creates an invoice using QR, OTP, or BANK_TRANSFER and snapshots the active package. Bank transfer returns bank details and a unique referenceCode, remains PENDING_VERIFICATION, and requires a receipt upload before admin review. OTP requires paymentPhone. Reusing a clientRequestKey with different payment details returns 409. Creating an invoice never credits the wallet.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["tokenPackageId", "clientRequestKey"],
+                additionalProperties: false,
+                properties: {
+                  tokenPackageId: { type: "string", format: "uuid" },
+                  clientRequestKey: {
+                    type: "string",
+                    format: "uuid",
+                    description:
+                      "A fresh UUID generated once by the client and reused only when retrying this request.",
+                  },
+                  paymentMethod: {
+                    type: "string",
+                    enum: ["QR", "OTP", "BANK_TRANSFER"],
+                    default: "QR",
+                  },
+                  paymentPhone: {
+                    type: "string",
+                    minLength: 8,
+                    maxLength: 20,
+                    description:
+                      "Required when paymentMethod is OTP; omitted for QR and BANK_TRANSFER.",
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description: "Payment invoice created.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/CreatePaymentInvoiceResponse",
+                },
+              },
+            },
+          },
+          200: {
+            description: "Idempotent retry returned the existing invoice.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/CreatePaymentInvoiceResponse",
+                },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: errorResponse("Active token package was not found."),
+          409: errorResponse(
+            "Client request key was already used with different package or payment data.",
+          ),
+        },
+      },
+      get: {
+        tags: ["Payments"],
+        summary: "List the current user's payment invoices",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "status",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: [
+                "PENDING",
+                "PENDING_VERIFICATION",
+                "PAID",
+                "FAILED",
+                "EXPIRED",
+              ],
+            },
+          },
+          {
+            name: "skip",
+            in: "query",
+            schema: { type: "integer", minimum: 0, default: 0 },
+          },
+          {
+            name: "take",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+          },
+        ],
+        responses: {
+          200: { description: "Owned invoices and pagination metadata." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/api/v1/payments/invoices/{id}": {
+      get: {
+        tags: ["Payments"],
+        summary: "Get an owned payment invoice",
+        description:
+          "Returns only an invoice owned by the authenticated user and lazily marks an expired PENDING invoice as EXPIRED.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Payment invoice retrieved.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/PaymentInvoiceResponse" },
+              },
+            },
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: errorResponse("Payment invoice was not found."),
+        },
+      },
+    },
+    "/api/v1/payments/invoices/{id}/otp/resend": {
+      post: {
+        tags: ["Payments"],
+        summary: "Resend a simulated payment OTP",
+        description:
+          "Local/staging mock only. Resends an OTP for an owned pending OTP invoice; the code expires after five minutes, resend is rate-limited, and the code is returned as mockOtp only outside production.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: { description: "Mock OTP resent." },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: errorResponse("Mock payment flow or invoice was not found."),
+          409: errorResponse("Invoice is not a pending OTP invoice."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+        },
+      },
+    },
+    "/api/v1/payments/invoices/{id}/otp/verify": {
+      post: {
+        tags: ["Payments"],
+        summary: "Verify a simulated payment OTP",
+        description:
+          "Local/staging mock only. A valid six-digit code completes the payment and credits the wallet exactly once.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["otp"],
+                additionalProperties: false,
+                properties: { otp: { type: "string", pattern: "^\\d{6}$" } },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: "OTP payment completed." },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: errorResponse("Invalid payment OTP."),
+          404: errorResponse("Mock payment flow or invoice was not found."),
+          409: errorResponse("Invoice is not a pending OTP invoice."),
+          410: errorResponse("Payment OTP has expired."),
+          429: { $ref: "#/components/responses/TooManyRequests" },
+        },
+      },
+    },
+    "/api/v1/payments/mock/invoices/{id}/pay": {
+      post: {
+        tags: ["Payments"],
+        summary: "Simulate payment for an owned invoice",
+        description:
+          "Local/staging-only QR helper that emits a correctly signed successful mock webhook. It only accepts QR invoices, returns 404 when MOCK_PAYMENT_ENABLED is not true, and is blocked in production.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          200: {
+            description:
+              "Mock payment processed; repeat calls do not credit the wallet twice.",
+          },
+          401: { $ref: "#/components/responses/Unauthorized" },
+          404: errorResponse("Mock payment flow or invoice was not found."),
+          409: errorResponse("Invoice is no longer pending."),
+        },
+      },
+    },
+    "/api/v1/payments/webhooks/mock": {
+      post: {
+        tags: ["Payments"],
+        summary: "Receive a signed mock provider webhook",
+        description:
+          "Provider callback authenticated with x-payment-signature, not a user JWT. A successful exact-amount event records the provider transaction, locks and credits the wallet, creates one ledger entry and notification, and marks the invoice PAID in one database transaction.",
+        parameters: [
+          {
+            name: "x-payment-signature",
+            in: "header",
+            required: true,
+            schema: { type: "string", pattern: "^[a-fA-F0-9]{64}$" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: [
+                  "providerInvoiceId",
+                  "providerTransactionId",
+                  "status",
+                  "amountPaidNis",
+                  "providerTimestamp",
+                ],
+                additionalProperties: false,
+                properties: {
+                  providerInvoiceId: { type: "string", maxLength: 150 },
+                  providerTransactionId: { type: "string", maxLength: 150 },
+                  status: { type: "string", enum: ["SUCCESS", "FAILED"] },
+                  amountPaidNis: { type: "number", minimum: 0 },
+                  providerTimestamp: { type: "string", format: "date-time" },
+                  failureReason: { type: "string", maxLength: 255 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description:
+              "Webhook processed or safely recognized as a duplicate/terminal invoice.",
+          },
+          400: { $ref: "#/components/responses/ValidationFailed" },
+          401: errorResponse("Invalid payment webhook signature."),
+          404: errorResponse("Mock flow or invoice was not found."),
+        },
+      },
+    },
+    "/api/v1/wallet": {
+      get: {
+        tags: ["Wallet"],
+        summary: "Get current user wallet",
+        description:
+          "Returns the authenticated user's wallet and current token balance.",
+        security: [
+          {
+            bearerAuth: [],
+          },
+        ],
+        responses: {
+          200: {
+            description: "Wallet retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/WalletResponse",
+                },
+              },
+            },
+          },
+          401: {
+            $ref: "#/components/responses/Unauthorized",
+          },
+          403: {
+            $ref: "#/components/responses/Forbidden",
+          },
+          404: errorResponse("Wallet not found"),
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/api/v1/wallet/transactions": {
+      get: {
+        tags: ["Wallet"],
+        summary: "List wallet transactions",
+        description:
+          "Returns committed wallet movements and unpaid payment invoices, newest first. Paid invoices appear only as their ledger entry. Invoice rows have null balances and do not affect wallet totals. Filters combine with AND; pagination totals respect both filters.",
+        security: [
+          {
+            bearerAuth: [],
+          },
+        ],
+        parameters: [
+          {
+            name: "status",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: [
+                "SUCCESS",
+                "PENDING",
+                "PENDING_VERIFICATION",
+                "FAILED",
+                "EXPIRED",
+              ],
+            },
+          },
+          {
+            name: "transactionType",
+            in: "query",
+            schema: {
+              type: "string",
+              enum: [
+                "TOKEN_TOP_UP",
+                "ERRAND_POST_DEBIT",
+                "TRIP_POST_DEBIT",
+                "ERRAND_ACCEPT_DEBIT",
+                "ADMIN_CREDIT",
+                "ADMIN_DEBIT",
+                "REFUND",
+                "SIGNUP_BONUS",
+              ],
+            },
+          },
+          {
+            name: "skip",
+            in: "query",
+            required: false,
+            description: "Number of transactions to skip. Defaults to 0.",
+            schema: {
+              type: "integer",
+              minimum: 0,
+              default: 0,
+            },
+            example: 0,
+          },
+          {
+            name: "take",
+            in: "query",
+            required: false,
+            description:
+              "Number of transactions to return. Defaults to 20 and cannot exceed 100.",
+            schema: {
+              type: "integer",
+              minimum: 1,
+              maximum: 100,
+              default: 20,
+            },
+            example: 20,
+          },
+        ],
+        responses: {
+          200: {
+            description: "Wallet transactions retrieved successfully.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/WalletTransactionsResponse",
+                },
+              },
+            },
+          },
+          400: {
+            description: "Validation failed for skip or take query parameters.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ErrorResponse",
+                },
+                example: {
+                  success: false,
+                  message: "Validation failed",
+                  errors: [
+                    {
+                      field: "query.take",
+                      message: "Take must not exceed 100.",
+                    },
+                  ],
+                },
+              },
+            },
+          },
+          401: {
+            $ref: "#/components/responses/Unauthorized",
+          },
+          403: {
+            $ref: "#/components/responses/Forbidden",
+          },
+          404: errorResponse("Wallet not found"),
+          429: {
+            $ref: "#/components/responses/TooManyRequests",
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+  },
+};
+
+const swaggerSpec = swaggerJSDoc({
+  definition: swaggerDefinition,
+  apis: [],
+});
+
+module.exports = swaggerSpec;
